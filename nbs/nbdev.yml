@@ -1,0 +1,9 @@
+project:
+  output-dir: _docs
+
+website:
+  title: "prototype-phd"
+  site-url: "https://PaoloBova.github.io/prototype-phd"
+  description: "A library and website where I communicate the the key tools and insights I develop during my Phd (with an emphasis on AI Governance)"
+  repo-branch: main
+  repo-url: "https://github.com/PaoloBova/prototype-phd"
