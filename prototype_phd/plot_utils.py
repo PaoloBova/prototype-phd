@@ -410,15 +410,21 @@ def plot_strategy_distribution(data, # The dataset containing data on parameters
                                x="pr", # The parameter to place on the x-axis of the plot
                                x_label='Risk of an AI disaster, pr', # the x-axis label
                                title='Strategy distribution', # the plot title
+                               strategy_state_mapping=None, # A mapping from strategy labels to state labels in data
                                thresholds=["threshold_society_prefers_safety",
                                            "threshold_risk_dominant_safety"], # A list of threshold names in data
                                cmap=plt.colormaps["tab10"],
                                ) -> None:
     """Plot the strategy distribution as we vary `x`."""
 
+    if strategy_state_mapping!=None:
+        recurrent_states = [strategy_state_mapping[strategy]
+                            for strategy in strategy_set]
+    else:
+        recurrent_states = strategy_set
     fig, ax = plt.subplots()
     ax.stackplot(data[x],
-                 [data[strategy + "_frequency"] for strategy in strategy_set],
+                 [data[state + "_frequency"] for state in recurrent_states],
                  labels=strategy_set,
                  colors=[cmap(i) for i in range(cmap.N)],
                  alpha=0.8)
