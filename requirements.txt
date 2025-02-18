@@ -1,0 +1,11 @@
+ipykernel
+jupyterlab
+matplotlib
+more-itertools
+nptyping
+numpy
+pandas
+plotly
+pytest
+scipy
+tqdm
