@@ -492,7 +492,24 @@ def sanitize_dict_values(results_dict):
     return results_dict
 
 def setup_project():
-    """Set up the project by creating the data and plots directories."""
+    """Set up the project by creating ids and directories.
+    
+    Returns:
+    - simulation_id: A unique identifier for the simulation.
+    - current_commit: The current git commit hash.
+    - data_dir: The directory to save the simulation data in.
+    - plots_dir: The directory to save the plots in.
+    
+    Usage:
+    ```{python}
+    simulation_id, current_commit, data_dir, plots_dir = setup_project()
+    ```
+    
+    This function should be called at the beginning of a script to set up the
+    project directories and logging.
+    
+    The simulation_id and current_commit can be used to uniquely identify the
+    simulation and the version of the code used."""
     # Simulation metadata
     simulation_id = create_id()
     current_commit = get_current_git_commit()
