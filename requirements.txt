@@ -2,10 +2,12 @@ ipykernel
 jupyterlab
 matplotlib
 more-itertools
+networkx
 nptyping
 numpy
 pandas
 plotly
 pytest
+regex
 scipy
 tqdm
