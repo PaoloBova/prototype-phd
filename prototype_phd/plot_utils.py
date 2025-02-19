@@ -440,6 +440,7 @@ def plot_strategy_distribution(data, # The dataset containing data on parameters
                     0.995,
                     colors=[f"C{2+i}" for i in range(len(thresholds))],
                     linewidth=3)
+    return fig
 
 def plot_heatmap(table, # A pivot table, created using `pandas.pivot` function
                  figure_object=None,
