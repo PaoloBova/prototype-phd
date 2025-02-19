@@ -7,7 +7,7 @@ name = "prototype_phd"
 version = "0.1.0"
 description = "A library for AI Governance tools and models developed during a PhD."
 readme = "README.md"
-requires-python = ">=3.6"
+requires-python = ">=3.9"
 license = { text = "MIT License" }
 authors = [
     { name = "Paolo Bova", email = "paolobova@proton.me" }
