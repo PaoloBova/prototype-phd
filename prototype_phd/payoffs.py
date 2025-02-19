@@ -1865,3 +1865,49 @@ def build_payoffs(models):
 
     return {**models, "payoffs": payoffs}
 
+@method(build_payoffs, "ai-trust-v1")
+def build_payoffs(models):
+   """Payoff matrix for the AI Trust game."""
+
+   names1 = ["bU", "bP", "cP", "Eps", "u", "cR", "bR", "v", "b_fo"]
+   bU, bP, cP, Eps, u, cR, bR, v, b_fo = [models[k] for k in names1]
+   
+   payoffs = {}
+   payoffs["5-3-1"] = {"P3": bU,
+                     "P2": bP-cP,
+                     "P1": bR-cR}
+   payoffs["5-3-2"] = {"P3": bU,
+                     "P2": bP-cP,
+                     "P1": bR}
+   payoffs["5-4-1"] = {"P3": Eps * bU,
+                     "P2": bP-u,
+                     "P1": bR-cR-v+b_fo}
+   payoffs["5-4-2"] = {"P3": Eps * bU,
+                     "P2": bP,
+                     "P1": bR}
+   payoffs["6-3-1"] = {"P3": 0,
+                     "P2": -cP,
+                     "P1": -cR}
+   payoffs["6-3-2"] = {"P3": 0,
+                     "P2": -cP,
+                     "P1": 0}
+   payoffs["6-4-1"] = {"P3": 0,
+                     "P2": 0,
+                     "P1": -cR}
+   payoffs["6-4-2"] = {"P3": 0,
+                     "P2": 0,
+                     "P1": 0}
+   payoffs["7-3-1"] = {"P3": bU,
+                     "P2": bP-cP,
+                     "P1": bR-cR}
+   payoffs["7-3-2"] = {"P3": 0,
+                     "P2": -cP,
+                     "P1": 0}
+   payoffs["7-4-1"] = {"P3": Eps * bU,
+                     "P2": bP-u,
+                     "P1": bR-cR-v+b_fo}
+   payoffs["7-4-2"] = {"P3": 0,
+                     "P2": 0,
+                     "P1": 0}
+   
+   return {**models, "payoffs": payoffs}
