@@ -20,11 +20,10 @@ from typing import Any, Dict, List, Union
 import uuid
 import logging
 
-def setup_logging(log_file='chat_logs.log', level=logging.INFO, log_dir='logs'):
+def setup_logging(log_path='logs/chat_logs.log', level=logging.INFO):
     # Make sure log directory exists
-    os.makedirs(log_dir, exist_ok=True)
-    log_file = os.path.join(log_dir, log_file)
-    logging.basicConfig(filename=log_file, level=level,
+    os.makedirs(log_path, exist_ok=True)
+    logging.basicConfig(filename=log_path, level=level,
                         format='%(asctime)s - %(levelname)s - %(message)s')
 
 def is_plain_word(word):
