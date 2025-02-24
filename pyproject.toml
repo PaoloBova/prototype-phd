@@ -50,3 +50,9 @@ IssueTracker = "https://github.com/tofusplat/prototype-phd/issues"
 
 [tool.poetry]
 package-mode = false
+
+[tool.poetry.group.dev.dependencies]
+pytest = "^8.3.4"
+ipykernel = "^6.29.5"
+jupyterlab = "^4.3.5"
+
