@@ -572,6 +572,20 @@ def setup_project(save_tracker=True):
     setup_logging()
     return simulation_id, current_commit, data_dir, plots_dir
 
+def collect_stats_default(model, parameters): 
+    for agent in model.agents:
+        model.agent_results.append({
+            'round': model.tick,
+            'agent_id': agent.name,
+            'decision': agent.state["decision"],
+            'reasoning': agent.state.get("reasoning", None)
+        })
+    model.model_results.append({
+        'round': model.tick,
+        'num_agents': len(model.agents),
+        **parameters
+    })
+
 dropped_items_warning=f"""Several items in `results` are not suitable for conversion to
 a dataframe. This may be because they are not numpy arrays or because they
 are not the same size as the other items. 
