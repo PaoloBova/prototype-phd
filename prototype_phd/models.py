@@ -1,6 +1,8 @@
 from .model_utils import *
 from .types import *
 from .utils import *
+import prototype_phd.data_utils as data_utils
+import prototype_phd.payoffs as payoffs
 
 import numpy as np
 
@@ -130,3 +132,73 @@ def build_multi_race(
                            override=override,
                            drop_args=drop_args)
     return models
+    
+class StudySim:
+    """Generic simulation for replicating experimental economics lab experiments using LLMs.
+    
+    Agents are prompted individually (no inter-agent interactions).
+    An optional 'collect_stats_fn' can be provided in params.
+    """
+    def __init__(self, agents, parameters):
+        self.agents = agents
+        self.tick = 0
+        self.num_rounds = parameters.get("num_rounds", 1)
+        self.agent_results = []
+        self.model_results = []
+
+    def step(self, parameters):
+        self.tick += 1
+        for agent in self.agents:
+            self.ask_agent(agent, parameters)
+            agent.state["decision"] = agent.knowledge.get("choice")
+    
+    def ask_agent(self, agent, parameters):
+        construct_prompt_fn = parameters["prompt_functions"]["baseline_game"]
+        # The agent is prompted to reflect on the current state of the simulation
+        # and update their knowledge or beahviour accordingly.
+        args = {**parameters,
+                "tick": self.tick,
+                "model": self,
+                "agents": self.agents}
+        adjudicator = parameters["adjudicator_agent"]
+        prompt = construct_prompt_fn(adjudicator, agent, args)
+        logging.info(f"Prompting agent {agent.name} with: {prompt}")
+        chat_result = adjudicator.initiate_chat(
+            recipient=agent, 
+            message= prompt,
+            max_turns=1,
+            clear_history=False,
+            silent=True,
+        )
+
+        # Extract data from the chat message and update the agent's knowledge.
+        message = chat_result.chat_history[-1]["content"]
+        logging.info(f"Agent {agent.name} received message: {message}")
+        if agent.knowledge_format is None:
+            agent.state["decision"] = message
+        else:
+            data_format = agent.knowledge_format if hasattr(agent, "knowledge_format") else {}
+            data = data_utils.extract_data(message, data_format)
+            if len(data) >= 1:
+                agent.update_knowledge(data[0])
+                logging.info(f"Agent {agent.name} updated knowledge to: {agent.knowledge}")
+    
+    def collect_stats(self, parameters):
+        collect_stats_fn = parameters.get("collect_stats_fn",
+                                          data_utils.collect_stats_default)
+        collect_stats_fn(self, parameters)        
+
+class AI_Trust_Sim(StudySim):
+    """This class manages the AI trust experiment simulation.
+  
+    It is a subclass of StudySim and inherits the step and collect_stats methods.
+  
+    It is the model of the simulation.
+    
+    Model properties are initialized when instantiated and the
+    `step` function specifies what happens when the model is run.
+    """
+    def __init__(self, agents, parameters):
+        super().__init__(agents, parameters)
+        self.payoffs = payoffs.build_payoffs(parameters)["payoffs"]
+    
