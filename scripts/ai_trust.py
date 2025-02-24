@@ -5,7 +5,7 @@ import os
 sys.path.append(os.path.abspath(os.path.join('..')))
 
 import prototype_phd.data_utils as data_utils
-import prototype_phd.methods as methods
+import prototype_phd.methods.egt as methods_egt
 import prototype_phd.models as models
 import prototype_phd.model_utils as model_utils
 import prototype_phd.payoffs as payoffs
@@ -37,8 +37,8 @@ results = utils.thread_macro(params,
                        model_utils.create_profiles,
                        model_utils.apply_profile_filters,
                        payoffs.build_payoffs,
-                       methods.build_transition_matrix,
-                       methods.find_ergodic_distribution,
+                       methods_egt.build_transition_matrix,
+                       methods_egt.find_ergodic_distribution,
                        )
 
 df = utils.thread_macro(results,
