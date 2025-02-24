@@ -149,3 +149,7 @@ checklink/cookies.txt
 
 # Quarto
 .quarto
+
+# Data and plot files
+/data
+/plots
