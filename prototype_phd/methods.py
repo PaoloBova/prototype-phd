@@ -8,23 +8,22 @@ from typing import Union
 from warnings import warn
 
 import numpy as np
-import nptyping
 from scipy.linalg import schur, eigvals
 from scipy.sparse import csr_matrix, csc_matrix
 
-def fermi_learning(fitnessA: nptyping.NDArray,  # fitness of strategy A
-                   fitnessB: nptyping.NDArray,  # fitness of strategy B
-                   β: nptyping.NDArray,  # learning rate
-                   ) -> nptyping.NDArray:
+def fermi_learning(fitnessA: np.typing.NDArray,  # fitness of strategy A
+                   fitnessB: np.typing.NDArray,  # fitness of strategy B
+                   β: np.typing.NDArray,  # learning rate
+                   ) -> np.typing.NDArray:
     """Compute the likelihood that a player with strategy A adopts strategy B using the fermi function."""
     return (1 + np.exp(-β*(fitnessB - fitnessA)))**(-1)
 
-T_type = list[nptyping.NDArray[nptyping.Shape["N_models"], typing.Any]]
+T_type = list[np.typing.NDArray[np.typing.Shape["N_models"], typing.Any]]
 
 def fixation_rate(Tplus: T_type,  # A list of NDarrays, one array (of size n_models) for each possible number of mutants in the population; the probability of gaining one mutant
                   # A list of NDarrays, one array (of size n_models) for each possible number of mutants in the population; the probability of losing one mutant
                   Tneg: T_type,
-                  ) -> nptyping.NDArray[nptyping.Shape["N_models"], typing.Any]:  # Fixation rates for the given strategy in each model
+                  ) -> np.typing.NDArray[np.typing.Shape["N_models"], typing.Any]:  # Fixation rates for the given strategy in each model
     """Calculate the likelihood that a mutant invades the population."""
     Z = len(Tplus) + 1
     ρ = (np.sum([np.prod([Tneg[j-1]/Tplus[j-1]
