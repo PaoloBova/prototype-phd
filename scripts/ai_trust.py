@@ -1,9 +1,3 @@
-import sys
-import os
-
-# Add the parent directory to the Python path
-sys.path.append(os.path.abspath(os.path.join('..')))
-
 import prototype_phd.data_utils as data_utils
 import prototype_phd.methods.egt as methods_egt
 import prototype_phd.models as models
