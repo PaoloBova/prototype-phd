@@ -27,12 +27,12 @@ plots_dir = f"plots/ai_trust/{simulation_id}"
 data_utils.save_sim_to_tracker("data/ai_trust", simulation_id)
 
 # Setup logging
-data_utils.setup_logging(log_file="ai_trust.log")
+data_utils.setup_logging(log_path="alogs/ai_trust_llm/main.log")
 
 # Adjustable parameters
 NUM_AGENTS = 1
 TEMPERATURE = 1  # Adjust this to control the randomness of responses
-prompt_functions = {"baseline_game": prompts.ai_trust_game3}
+prompt_functions = {"baseline_game": prompts.ai_trust_game1}
 agent_specs = []
 for role in ["User", "AI_Lab", "Regulator"]:
     agent_params = {"temperature": TEMPERATURE,
@@ -58,6 +58,7 @@ params = {"simulation_id": simulation_id,
           "study_name": "AI Trust Experiment",
           "num_rounds": 1,
           "prompt_functions": prompt_functions,
+          "payoffs_key": "ai-trust-v1",
           # Default parameters for ai_trust_game3 template:
           "choice_cooperate": "Cooperate",
           "choice_defect": "Defect",
