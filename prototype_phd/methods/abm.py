@@ -116,7 +116,7 @@ def run_multiple_simulations(params:Dict,
 
     # We need to create the random ids for each simulation run before
     # we set the random seeds for the simulation runs.
-    params_list = [{**params, "simulation_run_id": data_utils.create_id()}
+    params_list = [{**params, "simulation_run_id": data_utils.create_id(verbose=False)}
                    for params in params_list]
     for i, params in tqdm.tqdm(enumerate(params_list)):
         set_random_seed(params['seed'])
