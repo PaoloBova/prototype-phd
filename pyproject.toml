@@ -32,7 +32,8 @@ dependencies = [
     "regex (>=2024.11.6,<2025.0.0)",
     "networkx (>=3.4.2,<4.0.0)",
     "autogen (>=0.7.5,<0.8.0)",
-    "pyautogen (>=0.7.5,<0.8.0)"
+    "pyautogen (>=0.7.5,<0.8.0)",
+    "dotenv (>=0.9.9,<0.10.0)"
 ]
 
 [project.optional-dependencies]
