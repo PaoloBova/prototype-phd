@@ -18,12 +18,12 @@ def fermi_learning(fitnessA: np.typing.NDArray,  # fitness of strategy A
     """Compute the likelihood that a player with strategy A adopts strategy B using the fermi function."""
     return (1 + np.exp(-β*(fitnessB - fitnessA)))**(-1)
 
-T_type = list[np.typing.NDArray[np.typing.Shape["N_models"], typing.Any]]
+T_type = list[np.typing.NDArray]
 
 def fixation_rate(Tplus: T_type,  # A list of NDarrays, one array (of size n_models) for each possible number of mutants in the population; the probability of gaining one mutant
                   # A list of NDarrays, one array (of size n_models) for each possible number of mutants in the population; the probability of losing one mutant
                   Tneg: T_type,
-                  ) -> np.typing.NDArray[np.typing.Shape["N_models"], typing.Any]:  # Fixation rates for the given strategy in each model
+                  ) -> np.typing.NDArray:  # Fixation rates for the given strategy in each model
     """Calculate the likelihood that a mutant invades the population."""
     Z = len(Tplus) + 1
     ρ = (np.sum([np.prod([Tneg[j-1]/Tplus[j-1]
