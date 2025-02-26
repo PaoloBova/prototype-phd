@@ -27,7 +27,7 @@ plots_dir = f"plots/ai_trust/{simulation_id}"
 data_utils.save_sim_to_tracker("data/ai_trust", simulation_id)
 
 # Setup logging
-data_utils.setup_logging(log_path="alogs/ai_trust_llm/main.log")
+data_utils.setup_logging(log_path="logs/ai_trust_llm/main.log")
 
 # Adjustable parameters
 NUM_AGENTS = 1
@@ -60,8 +60,7 @@ params = {"simulation_id": simulation_id,
           "prompt_functions": prompt_functions,
           "payoffs_key": "ai-trust-v1",
           # Default parameters for ai_trust_game3 template:
-          "choice_cooperate": "Cooperate",
-          "choice_defect": "Defect",
+          "sector_strategies": {"S3": [6, 7], "S2": [3, 4], "S1": [1, 2]},
           "conversion_rate": "1:1USD",
           "game_role": "Player",
           "role_coop_likelihoods": [[0.5, 0.5, 0.5],
