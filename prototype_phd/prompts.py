@@ -33,7 +33,7 @@ def prompt_fn_test(sender: autogen.ConversableAgent,
     }
 
 with open("prompt_templates/ai_trust_game1.txt", 'r') as file:
-    prompt_ai_trust_game1_txt = file.read()
+    prompt_ai_trust_game1 = file.read()
 
 def ai_trust_game1(sender: autogen.ConversableAgent,
                         recipient: autogen.ConversableAgent,
@@ -58,20 +58,21 @@ def ai_trust_game1(sender: autogen.ConversableAgent,
          "json_format": recipient.knowledge_format
     }
     
-    if "payoffs" in context and isinstance(context["payoffs"], dict):
-        for k1, v1 in context["payoffs"].items():
-            for k2, v2 in v1.items():
-                replacement_dict[f"payoff_{k1}_{k2}"] = v2
+    for k1, v1 in context["model"].payoffs.items():
+        for k2, v2 in v1.items():
+            replacement_dict[f"payoff_{k1}_{k2}"] = v2
     if "sector_strategies" in context and isinstance(context["sector_strategies"], dict):
         for k1, v1 in context["sector_strategies"].items():
             for v2 in v1:
-                replacement_dict[f"strategy_{k1}"] = v2
+                replacement_dict[f"strategy_{v2}"] = v2
+                
+    logging.info(f"Replacement dict: {replacement_dict}")
 
-    prompt = generate_prompt_from_template(replacement_dict, prompt_ai_trust_game1_txt)
+    prompt = generate_prompt_from_template(replacement_dict, prompt_ai_trust_game1)
     return {"role": role, "content": prompt}
 
 with open("prompt_templates/ai_trust_game2.txt", 'r') as file:
-    prompt_ai_trust_game1_txt = file.read()
+    prompt_ai_trust_game2 = file.read()
 
 def ai_trust_game2(sender: autogen.ConversableAgent,
                         recipient: autogen.ConversableAgent,
@@ -96,6 +97,7 @@ def ai_trust_game2(sender: autogen.ConversableAgent,
          "json_format": recipient.knowledge_format
     }
     
+
     if "payoffs" in context and isinstance(context["payoffs"], dict):
         for k1, v1 in context["payoffs"].items():
             for k2, v2 in v1.items():
@@ -103,14 +105,15 @@ def ai_trust_game2(sender: autogen.ConversableAgent,
     if "sector_strategies" in context and isinstance(context["sector_strategies"], dict):
         for k1, v1 in context["sector_strategies"].items():
             for v2 in v1:
-                replacement_dict[f"strategy_{k1}"] = v2
+                replacement_dict[f"strategy_{v2}"] = v2
 
-    prompt = generate_prompt_from_template(replacement_dict, prompt_ai_trust_game1_txt)
+    prompt = generate_prompt_from_template(replacement_dict, prompt_ai_trust_game2)
+
     return {"role": role, "content": prompt}
 
 
 with open("prompt_templates/ai_trust_game3.txt", 'r') as file:
-    prompt_ai_trust_game1_txt = file.read()
+    prompt_ai_trust_game3 = file.read()
 
 def ai_trust_game3(sender: autogen.ConversableAgent,
                         recipient: autogen.ConversableAgent,
@@ -144,6 +147,7 @@ def ai_trust_game3(sender: autogen.ConversableAgent,
             for v2 in v1:
                 replacement_dict[f"strategy_{v2}"] = v2
 
-    prompt = generate_prompt_from_template(replacement_dict, prompt_ai_trust_game1_txt)
+    prompt = generate_prompt_from_template(replacement_dict, prompt_ai_trust_game3)
+
     return {"role": role, "content": prompt}
 
