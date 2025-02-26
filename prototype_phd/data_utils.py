@@ -251,6 +251,13 @@ def read_ndjson(file_path):
             results.append(json.loads(line))
     return results
 
+class NumpyEncoder(json.JSONEncoder): 
+    def default(self, obj):
+        if isinstance(obj, np.ndarray):
+            return obj.tolist() # Convert NumPy array to list
+        # Let the base class default method raise the TypeError
+        return super().default(obj)
+
 def save_data(data, data_dir=None, append=False):
     """
     Save each dataframe in `data` to the given folder. 
@@ -299,10 +306,13 @@ def save_data(data, data_dir=None, append=False):
         # JSON file
         elif isinstance(value, (dict, list)):
             if append and os.path.isfile(json_path):
-                append_ndjson(serialized_graphs, json_path)
+                append_ndjson(value, json_path)
             else:
                 with open(json_path, 'w') as f:
-                    json.dump(value, f)
+                    # We often need to save numpy arrays, so we use a custom
+                    # encoder to handle this
+                    # indent=2 makes the JSON file human-readable
+                    json.dump(value, f, cls=NumpyEncoder, indent=2)
 
 def save_chunk(filepaths, chunk, filepath_key):
     """Save a single chunk of data to an HDF5 file, appending if the file exists."""
