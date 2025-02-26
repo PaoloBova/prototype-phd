@@ -1,0 +1,92 @@
+
+Welcome and Overview
+Thank you for participating in our study. In this experiment, you will take on the role of an actor crucial to AI development and be asked to make choices. Your choices in this game will help us understand behaviour relevant to AI development.
+
+How the Game Works
+
+- Roles:
+  There are 3 types of roles in each interaction.
+  - Regulators decide on whether to verify if AI models are safe for deployment.
+  - AI labs decide on whether to develop AI models quickly or safely.
+  - Users decide on whether to trust new AI systems, or not.
+
+- Rounds and Pairings:
+  - Game length (in rounds): {nRounds}.
+  - You always take on the same role.
+  - In each round, you are matched to interact with one random participant you have
+    not played with before from each of the other roles.
+  - You (and the other participants) will make a single choice in each round.
+
+- Choices:
+
+  If your role is Regulator:
+  - In every round, you will decide between these options:
+    - Option 1 (Respond with {strategy_1}) – This choice means you decide to
+      trust AI Labs without verifying them.
+    - Option 2 (Respond with {strategy_2}) – This choice means you verify
+      whether an AI system is safe before deployment.
+  
+  If your role is AI Lab:
+  - In every round, you will decide between these options:
+    - Option 1 (Respond with {strategy_3}) – This choice means you decide to 
+      rush development, incurring some risk.
+    - Option 2 (Respond with {strategy_4}) – This choice means you develop
+      safely, minimizing risk but potentially losing out market share to faster developers.
+
+  If your role is User:
+  - In every round, you will decide between these options:
+    - Option 1 (Respond with {strategy_5}) – This choice means you refuse
+      to adopt the new AI system.
+    - Option 2 (Respond with {strategy_6}) – This choice means you adopt
+      the new AI system.
+
+Outcomes of Your Choices
+
+Below is a summary that describes every possible outcome for one round of the three-player game. In each round:
+  - The Regulator chooses either {strategy_1} or {strategy_2}.
+  - The AI Lab chooses either {strategy_3} or {strategy_4}.
+  - The User chooses one of {strategy_5} or {strategy_6}.
+
+1. Regulator chooses {strategy_2}, AI Lab chooses {strategy_4}, User chooses {strategy_6}:
+   Payoffs: Regulator {payoff_6-4-2_P1}, AI Lab {payoff_6-4-2_P2}, User {payoff_6-4-2_P3}.
+
+2. Regulator chooses {strategy_2}, AI Lab chooses {strategy_4}, User chooses {strategy_5}:
+   Payoffs: Regulator {payoff_5-4-2_P1}, AI Lab {payoff_5-4-2_P2}, User {payoff_5-4-2_P3}.
+
+3. Regulator chooses {strategy_2}, AI Lab chooses {strategy_3}, User chooses {strategy_6}:
+   Payoffs: Regulator {payoff_6-3-2_P1}, AI Lab {payoff_6-3-2_P2}, User {payoff_6-3-2_P3}.
+
+4. Regulator chooses {strategy_2}, AI Lab chooses {strategy_3}, User chooses {strategy_5}:
+   Payoffs: Regulator {payoff_5-3-2_P1}, AI Lab {payoff_5-3-2_P2}, User {payoff_5-3-2_P3}.
+
+5. Regulator chooses {strategy_1}, AI Lab chooses {strategy_4}, User chooses {strategy_6}:
+   Payoffs: Regulator {payoff_6-4-1_P1}, AI Lab {payoff_6-4-1_P2}, User {payoff_6-4-1_P3}.
+
+6. Regulator chooses {strategy_1}, AI Lab chooses {strategy_4}, User chooses {strategy_5}:
+   Payoffs: Regulator {payoff_5-4-1_P1}, AI Lab {payoff_5-4-1_P2}, User {payoff_5-4-1_P3}.
+
+7. Regulator chooses {strategy_1}, AI Lab chooses {strategy_3}, User chooses {strategy_6}:
+   Payoffs: Regulator {payoff_6-3-1_P1}, AI Lab {payoff_6-3-1_P2}, User {payoff_6-3-1_P3}.
+
+8. Regulator chooses {strategy_1}, AI Lab chooses {strategy_3}, User chooses {strategy_5}:
+   Payoffs: Regulator {payoff_5-3-1_P1}, AI Lab {payoff_5-3-1_P2}, User {payoff_5-3-1_P3}.
+
+Your Turn to Decide
+
+You are {currentPlayerName}.
+{intro}: [You are {personality}.]
+Your role is {game_role}.
+
+You are playing against {opponentName1} and {opponentName2}.
+
+{opponentIntro1}: [{opponentName1} has a probability of {opponentPersonalityProbability1}% of being {opponentPersonality1}.]
+
+{opponentIntro2}: [{opponentName2} has a probability of {opponentPersonalityProbability2}% of being {opponentPersonality2}.]
+
+Your goal is to maximize your rewards by making the best strategies based on the provided information.
+
+This is the history of the choices made so far: {history}.
+
+Choose one strategy available to your given role.
+
+Output your choice in JSON format as follows: {json_format}
