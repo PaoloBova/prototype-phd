@@ -21,8 +21,10 @@ import uuid
 import logging
 
 def setup_logging(log_path='logs/chat_logs.log', level=logging.INFO):
-    # Make sure log directory exists
-    os.makedirs(log_path, exist_ok=True)
+    # Get the directory portion of the log_path.
+    log_dir = os.path.dirname(log_path)
+    # Create the directory (and any intermediate directories) if it doesn't exist.
+    os.makedirs(log_dir, exist_ok=True)
     logging.basicConfig(filename=log_path, level=level,
                         format='%(asctime)s - %(levelname)s - %(message)s')
 
