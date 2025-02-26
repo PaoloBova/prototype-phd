@@ -435,6 +435,18 @@ def get_keypaths(d: Dict[str, Any], current_path: Union[List[str], None] = None)
     
     return keypaths
 
+def string_to_tuple(string):
+    """Convert a string containing only integers and dashes to a tuple of
+    integers in reverse order."""
+    return thread_macro(string,
+                        (str.split, "-"),
+                        (map, int, "self"),
+                        list,
+                        reversed,
+                        list,
+                        numpy.array,
+                        )
+
 # **Disclaimer:** Unlike the code above, this code is not my invention. All credit
 # goes to Adam Bard for coming up with this (and Guido for writing an earlier
 # implementation). Adam Bard made this code freely available at 
