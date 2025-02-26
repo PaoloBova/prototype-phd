@@ -4,21 +4,21 @@ import numpy as np
 class Array1D():
     """An alias for a 1D numpy array."""
     def __init__(self,
-                 ModelVector: np.typing.NDArray[np.typing.Shape["N_models"], typing.Any] # A 1D numpy array suitable for stacks of scalar parameter values
+                 ModelVector: np.typing.NDArray # A 1D numpy array suitable for stacks of scalar parameter values
                 ):
         pass
 
 class Array2D():
     """An alias for a 2D numpy array."""
     def __init__(self,
-                Model2DArray: np.typing.NDArray[np.typing.Shape["N_models, N_states"], typing.Any], # A 2D numpy array suitable for stacks of state vectors
+                Model2DArray: np.typing.NDArray, # A 2D numpy array suitable for stacks of state vectors
                 ):
         pass
 
 class Array3D():
     """An alias for 3D numpy array, last two dimensions of equal size."""
     def __init__(self,
-                Model3DArray: np.typing.NDArray[np.typing.Shape["N_models, N_strategies, N_strategies"], typing.Any] # A 3D numpy array suitable for stacks of payoff or transition matrices 
+                Model3DArray: np.typing.NDArray # A 3D numpy array suitable for stacks of payoff or transition matrices 
                 ):
         pass
 
