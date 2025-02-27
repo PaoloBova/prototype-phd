@@ -52,8 +52,10 @@ def build_fairgame_configs(data: dict) -> dict:
     # Compute combinations_dict (structure remains same for each config;
     # notice that we do not use the array values of result_payoffs)
     combinations_dict = {}
+    i = 0
     for k1, v1 in result_payoffs.items():
-        combinations_dict[k1] = [
+        i += 1
+        combinations_dict[f"combination{i}"] = [
             [strategy_mapping[f"{utils.string_to_tuple(k1)[::-1][i]}"], f"weight_{k1}_{k2}"]
             for i, k2 in enumerate(v1.keys())
         ]
@@ -67,12 +69,12 @@ def build_fairgame_configs(data: dict) -> dict:
                 # If v2 is a numpy array, select the value at index 'idx'
                 if isinstance(v2, numpy.ndarray):
                     if len(v2) > idx:
-                        weight_val = float(v2[idx])
+                        weight_val = round(float(v2[idx]), 1)
                     else:
                         logging.error(f"Index {idx} out of bounds for combination {k1}->{k2}")
                         raise IndexError
                 else:
-                    weight_val = float(v2)  # integer or float case
+                    weight_val = round(float(v2), 1)  # integer or float case
                 weights_dict[f"weight_{k1}_{k2}"] = weight_val
 
             payoff_matrix = {
@@ -129,9 +131,9 @@ initiLconfig = {
     "allAgentPermutations": "False",
     "agents": {
         "names": [
-            "regulator1",
-            "developer1",
-            "user1"
+            "regulator",
+            "developer",
+            "user"
         ],
         "personalities": {
             "en": [
