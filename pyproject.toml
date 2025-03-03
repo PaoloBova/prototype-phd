@@ -50,7 +50,6 @@ Documentation = "https://github.com/tofusplat/prototype-phd#readme"
 IssueTracker = "https://github.com/tofusplat/prototype-phd/issues"
 
 [tool.poetry]
-package-mode = false
 
 [tool.poetry.group.dev.dependencies]
 pytest = "^8.3.4"
