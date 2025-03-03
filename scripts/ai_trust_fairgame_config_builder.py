@@ -114,7 +114,7 @@ params = {**models.build_ai_trust(Eps={"start": -1, "stop": 1, "step": 0.1},
           "allowed_sectors": {"P3": ["S3"],
                               "P2": ["S2"],
                               "P1": ["S1"], },
-          "sector_strategies": {"S3": [5, 7],
+          "sector_strategies": {"S3": [5, 6],
                                 "S2": [3, 4],
                                 "S1": [1, 2], },
           }
@@ -125,8 +125,9 @@ results = utils.thread_macro(params,
                        payoffs.build_payoffs,
                        )
 
-strategy_dict = {"en": {"strategy1": "Defect",
-                        "strategy2": "Cooperate"}}
+strategy_dict = {"en": {"strategy1": "Option A",
+                        "strategy2": "Option B",
+                        }}
 strategy_mapping = {"1": "strategy1", "2": "strategy2",
                     "3": "strategy1", "4": "strategy2",
                     "5": "strategy1", "6": "strategy2",
