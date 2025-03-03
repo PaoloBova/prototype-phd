@@ -48,28 +48,28 @@ Below is a summary that describes every possible outcome for one round of the th
   - The User chooses one of {strategy_5} or {strategy_7}.
 
 1. Regulator chooses {strategy_2}, AI Lab chooses {strategy_4}, User chooses {strategy_7}:
-   Payoffs: Regulator {payoff_7-4-2_P1}, AI Lab {payoff_7-4-2_P2}, User {payoff_7-4-2_P3}.
+   Payoffs: Regulator {weight_7-4-2_P1}, AI Lab {weight_7-4-2_P2}, User {weight_7-4-2_P3}.
 
 2. Regulator chooses {strategy_2}, AI Lab chooses {strategy_4}, User chooses {strategy_5}:
-   Payoffs: Regulator {payoff_5-4-2_P1}, AI Lab {payoff_5-4-2_P2}, User {payoff_5-4-2_P3}.
+   Payoffs: Regulator {weight_5-4-2_P1}, AI Lab {weight_5-4-2_P2}, User {weight_5-4-2_P3}.
 
 3. Regulator chooses {strategy_2}, AI Lab chooses {strategy_3}, User chooses {strategy_7}:
-   Payoffs: Regulator {payoff_7-3-2_P1}, AI Lab {payoff_7-3-2_P2}, User {payoff_7-3-2_P3}.
+   Payoffs: Regulator {weight_7-3-2_P1}, AI Lab {weight_7-3-2_P2}, User {weight_7-3-2_P3}.
 
 4. Regulator chooses {strategy_2}, AI Lab chooses {strategy_3}, User chooses {strategy_5}:
-   Payoffs: Regulator {payoff_5-3-2_P1}, AI Lab {payoff_5-3-2_P2}, User {payoff_5-3-2_P3}.
+   Payoffs: Regulator {weight_5-3-2_P1}, AI Lab {weight_5-3-2_P2}, User {weight_5-3-2_P3}.
 
 5. Regulator chooses {strategy_1}, AI Lab chooses {strategy_4}, User chooses {strategy_7}:
-   Payoffs: Regulator {payoff_7-4-1_P1}, AI Lab {payoff_7-4-1_P2}, User {payoff_7-4-1_P3}.
+   Payoffs: Regulator {weight_7-4-1_P1}, AI Lab {weight_7-4-1_P2}, User {weight_7-4-1_P3}.
 
 6. Regulator chooses {strategy_1}, AI Lab chooses {strategy_4}, User chooses {strategy_5}:
-   Payoffs: Regulator {payoff_5-4-1_P1}, AI Lab {payoff_5-4-1_P2}, User {payoff_5-4-1_P3}.
+   Payoffs: Regulator {weight_5-4-1_P1}, AI Lab {weight_5-4-1_P2}, User {weight_5-4-1_P3}.
 
 7. Regulator chooses {strategy_1}, AI Lab chooses {strategy_3}, User chooses {strategy_7}:
-   Payoffs: Regulator {payoff_7-3-1_P1}, AI Lab {payoff_7-3-1_P2}, User {payoff_7-3-1_P3}.
+   Payoffs: Regulator {weight_7-3-1_P1}, AI Lab {weight_7-3-1_P2}, User {weight_7-3-1_P3}.
 
 8. Regulator chooses {strategy_1}, AI Lab chooses {strategy_3}, User chooses {strategy_5}:
-   Payoffs: Regulator {payoff_5-3-1_P1}, AI Lab {payoff_5-3-1_P2}, User {payoff_5-3-1_P3}.
+   Payoffs: Regulator {weight_5-3-1_P1}, AI Lab {weight_5-3-1_P2}, User {weight_5-3-1_P3}.
    
 Your Turn to Decide
 

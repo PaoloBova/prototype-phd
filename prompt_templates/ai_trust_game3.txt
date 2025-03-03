@@ -7,7 +7,7 @@ How the Game Works
 - Roles:
   There are 3 types of roles in each interaction.
   - Regulators decide on whether to verify if AI models are safe for deployment.
-  - AI labs decide on whether to develop AI models quickly or safely.
+  - Developers decide on whether to develop AI models quickly or safely.
   - Users decide on whether to trust new AI systems, or not.
 
 - Rounds and Pairings:
@@ -22,11 +22,11 @@ How the Game Works
   If your role is Regulator:
   - In every round, you will decide between these options:
     - Option 1 (Respond with {strategy_1}) – This choice means you decide to
-      trust AI Labs without verifying them.
+      trust developers without verifying them.
     - Option 2 (Respond with {strategy_2}) – This choice means you verify
       whether an AI system is safe before deployment.
   
-  If your role is AI Lab:
+  If your role is developer:
   - In every round, you will decide between these options:
     - Option 1 (Respond with {strategy_3}) – This choice means you decide to 
       rush development, incurring some risk.
@@ -47,44 +47,44 @@ Outcomes of Your Choices
 
 Below is a summary that describes every possible outcome for one round of the three-player game. In each round:
   - The Regulator chooses either {strategy_1} or {strategy_2}.
-  - The AI Lab chooses either {strategy_3} or {strategy_4}.
+  - The developer chooses either {strategy_3} or {strategy_4}.
   - The User chooses one of {strategy_5}, {strategy_6} or {strategy_7}.
 
-1. Regulator chooses {strategy_2}, AI Lab chooses {strategy_4}, User chooses {strategy_6}:
-   Payoffs: Regulator {payoff_6-4-2_P1}, AI Lab {payoff_6-4-2_P2}, User {payoff_6-4-2_P3}.
+1. If the regulator chooses {strategy_2}, the developer chooses {strategy_4}, and the user chooses {strategy_6},
+  the regulator gets a payoff of {weight_6-4-2_P1}, the developer gets {weight_6-4-2_P2}, and the user gets {weight_6-4-2_P3}.
 
-2. Regulator chooses {strategy_2}, AI Lab chooses {strategy_4}, User chooses {strategy_5}:
-   Payoffs: Regulator {payoff_5-4-2_P1}, AI Lab {payoff_5-4-2_P2}, User {payoff_5-4-2_P3}.
+2. Regulator chooses {strategy_2}, developer chooses {strategy_4}, User chooses {strategy_5}:
+   Payoffs: Regulator {weight_5-4-2_P1}, developer {weight_5-4-2_P2}, User {weight_5-4-2_P3}.
 
-3. Regulator chooses {strategy_2}, AI Lab chooses {strategy_3}, User chooses {strategy_6}:
-   Payoffs: Regulator {payoff_6-3-2_P1}, AI Lab {payoff_6-3-2_P2}, User {payoff_6-3-2_P3}.
+3. Regulator chooses {strategy_2}, developer chooses {strategy_3}, User chooses {strategy_6}:
+   Payoffs: Regulator {weight_6-3-2_P1}, developer {weight_6-3-2_P2}, User {weight_6-3-2_P3}.
 
-4. Regulator chooses {strategy_2}, AI Lab chooses {strategy_3}, User chooses {strategy_5}:
-   Payoffs: Regulator {payoff_5-3-2_P1}, AI Lab {payoff_5-3-2_P2}, User {payoff_5-3-2_P3}.
+4. Regulator chooses {strategy_2}, developer chooses {strategy_3}, User chooses {strategy_5}:
+   Payoffs: Regulator {weight_5-3-2_P1}, developer {weight_5-3-2_P2}, User {weight_5-3-2_P3}.
 
-5. Regulator chooses {strategy_1}, AI Lab chooses {strategy_4}, User chooses {strategy_6}:
-   Payoffs: Regulator {payoff_6-4-1_P1}, AI Lab {payoff_6-4-1_P2}, User {payoff_6-4-1_P3}.
+5. Regulator chooses {strategy_1}, developer chooses {strategy_4}, User chooses {strategy_6}:
+   Payoffs: Regulator {weight_6-4-1_P1}, developer {weight_6-4-1_P2}, User {weight_6-4-1_P3}.
 
-6. Regulator chooses {strategy_1}, AI Lab chooses {strategy_4}, User chooses {strategy_5}:
-   Payoffs: Regulator {payoff_5-4-1_P1}, AI Lab {payoff_5-4-1_P2}, User {payoff_5-4-1_P3}.
+6. Regulator chooses {strategy_1}, developer chooses {strategy_4}, User chooses {strategy_5}:
+   Payoffs: Regulator {weight_5-4-1_P1}, developer {weight_5-4-1_P2}, User {weight_5-4-1_P3}.
 
-7. Regulator chooses {strategy_1}, AI Lab chooses {strategy_3}, User chooses {strategy_6}:
-   Payoffs: Regulator {payoff_6-3-1_P1}, AI Lab {payoff_6-3-1_P2}, User {payoff_6-3-1_P3}.
+7. Regulator chooses {strategy_1}, developer chooses {strategy_3}, User chooses {strategy_6}:
+   Payoffs: Regulator {weight_6-3-1_P1}, developer {weight_6-3-1_P2}, User {weight_6-3-1_P3}.
 
-8. Regulator chooses {strategy_1}, AI Lab chooses {strategy_3}, User chooses {strategy_5}:
-   Payoffs: Regulator {payoff_5-3-1_P1}, AI Lab {payoff_5-3-1_P2}, User {payoff_5-3-1_P3}.
+8. Regulator chooses {strategy_1}, developer chooses {strategy_3}, User chooses {strategy_5}:
+   Payoffs: Regulator {weight_5-3-1_P1}, developer {weight_5-3-1_P2}, User {weight_5-3-1_P3}.
 
-9. Regulator chooses {strategy_2}, AI Lab chooses {strategy_4}, User chooses {strategy_7}:
-   Payoffs: Regulator {payoff_7-4-2_P1}, AI Lab {payoff_7-4-2_P2}, User {payoff_7-4-2_P3}.
+9. Regulator chooses {strategy_2}, developer chooses {strategy_4}, User chooses {strategy_7}:
+   Payoffs: Regulator {weight_7-4-2_P1}, developer {weight_7-4-2_P2}, User {weight_7-4-2_P3}.
 
-10. Regulator chooses {strategy_2}, AI Lab chooses {strategy_3}, User chooses {strategy_7}:
-   Payoffs: Regulator {payoff_7-3-2_P1}, AI Lab {payoff_7-3-2_P2}, User {payoff_7-3-2_P3}.
+10. Regulator chooses {strategy_2}, developer chooses {strategy_3}, User chooses {strategy_7}:
+   Payoffs: Regulator {weight_7-3-2_P1}, developer {weight_7-3-2_P2}, User {weight_7-3-2_P3}.
 
-11. Regulator chooses {strategy_1}, AI Lab chooses {strategy_4}, User chooses {strategy_7}:
-   Payoffs: Regulator {payoff_7-4-1_P1}, AI Lab {payoff_7-4-1_P2}, User {payoff_7-4-1_P3}.
+11. Regulator chooses {strategy_1}, developer chooses {strategy_4}, User chooses {strategy_7}:
+   Payoffs: Regulator {weight_7-4-1_P1}, developer {weight_7-4-1_P2}, User {weight_7-4-1_P3}.
 
-12. Regulator chooses {strategy_1}, AI Lab chooses {strategy_3}, User chooses {strategy_7}:
-   Payoffs: Regulator {payoff_7-3-1_P1}, AI Lab {payoff_7-3-1_P2}, User {payoff_7-3-1_P3}.
+12. Regulator chooses {strategy_1}, developer chooses {strategy_3}, User chooses {strategy_7}:
+   Payoffs: Regulator {weight_7-3-1_P1}, developer {weight_7-3-1_P2}, User {weight_7-3-1_P3}.
 
 Your Turn to Decide
 

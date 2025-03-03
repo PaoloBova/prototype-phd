@@ -49,35 +49,35 @@ Thank you for participating in our study {study_name}. In this experiment, you w
 Below is a summary that describes every possible outcome for one round of the three‐player game. For clarity, we refer to the two available actions as “Cooperate” (the safer, verifying or cautious option) and “Defect” (the riskier, faster or non-adopting option). Note that each round involves three roles—a Regulator, an AI Lab, and a User—and each role’s outcome depends on its own choice as well as how its paired counterpart (or counterparts) behave. In a single round the following eight combinations are possible:
 
 Regulator Cooperates, AI Lab Cooperates, User Cooperates:
-Payoffs: Regulator {payoff_regulator_ccc}, AI Lab {payoff_ai_lab_ccc}, User {payoff_user_ccc}.
+Payoffs: Regulator {weight_regulator_ccc}, AI Lab {weight_ai_lab_ccc}, User {weight_user_ccc}.
 
 Regulator Cooperates, AI Lab Cooperates, User Defects:
- Payoffs: Regulator {payoff_regulator_ccd}, AI Lab {payoff_ai_lab_ccd}, User {payoff_user_ccd}.
+ Payoffs: Regulator {weight_regulator_ccd}, AI Lab {weight_ai_lab_ccd}, User {weight_user_ccd}.
 
 Regulator Cooperates, AI Lab Defects, User Cooperates:
- Payoffs: Regulator {payoff_regulator_cdc}, AI Lab {payoff_ai_lab_cdc}, User {payoff_user_cdc}.
+ Payoffs: Regulator {weight_regulator_cdc}, AI Lab {weight_ai_lab_cdc}, User {weight_user_cdc}.
 
 Regulator Cooperates, AI Lab Defects, User Defects:
- Payoffs: Regulator {payoff_regulator_cdd}, AI Lab {payoff_ai_lab_cdd}, User {payoff_user_cdd}.
+ Payoffs: Regulator {weight_regulator_cdd}, AI Lab {weight_ai_lab_cdd}, User {weight_user_cdd}.
 
 Regulator Defects, AI Lab Cooperates, User Cooperates:
- Payoffs: Regulator {payoff_regulator_dcc}, AI Lab {payoff_ai_lab_dcc}, User {payoff_user_dcc}.
+ Payoffs: Regulator {weight_regulator_dcc}, AI Lab {weight_ai_lab_dcc}, User {weight_user_dcc}.
 
 Regulator Defects, AI Lab Cooperates, User Defects:
- Payoffs: Regulator {payoff_regulator_dcd}, AI Lab {payoff_ai_lab_dcd}, User {payoff_user_dcd}.
+ Payoffs: Regulator {weight_regulator_dcd}, AI Lab {weight_ai_lab_dcd}, User {weight_user_dcd}.
 
 Regulator Defects, AI Lab Defects, User Cooperates:
- Payoffs: Regulator {payoff_regulator_ddc}, AI Lab {payoff_ai_lab_ddc}, User {payoff_user_ddc}.
+ Payoffs: Regulator {weight_regulator_ddc}, AI Lab {weight_ai_lab_ddc}, User {weight_user_ddc}.
 
 Regulator Defects, AI Lab Defects, User Defects:
- Payoffs: Regulator {payoff_regulator_ddd}, AI Lab {payoff_ai_lab_ddd}, User {payoff_user_ddd}.
+ Payoffs: Regulator {weight_regulator_ddd}, AI Lab {weight_ai_lab_ddd}, User {weight_user_ddd}.
 
 For the new Conditional Trust option (if you choose {choice_conditional} as a User):  
 Depending on regulators’ verification and other factors, four outcomes are possible:
-- Outcome 1: User receives {payoff_user_ct1}.
-- Outcome 2: User receives {payoff_user_ct2}.
-- Outcome 3: User receives {payoff_user_ct3}.
-- Outcome 4: User receives {payoff_user_ct4}.
+- Outcome 1: User receives {weight_user_ct1}.
+- Outcome 2: User receives {weight_user_ct2}.
+- Outcome 3: User receives {weight_user_ct3}.
+- Outcome 4: User receives {weight_user_ct4}.
 
 **Earning Your Reward**  
 - Your performance in each round will earn you points based on the outcome of your choices.  
