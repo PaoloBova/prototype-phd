@@ -102,9 +102,9 @@ def build_fairgame_configs(data: dict) -> dict:
 
 simulation_id, current_commit, data_dir, plots_dir = data_utils.setup_project()
 
-params = {**models.build_ai_trust(Eps={"start": -1, "stop": 1, "step": 0.1},
-                                  β=1,
-                                  cR=0.5,
+params = {**models.build_ai_trust(Eps=[-0.1, 0.2],
+                                  cR=[0.5, 5],
+                                  b_fo=[0, 5, 10, 15, 20],
                            ),
           "simulation_id": simulation_id,
           "commit": current_commit,
@@ -114,7 +114,7 @@ params = {**models.build_ai_trust(Eps={"start": -1, "stop": 1, "step": 0.1},
           "allowed_sectors": {"P3": ["S3"],
                               "P2": ["S2"],
                               "P1": ["S1"], },
-          "sector_strategies": {"S3": [5, 6],
+          "sector_strategies": {"S3": [5, 7],
                                 "S2": [3, 4],
                                 "S1": [1, 2], },
           }
@@ -126,10 +126,10 @@ results = utils.thread_macro(params,
                        )
 
 strategy_dict = {"en": {"strategy1": "Option A",
-                        "strategy2": "Option B",
+                        "strategy3": "Option C",
                         }}
-strategy_mapping = {"1": "strategy1", "2": "strategy2",
-                    "3": "strategy1", "4": "strategy2",
+strategy_mapping = {"1": "strategy1", "2": "strategy3",
+                    "3": "strategy1", "4": "strategy3",
                     "5": "strategy1", "6": "strategy2",
                     "7": "strategy3"}
 
@@ -142,7 +142,7 @@ initiLconfig = {
     "languages": [
         "en"
     ],
-    "allAgentPermutations": "False",
+    "allAgentPermutations": "True",
     "agents": {
         "names": [
             "regulator",
@@ -151,9 +151,8 @@ initiLconfig = {
         ],
         "personalities": {
             "en": [
-                "cooperative",
                 "aggressive",
-                "aggressive"
+                "cooperative"
             ]
         },
         "opponentPersonalityProb": [
@@ -173,5 +172,5 @@ fairgame_configs = build_fairgame_configs({
 data_utils.save_data({"_params": params},   
                      data_dir=f"data/fairgame_configs/{simulation_id}")
 for idx, fairgame_config in enumerate(fairgame_configs):
-    data_utils.save_data({f"FAIRGAME_config_ai_trust_v1_{idx}": fairgame_config},
+    data_utils.save_data({f"FAIRGAME_config_ai_trust_v2_{idx}": fairgame_config},
                          data_dir=f"data/fairgame_configs/{simulation_id}")
