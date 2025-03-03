@@ -53,19 +53,32 @@ def build_fairgame_configs(data: dict) -> dict:
     # notice that we do not use the array values of result_payoffs)
     combinations_dict = {}
     i = 0
+    j = 0
     for k1, v1 in result_payoffs.items():
         i += 1
-        combinations_dict[f"combination{i}"] = [
-            [strategy_mapping[f"{utils.string_to_tuple(k1)[::-1][i]}"], f"weight_{k1}_{k2}"]
-            for i, k2 in enumerate(v1.keys())
-        ]
+        # Reverse the keys in the dictionary to get the correct order
+        v1_keys = list(v1.keys())
+        v1_values = list(v1.values())
+        v1_reversed = dict(zip(v1_keys[::-1], v1_values[::-1]))
+        combinations_dict[f"combination{i}"] = []
+        strategies = utils.string_to_tuple(k1)
+        for s in strategies:
+            j += 1
+            combination_val = [strategy_mapping[f"{s}"], f"weight_{j}"]
+            combinations_dict[f"combination{i}"].append(combination_val)
     
     fairgame_configs = []
     # Create a fairgame_config per payoff matrix index
     for idx in range(n_matrices):
         weights_dict = {}
+        i = 0
         for k1, v1 in result_payoffs.items():
-            for k2, v2 in v1.items():
+            # Reverse the keys in the dictionary to get the correct order
+            v1_keys = list(v1.keys())
+            v1_values = list(v1.values())
+            v1_reversed = dict(zip(v1_keys[::-1], v1_values[::-1]))
+            for k2, v2 in v1_reversed.items():
+                i += 1
                 # If v2 is a numpy array, select the value at index 'idx'
                 if isinstance(v2, numpy.ndarray):
                     if len(v2) > idx:
@@ -75,7 +88,7 @@ def build_fairgame_configs(data: dict) -> dict:
                         raise IndexError
                 else:
                     weight_val = round(float(v2), 1)  # integer or float case
-                weights_dict[f"weight_{k1}_{k2}"] = weight_val
+                weights_dict[f"weight_{i}"] = weight_val
 
             payoff_matrix = {
             "strategies": strategy_dict,
