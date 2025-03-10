@@ -57,6 +57,9 @@ def build_ai_trust(
                 # p:valid_dtypes={"start":0, # avoid_risk: The probability that unsafe firms avoid an AI disaster, p ∈ [0, 1]
                 #                 "stop":1.02,
                 #                 "step":0.02}, 
+                bD:valid_dtypes=3,
+                bl:valid_dtypes=2, #Reputational benefit for the commentariate
+                cl:valid_dtypes=3, #Cost to the commentatriate for the investigation
                 bU:valid_dtypes=4, #benefit users get from trust and adopt the AI system
                 bP:valid_dtypes=4, # benefit the creator gets from selling the product;
                 cP:valid_dtypes=0.5, # cP is the cost of creating the product;
