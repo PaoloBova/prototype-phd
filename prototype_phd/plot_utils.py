@@ -413,6 +413,7 @@ def plot_strategy_distribution(data, # The dataset containing data on parameters
                                strategy_state_mapping=None, # A mapping from strategy labels to state labels in data
                                thresholds=["threshold_society_prefers_safety",
                                            "threshold_risk_dominant_safety"], # A list of threshold names in data
+                               stacked=True, # Whether to stack the lines and shade them in
                                cmap=plt.colormaps["tab10"],
                                ) -> None:
     """Plot the strategy distribution as we vary `x`."""
@@ -421,14 +422,23 @@ def plot_strategy_distribution(data, # The dataset containing data on parameters
         recurrent_states = [strategy_state_mapping[strategy]
                             for strategy in strategy_set]
     else:
-        recurrent_states = strategy_set
+        recurrent_states = strategy_set    
     fig, ax = plt.subplots()
-    ax.stackplot(data[x],
-                 [data[state + "_frequency"] for state in recurrent_states],
-                 labels=strategy_set,
-                 colors=[cmap(i) for i in range(cmap.N)],
-                 alpha=0.8)
-    ax.legend(bbox_to_anchor=(1.05, 1), loc='upper left')
+    if stacked:
+        ax.stackplot(data[x],
+                    [data[state + "_frequency"] for state in recurrent_states],
+                    labels=strategy_set,
+                    colors=[cmap(i) for i in range(cmap.N)],
+                    alpha=0.8)
+        ax.legend(loc='upper left')
+    else:
+        # Plot lines for each strategy
+        for i, state in enumerate(recurrent_states):
+            ax.plot(data[x],
+                    data[state + "_frequency"],
+                    label=strategy_set[i],
+                    color=cmap(i))
+        ax.legend(loc='upper left')
     ax.set_title(title)
     ax.set_xlabel(x_label)
     ax.set_ylabel('Proportion')
