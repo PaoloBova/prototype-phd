@@ -54,6 +54,7 @@ def build_fairgame_configs(data: dict) -> dict:
     combinations_dict = {}
     i = 0
     j = 0
+    print(f"result_payoffs {result_payoffs.keys()}")
     for k1, v1 in result_payoffs.items():
         i += 1
         # Reverse the keys in the dictionary to get the correct order
@@ -102,19 +103,29 @@ def build_fairgame_configs(data: dict) -> dict:
 
 simulation_id, current_commit, data_dir, plots_dir = data_utils.setup_project()
 
-params = {**models.build_ai_trust(Eps=[-0.1, 0.2],
-                                  cR=[0.5, 5],
-                                  b_fo=[0, 5, 10, 15, 20],
+params = {**models.build_ai_trust(Eps=[-0.1],
+                                  cR=[5],
+                                  b_fo=[5],
+                                  cW=[0, 5, 10],
+                                  pW=[0.5],
+                                  bl=[0, 5, 10],
+                                  cl=[0.5, 5],
                            ),
+          "strategy_set": ["C-T-C-C", "C-T-C-D", "C-T-D-C", "C-T-D-D",
+                    "C-N-C-C", "C-N-C-D", "C-N-D-C", "C-N-D-D",
+                    "D-CT-C-C", "D-CT-C-D", "D-CT-D-C", "D-CT-D-D",
+                    "D-N-C-C", "D-N-C-D", "D-N-D-C", "D-N-D-D"],
           "simulation_id": simulation_id,
           "commit": current_commit,
           "dispatch-type": 'multiple-populations',
-          "payoffs_key": "ai-trust-v1",
-          "Z": {"S3": 100, "S2": 100, "S1": 100},
-          "allowed_sectors": {"P3": ["S3"],
+          "payoffs_key": "ai-trust-v2",
+          "Z": {"S4": 100, "S3": 100, "S2": 100, "S1": 100},
+          "allowed_sectors": {"P4": ["S4"],
+                              "P3": ["S3"],
                               "P2": ["S2"],
                               "P1": ["S1"], },
-          "sector_strategies": {"S3": [5, 7],
+          "sector_strategies": {"S4": [8, 9],
+                                "S3": [6, 7],
                                 "S2": [3, 4],
                                 "S1": [1, 2], },
           }
@@ -126,18 +137,19 @@ results = utils.thread_macro(params,
                        )
 
 strategy_dict = {"en": {"strategy1": "Option A",
-                        "strategy3": "Option C",
+                        "strategy2": "Option B",
                         }}
-strategy_mapping = {"1": "strategy1", "2": "strategy3",
-                    "3": "strategy1", "4": "strategy3",
-                    "5": "strategy1", "6": "strategy2",
-                    "7": "strategy3"}
+strategy_mapping = {"1": "strategy1", "2": "strategy2",
+                    "3": "strategy1", "4": "strategy2",
+                    "5": "strategy3", "6": "strategy2",
+                    "7": "strategy1",
+                    "8": "strategy1", "9": "strategy2"}
 
 initiLconfig = {
     "name": "AI Trust Game",
     "nRounds": 1,
     "nRoundsIsKnown": "True",
-    "templateFilename": "ai_trust_game",
+    "templateFilename": "ai_trust_game_four_pop",
     "llm": "OpenAIGPT4Turbo",
     "languages": [
         "en"
@@ -151,8 +163,7 @@ initiLconfig = {
         ],
         "personalities": {
             "en": [
-                "aggressive",
-                "cooperative"
+                "none"
             ]
         },
         "opponentPersonalityProb": [
@@ -172,5 +183,5 @@ fairgame_configs = build_fairgame_configs({
 data_utils.save_data({"_params": params},   
                      data_dir=f"data/fairgame_configs/{simulation_id}")
 for idx, fairgame_config in enumerate(fairgame_configs):
-    data_utils.save_data({f"FAIRGAME_config_ai_trust_v2_{idx}": fairgame_config},
+    data_utils.save_data({f"FAIRGAME_config_ai_trust_four_pop_{idx}": fairgame_config},
                          data_dir=f"data/fairgame_configs/{simulation_id}")
