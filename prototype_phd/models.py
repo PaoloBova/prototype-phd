@@ -59,8 +59,8 @@ def build_ai_trust(
                 #                 "step":0.02}, 
                 cW:valid_dtypes=4,#Reputational cost of making an incorrect recommendation
                 pW:valid_dtypes=0.5,#Probability that the recommendation of a commentator is wrong
-                bl:valid_dtypes=2, #Reputational benefit for the commentariate
-                cl:valid_dtypes=1, #Cost to the commentatriate for the investigation
+                bI:valid_dtypes=2, #Reputational benefit of investigation for the commentariate
+                cI:valid_dtypes=3, #Cost to the commentatriate for the investigation
                 bU:valid_dtypes=4, #benefit users get from trust and adopt the AI system
                 bP:valid_dtypes=4, # benefit the creator gets from selling the product;
                 cP:valid_dtypes=0.5, # cP is the cost of creating the product;
