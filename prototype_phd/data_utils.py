@@ -507,6 +507,71 @@ def sanitize_dict_values(results_dict):
 
     return results_dict
 
+def recursive_flatten(data, parent_key='', sep='_'):
+    """
+    Flatten a nested dictionary by concatenating keys with underscores.
+
+    Parameters:
+      data (dict): Input nested dictionary.
+      parent_key (str): The parent key for the current dictionary.
+      sep (str): The separator to use between concatenated keys.
+
+    Returns:
+      dict: Flattened dictionary with concatenated keys.
+    """
+    items = []
+    for key, value in data.items():
+        new_key = f"{parent_key}{sep}{key}" if parent_key else key
+        if isinstance(value, collections.abc.Mapping):
+            items.extend(recursive_flatten(value, new_key, sep=sep).items())
+        else:
+            items.append((new_key, value))
+    return dict(items)
+
+def json_to_df(data):
+    """
+    Convert a nested dictionary representing JSON data into a pandas DataFrame.
+
+    The number of rows is determined automatically:
+      - If any top-level element is a list, the number of rows is set to the length
+        of the longest list found.
+      - If no top-level list exists, a single row is assumed.
+    
+    For each key-value pair from the flattened dictionary:
+      - If the value is a list and its length matches the row count, it is used directly.
+      - If the value is a list of different length, we assume it is a string and
+        replicate it to create a column with the same string for every row.
+      - For non-list values, the single value is replicated to create a column with the
+        same value for every row.
+    
+    Nested dictionaries are flattened recursively by concatenating keys with underscores.
+    
+    Parameters:
+      data (dict): Input nested dictionary from JSON.
+    
+    Returns:
+      DataFrame: DataFrame constructed from the processed data.
+    """
+    # Determine number of rows based on top-level lists
+    top_level_lists = [v for v in data.values() if isinstance(v, list)]
+    num_rows = max((len(lst) for lst in top_level_lists), default=0)
+    if num_rows == 0:
+        num_rows = 1
+
+    flat_data = recursive_flatten(data)
+
+    df_dict = {}
+    for key, value in flat_data.items():
+        if isinstance(value, list):
+            if len(value) == num_rows:
+                df_dict[key] = value
+            else:
+                df_dict[key] = str(value)
+        else:
+            df_dict[key] = [value] * num_rows
+
+    return pd.DataFrame(df_dict)
+
 def get_autogen_chat_results(model, simulation_run_id):
     """Get the autogen chat results from the model and ensure they are in a JSON
     serializable format."""
