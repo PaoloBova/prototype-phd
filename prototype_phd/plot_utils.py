@@ -432,7 +432,7 @@ def plot_strategy_distribution(data, # The dataset containing data on parameters
         ax.stackplot(data[x],
                     [data[state + "_frequency"] for state in recurrent_states],
                     labels=strategy_set,
-                    colors=[c for c in cmap],
+                    colors=[cmap(i) for i in range(cmap.N)],
                     alpha=0.8)
         ax.legend(loc='upper left')
     else:
@@ -441,7 +441,7 @@ def plot_strategy_distribution(data, # The dataset containing data on parameters
             ax.plot(data[x],
                     data[state + "_frequency"],
                     label=strategy_set[i],
-                    color=cmap[i])
+                    color=cmap(i))
         ax.legend(loc='upper left')
     ax.set_title(title)
     ax.set_xlabel(x_label)
