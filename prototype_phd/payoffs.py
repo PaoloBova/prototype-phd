@@ -1917,8 +1917,8 @@ def build_payoffs(models):
 def build_payoffs(models):
     """Payoff matrix for the AI Trust game."""
 
-    names1 = ["bl", "cl", "bD", "bU", "bP", "cP", "Eps", "u", "cR", "bR", "v", "b_fo"]
-    bl, cl, bD, bU, bP, cP, Eps, u, cR, bR, v, b_fo = [models[k] for k in names1]
+    names1 = ["bl", "cl", "cW", "pW", "bU", "bP", "cP", "Eps", "u", "cR", "bR", "v", "b_fo"]
+    bl, cl, cW, pW, bU, bP, cP, Eps, u, cR, bR, v, b_fo = [models[k] for k in names1]
    
     payoffs = {}
     payoffs["8-7-3-1"] = {"P4": bl-cl,
@@ -1940,7 +1940,7 @@ def build_payoffs(models):
     payoffs["8-6-3-1"] = {"P4": -cl,
                      "P3": 0,
                      "P2": -cP,
-                     "P1": bR-cR}
+                     "P1": -cR}
     payoffs["8-6-3-2"] = {"P4": -cl,
                      "P3": 0,
                      "P2": -cP,
@@ -1953,26 +1953,26 @@ def build_payoffs(models):
                      "P3": 0,
                      "P2": 0,
                      "P1": 0}
-    payoffs["9-7-3-1"] = {"P4": -bD,
-                     "P3": 0,
-                     "P2": -cP,
-                     "P1": -cR}
-    payoffs["9-7-3-2"] = {"P4": -bD,
-                     "P3": 0,
-                     "P2": -cP,
-                     "P1": 0}
-    payoffs["9-7-4-1"] = {"P4": -bD,
-                     "P3": Eps * bU,
-                     "P2": bP-u,
-                     "P1": bR-cR-v+b_fo}
-    payoffs["9-7-4-2"] = {"P4": -bD,
-                     "P3": Eps * bU,
-                     "P2": bP,
-                     "P1": bR}
+    payoffs["9-7-3-1"] = {"P4": (1-pW)*bl-pW*cW,
+                     "P3": (1-pW)*bU,
+                     "P2": (1-pW)*bP-cP,
+                     "P1": (1-pW)*bR-cR}
+    payoffs["9-7-3-2"] = {"P4": (1-pW)*bl-pW*cW,
+                     "P3": (1-pW)*bU,
+                     "P2": (1-pW)*bP-cP,
+                     "P1": (1-pW)*bR}
+    payoffs["9-7-4-1"] = {"P4": (1-pW)*bl-pW*cW,
+                     "P3": pW*Eps * bU,
+                     "P2": pW*(bP-u),
+                     "P1": pW*(bR+b_fo-v)-cR}
+    payoffs["9-7-4-2"] = {"P4": (1-pW)*bl-pW*cW,
+                     "P3": pW*Eps * bU,
+                     "P2": pW*bP,
+                     "P1": pW*bR}
     payoffs["9-6-3-1"] = {"P4": 0,
                      "P3": 0,
                      "P2": -cP,
-                     "P1": bR-cR}
+                     "P1": -cR}
     payoffs["9-6-3-2"] = {"P4": 0,
                      "P3": 0,
                      "P2": -cP,
