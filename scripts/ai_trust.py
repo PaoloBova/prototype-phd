@@ -8,11 +8,17 @@ import prototype_phd.utils as utils
 
 simulation_id, current_commit, data_dir, plots_dir = data_utils.setup_project()
 
-params = {**models.build_ai_trust(Eps={"start": -1, "stop": 1, "step": 0.1},
+params = {
+          **models.build_ai_trust(Eps={"start": -1, "stop": 1, "step": 0.1},
                                   β=1,
                                   cR=0.5,
                                   strategy_set=["N-C-C", "N-C-D", "N-D-C", "N-D-D", "CT-C-C", "CT-C-D", "CT-D-C", "CT-D-D"],
                            ),
+          # **models.build_ai_trust(Eps=[-0.1, 0.2],
+          #                         cR=[0.5, 5],
+          #                         b_fo=[0, 5, 10, 15, 20],
+          #                         strategy_set=["N-C-C", "N-C-D", "N-D-C", "N-D-D", "CT-C-C", "CT-C-D", "CT-D-C", "CT-D-D"]
+          #                  ),
          "simulation_id": simulation_id,
           "commit": current_commit,
          "dispatch-type": 'multiple-populations',
@@ -21,7 +27,7 @@ params = {**models.build_ai_trust(Eps={"start": -1, "stop": 1, "step": 0.1},
           "allowed_sectors": {"P3": ["S3"],
                               "P2": ["S2"],
                               "P1": ["S1"], },
-          "sector_strategies": {"S3": [6, 7],
+          "sector_strategies": {"S3": [5, 6],
                                 "S2": [3, 4],
                                 "S1": [1, 2], },
           }
