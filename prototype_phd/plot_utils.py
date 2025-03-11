@@ -416,6 +416,7 @@ def plot_strategy_distribution(data, # The dataset containing data on parameters
                                stacked=True, # Whether to stack the lines and shade them in
                                cmap=plt.colormaps["tab20"],
                                # cmap=["red", "brown", "orange", "lightblue", "pink", "green", "mediumblue", "black"],
+                               y_label='Frequency', # the y-axis label
                                ) -> None:
     """Plot the strategy distribution as we vary `x`."""
     
@@ -444,7 +445,7 @@ def plot_strategy_distribution(data, # The dataset containing data on parameters
         ax.legend(loc='upper left')
     ax.set_title(title)
     ax.set_xlabel(x_label)
-    ax.set_ylabel('Proportion')
+    ax.set_ylabel(y_label)
 
     # Add threshold boundaries to convey dilemma region
     if thresholds!=None:        
