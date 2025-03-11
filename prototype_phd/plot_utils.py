@@ -415,8 +415,11 @@ def plot_strategy_distribution(data, # The dataset containing data on parameters
                                            "threshold_risk_dominant_safety"], # A list of threshold names in data
                                stacked=True, # Whether to stack the lines and shade them in
                                cmap=plt.colormaps["tab20"],
+                               # cmap=["red", "brown", "orange", "lightblue", "pink", "green", "mediumblue", "black"],
                                ) -> None:
     """Plot the strategy distribution as we vary `x`."""
+    
+    
 
     if strategy_state_mapping!=None:
         recurrent_states = [strategy_state_mapping[strategy]
@@ -428,7 +431,7 @@ def plot_strategy_distribution(data, # The dataset containing data on parameters
         ax.stackplot(data[x],
                     [data[state + "_frequency"] for state in recurrent_states],
                     labels=strategy_set,
-                    colors=[cmap(i) for i in range(cmap.N)],
+                    colors=[c for c in cmap],
                     alpha=0.8)
         ax.legend(loc='upper left')
     else:
@@ -437,7 +440,7 @@ def plot_strategy_distribution(data, # The dataset containing data on parameters
             ax.plot(data[x],
                     data[state + "_frequency"],
                     label=strategy_set[i],
-                    color=cmap(i))
+                    color=cmap[i])
         ax.legend(loc='upper left')
     ax.set_title(title)
     ax.set_xlabel(x_label)
