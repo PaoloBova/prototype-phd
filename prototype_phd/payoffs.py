@@ -1988,7 +1988,283 @@ def build_payoffs(models):
    
     return {**models, "payoffs": payoffs}
 
+@method(build_payoffs, "ai-trust-media-investigate-devs")
+def build_payoffs(models):
+    """
+    Payoff matrix for the new model.
+    
+    Strategy IDs:
+      P1 (Regulators): C = 1, D = 2
+      P2 (Creators):    C = 3, D = 4
+      P3: (Users):        CT = 5, D = 6
+      P4: (Commentariat)       C = 8, D = 9
+      
+    Payoff keys are formatted as:
+      "{P4_strategy}-{P3_strategy}-{P2_strategy}-{P1_strategy}"
+    
+    The payoff table rows (with actions in order: Com, U, Cr, R) are:
+    
+      1. C, CT, C, C   -> key "8-5-3-1"
+         Payoffs:  b_I - c_I,    b_U,   b_P - c_P,    b_R - c_R
+      2. C, CT, C, D   -> key "8-5-3-2"
+         Payoffs:  b_I - c_I,    b_U,   b_P - c_P,    b_R
+      3. C, CT, D, C   -> key "8-5-4-1"
+         Payoffs:  b_I - c_I,    0,   0,           -c_R
+      4. C, CT, D, D   -> key "8-5-4-2"
+         Payoffs:  b_I - c_I,    0,   0,            0
+      5. C, N,  C, C   -> key "8-6-3-1"
+         Payoffs: -c_I,         0,    -c_P,        -c_R
+      6. C, N,  C, D   -> key "8-6-3-2"
+         Payoffs: -c_I,         0,    -c_P,         0
+      7. C, N,  D, C   -> key "8-6-4-1"
+         Payoffs: -c_I,         0,     0,          -c_R
+      8. C, N,  D, D   -> key "8-6-4-2"
+         Payoffs: -c_I,         0,     0,           0
+      9. D, CT, C, C   -> key "9-5-3-1"
+         Payoffs: (1-pW)b_I - pWcW,  (1-pW)b_U,  (1-pW)b_P - c_P,  (1-pW)b_R - c_R
+     10. D, CT, C, D   -> key "9-5-3-2"
+         Payoffs: (1-pW)b_I - pWcW,  (1-pW)b_U,  (1-pW)b_P - c_P,  (1-pW)b_R
+     11. D, CT, D, C   -> key "9-5-4-1"
+         Payoffs: (1-pW)b_I - pWcW,  pWε·b_U,  pW(b_P - u),  pW(b_R + b_fo - v) - c_R
+     12. D, CT, D, D   -> key "9-5-4-2"
+         Payoffs: (1-pW)b_I - pWcW,  pWε·b_U,  pWb_P,       pWb_R
+     13. D, N,  C, C   -> key "9-6-3-1"
+         Payoffs:  0, 0, -c_P, -c_R
+     14. D, N,  C, D   -> key "9-6-3-2"
+         Payoffs:  0, 0, -c_P, 0
+     15. D, N,  D, C   -> key "9-6-4-1"
+         Payoffs:  0, 0, 0, -c_R
+     16. D, N,  D, D   -> key "9-6-4-2"
+         Payoffs:  0, 0, 0, 0
+    """
+    # Get all required parameters from models.
+    bI, cI, bU, bP, cP, bR, cR = [models[k] for k in ["bI", "cI", "bU", "bP", "cP", "bR", "cR"]]
+    pW, cW = [models[k] for k in ["pW", "cW"]]
+    eps = models["Eps"]  # epsilon
+    u = models["u"]
+    b_fo = models["b_fo"]
+    v = models["v"]
+    
+    payoffs = {}
+    # Row 1: C, CT, C, C -> key "8-5-3-1"
+    payoffs["8-5-3-1"] = {"P4": bI - cI,
+                          "P3": bU,
+                          "P2": bP - cP,
+                          "P1": bR - cR}
+    # Row 2: C, CT, C, D -> key "8-5-3-2"
+    payoffs["8-5-3-2"] = {"P4": bI - cI,
+                          "P3": bU,
+                          "P2": bP - cP,
+                          "P1": bR}
+    # Row 3: C, CT, D, C -> key "8-5-4-1"
+    payoffs["8-5-4-1"] = {"P4": bI - cI,
+                          "P3": 0,
+                          "P2": 0,
+                          "P1": -cR}
+    # Row 4: C, CT, D, D -> key "8-5-4-2"
+    payoffs["8-5-4-2"] = {"P4": bI - cI,
+                          "P3": 0,
+                          "P2": 0,
+                          "P1": 0}
+    # Row 5: C, N, C, C -> key "8-6-3-1"
+    payoffs["8-6-3-1"] = {"P4": -cI,
+                          "P3": 0,
+                          "P2": -cP,
+                          "P1": -cR}
+    # Row 6: C, N, C, D -> key "8-6-3-2"
+    payoffs["8-6-3-2"] = {"P4": -cI,
+                          "P3": 0,
+                          "P2": -cP,
+                          "P1": 0}
+    # Row 7: C, N, D, C -> key "8-6-4-1"
+    payoffs["8-6-4-1"] = {"P4": -cI,
+                          "P3": 0,
+                          "P2": 0,
+                          "P1": -cR}
+    # Row 8: C, N, D, D -> key "8-6-4-2"
+    payoffs["8-6-4-2"] = {"P4": -cI,
+                          "P3": 0,
+                          "P2": 0,
+                          "P1": 0}
+    # Row 9: D, CT, C, C -> key "9-5-3-1"
+    payoffs["9-5-3-1"] = {"P4": (1 - pW)*bI - pW*cW,
+                          "P3": (1 - pW)*bU,
+                          "P2": (1 - pW)*bP - cP,
+                          "P1": (1 - pW)*bR - cR}
+    # Row 10: D, CT, C, D -> key "9-5-3-2"
+    payoffs["9-5-3-2"] = {"P4": (1 - pW)*bI - pW*cW,
+                          "P3": (1 - pW)*bU,
+                          "P2": (1 - pW)*bP - cP,
+                          "P1": (1 - pW)*bR}
+    # Row 11: D, CT, D, C -> key "9-5-4-1"
+    payoffs["9-5-4-1"] = {"P4": (1 - pW)*bI - pW*cW,
+                          "P3": pW * eps * bU,
+                          "P2": pW * (bP - u),
+                          "P1": pW * (bR + b_fo - v) - cR}
+    # Row 12: D, CT, D, D -> key "9-5-4-2"
+    payoffs["9-5-4-2"] = {"P4": (1 - pW)*bI - pW*cW,
+                          "P3": pW * eps * bU,
+                          "P2": pW * bP,
+                          "P1": pW * bR}
+    # Row 13: D, N, C, C -> key "9-6-3-1"
+    payoffs["9-6-3-1"] = {"P4": 0,
+                          "P3": 0,
+                          "P2": -cP,
+                          "P1": -cR}
+    # Row 14: D, N, C, D -> key "9-6-3-2"
+    payoffs["9-6-3-2"] = {"P4": 0,
+                          "P3": 0,
+                          "P2": -cP,
+                          "P1": 0}
+    # Row 15: D, N, D, C -> key "9-6-4-1"
+    payoffs["9-6-4-1"] = {"P4": 0,
+                          "P3": 0,
+                          "P2": 0,
+                          "P1": -cR}
+    # Row 16: D, N, D, D -> key "9-6-4-2"
+    payoffs["9-6-4-2"] = {"P4": 0,
+                          "P3": 0,
+                          "P2": 0,
+                          "P1": 0}
 
+    return {**models, "payoffs": payoffs}
 
+@method(build_payoffs, "ai-trust-media-investigate-regulators")
+def build_payoffs(models):
+    """
+    Payoff matrix for the Investigate Regulators model.
+    
+    Strategy IDs:
+      P1 (Regulators):   C = 1, D = 2
+      P2 (Creators):      C = 3, D = 4
+      P3 (Users):         CT = 5, D = 6
+      P4 (Commentariat):  C = 8, D = 9
+    
+    Payoff keys are formatted as:
+      "{P4_strategy}-{P3_strategy}-{P2_strategy}-{P1_strategy}"
+    
+    The payoff table rows (Actions in order: Com, U, Cr, R):
+    
+      1. C, CT, C, C   -> key "8-5-3-1"
+         Payoffs:  bI - cI,         bU,       bP - cP,      bR - cR
+      2. C, CT, C, D   -> key "8-5-3-2"
+         Payoffs:  bI - cI,         0,        -cP,          0
+      3. C, CT, D, C   -> key "8-5-4-1"
+         Payoffs:  bI - cI,         eps * bU, bP - u,       bR - cR - v + b_fo
+      4. C, CT, D, D   -> key "8-5-4-2"
+         Payoffs:  bI - cI,         0,        0,            0
+      5. C, N,  C, C   -> key "8-6-3-1"
+         Payoffs: -cI,              0,       -cP,          -cR
+      6. C, N,  C, D   -> key "8-6-3-2"
+         Payoffs: -cI,              0,       -cP,          0
+      7. C, N,  D, C   -> key "8-6-4-1"
+         Payoffs: -cI,              0,        0,           -cR
+      8. C, N,  D, D   -> key "8-6-4-2"
+         Payoffs: -cI,              0,        0,            0
+      9. D, CT, C, C   -> key "9-5-3-1"
+         Payoffs: (1-pW)*bI - pW*cW, (1-pW)*bU, (1-pW)*bP - cP, (1-pW)*bR - cR
+     10. D, CT, C, D   -> key "9-5-3-2"
+         Payoffs: (1-pW)*bI - pW*cW, pW*bU,     pW*bP - cP,   pW*bR
+     11. D, CT, D, C   -> key "9-5-4-1"
+         Payoffs: (1-pW)*bI - pW*cW, (1-pW)*eps*bU, (1-pW)*(bP - u), (bR - cR + b_fo - v)*(1-pW) - pW*cR
+     12. D, CT, D, D   -> key "9-5-4-2"
+         Payoffs: (1-pW)*bI - pW*cW, pW*eps*bU,  pW*bP,         pW*bR
+     13. D, N,  C, C   -> key "9-6-3-1"
+         Payoffs:  0,              0,       -cP,          -cR
+     14. D, N,  C, D   -> key "9-6-3-2"
+         Payoffs:  0,              0,       -cP,           0
+     15. D, N,  D, C   -> key "9-6-4-1"
+         Payoffs:  0,              0,        0,           -cR
+     16. D, N,  D, D   -> key "9-6-4-2"
+         Payoffs:  0,              0,        0,            0
+    """
+    bI, cI, bU, bP, cP, bR, cR = [models[k] for k in ["bI", "cI", "bU", "bP", "cP", "bR", "cR"]]
+    pW, cW = [models[k] for k in ["pW", "cW"]]
+    eps = models["Eps"]
+    u = models["u"]
+    b_fo = models["b_fo"]
+    v = models["v"]
 
+    payoffs = {}
+    # Row 1: C, CT, C, C --> "8-5-3-1"
+    payoffs["8-5-3-1"] = {"P4": bI - cI,
+                          "P3": bU,
+                          "P2": bP - cP,
+                          "P1": bR - cR}
+    # Row 2: C, CT, C, D --> "8-5-3-2"
+    payoffs["8-5-3-2"] = {"P4": bI - cI,
+                          "P3": 0,
+                          "P2": -cP,
+                          "P1": 0}
+    # Row 3: C, CT, D, C --> "8-5-4-1"
+    payoffs["8-5-4-1"] = {"P4": bI - cI,
+                          "P3": eps * bU,
+                          "P2": bP - u,
+                          "P1": bR - cR - v + b_fo}
+    # Row 4: C, CT, D, D --> "8-5-4-2"
+    payoffs["8-5-4-2"] = {"P4": bI - cI,
+                          "P3": 0,
+                          "P2": 0,
+                          "P1": 0}
+    # Row 5: C, N, C, C --> "8-6-3-1"
+    payoffs["8-6-3-1"] = {"P4": -cI,
+                          "P3": 0,
+                          "P2": -cP,
+                          "P1": -cR}
+    # Row 6: C, N, C, D --> "8-6-3-2"
+    payoffs["8-6-3-2"] = {"P4": -cI,
+                          "P3": 0,
+                          "P2": -cP,
+                          "P1": 0}
+    # Row 7: C, N, D, C --> "8-6-4-1"
+    payoffs["8-6-4-1"] = {"P4": -cI,
+                          "P3": 0,
+                          "P2": 0,
+                          "P1": -cR}
+    # Row 8: C, N, D, D --> "8-6-4-2"
+    payoffs["8-6-4-2"] = {"P4": -cI,
+                          "P3": 0,
+                          "P2": 0,
+                          "P1": 0}
+    # Row 9: D, CT, C, C --> "9-5-3-1"
+    payoffs["9-5-3-1"] = {"P4": (1 - pW)*bI - pW*cW,
+                          "P3": (1 - pW)*bU,
+                          "P2": (1 - pW)*bP - cP,
+                          "P1": (1 - pW)*bR - cR}
+    # Row 10: D, CT, C, D --> "9-5-3-2"
+    payoffs["9-5-3-2"] = {"P4": (1 - pW)*bI - pW*cW,
+                          "P3": pW * bU,
+                          "P2": pW * bP - cP,
+                          "P1": pW * bR}
+    # Row 11: D, CT, D, C --> "9-5-4-1"
+    payoffs["9-5-4-1"] = {"P4": (1 - pW)*bI - pW*cW,
+                          "P3": (1 - pW)*eps * bU,
+                          "P2": (1 - pW)*(bP - u),
+                          "P1": (bR - cR + b_fo - v)*(1 - pW) - pW*cR}
+    # Row 12: D, CT, D, D --> "9-5-4-2"
+    payoffs["9-5-4-2"] = {"P4": (1 - pW)*bI - pW*cW,
+                          "P3": pW * eps * bU,
+                          "P2": pW * bP,
+                          "P1": pW * bR}
+    # Row 13: D, N, C, C --> "9-6-3-1"
+    payoffs["9-6-3-1"] = {"P4": 0,
+                          "P3": 0,
+                          "P2": -cP,
+                          "P1": -cR}
+    # Row 14: D, N, C, D --> "9-6-3-2"
+    payoffs["9-6-3-2"] = {"P4": 0,
+                          "P3": 0,
+                          "P2": -cP,
+                          "P1": 0}
+    # Row 15: D, N, D, C --> "9-6-4-1"
+    payoffs["9-6-4-1"] = {"P4": 0,
+                          "P3": 0,
+                          "P2": 0,
+                          "P1": -cR}
+    # Row 16: D, N, D, D --> "9-6-4-2"
+    payoffs["9-6-4-2"] = {"P4": 0,
+                          "P3": 0,
+                          "P2": 0,
+                          "P1": 0}
 
+    return {**models, "payoffs": payoffs}
