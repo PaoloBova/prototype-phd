@@ -414,7 +414,7 @@ def plot_strategy_distribution(data, # The dataset containing data on parameters
                                thresholds=["threshold_society_prefers_safety",
                                            "threshold_risk_dominant_safety"], # A list of threshold names in data
                                stacked=True, # Whether to stack the lines and shade them in
-                               cmap=plt.colormaps["tab10"],
+                               cmap=plt.colormaps["tab20"],
                                ) -> None:
     """Plot the strategy distribution as we vary `x`."""
 
