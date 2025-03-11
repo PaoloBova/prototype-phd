@@ -1917,7 +1917,7 @@ def build_payoffs(models):
 def build_payoffs(models):
     """Payoff matrix for the AI Trust game."""
 
-    names1 = ["bl", "cl", "cW", "pW", "bU", "bP", "cP", "Eps", "u", "cR", "bR", "v", "b_fo"]
+    names1 = ["bI", "cI", "cW", "pW", "bU", "bP", "cP", "Eps", "u", "cR", "bR", "v", "b_fo"]
     bI, cI, cW, pW, bU, bP, cP, Eps, u, cR, bR, v, b_fo = [models[k] for k in names1]
    
     payoffs = {}
