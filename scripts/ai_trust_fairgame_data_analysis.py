@@ -274,53 +274,6 @@ def add_indices_to_df(df, sim_mapping):
 
     return df
 
-# TODO: Refactor so that a weight_id_mapping_fn is unneccesary.
-def get_sim_results(params, configs_df, params_df, weight_id_mapping_fn):
-
-    sim_results = []
-    for d in params:
-        for k,v in d.items():
-            if isinstance(v, list):
-                d[k] = numpy.array(v)
-        results = utils.thread_macro(d,
-                            model_utils.create_profiles,
-                            model_utils.apply_profile_filters,
-                            payoffs.build_payoffs,
-                            methods_egt.build_transition_matrix,
-                            methods_egt.find_ergodic_distribution,
-                            )
-        
-        weight_id_mapping = weight_id_mapping_fn(results)
-
-        # Convert nested payoffs to a dataframe.
-        data = {}
-        # Make sure to filter out any payoffs which aren't relevant so that the
-        # weight_id_mapping works as intended
-        # Filter the result_payoffs keys for only those relevant to the sector_strategies
-        sector_strategies = results["sector_strategies"]
-        result_payoffs = results["payoffs"]
-        result_payoffs = {k: v for k, v in result_payoffs.items()
-                        if all([s in sector_strategies[f"S{i+1}"]
-                                for i, s in enumerate(utils.string_to_tuple(k))])}
-        for combination, v in result_payoffs.items():
-            for player, payoff in v.items():
-                weight_id = weight_id_mapping[combination][player]
-                weight_name = f"payoffMatrix_weights_weight_{weight_id}_compare"
-                data[weight_name] = payoff
-        for i, v in enumerate(results["ergodic"].T):
-            data[f"combination_{i}_frequency"] = v
-        df = pandas.DataFrame(data)
-        df["simulation_id"] = d["simulation_id"]
-        df["config_index"] = d["config_index"]
-        sim_results.append(df)
-
-    sim_df = pandas.concat(sim_results).reset_index(drop=True)
-
-    sim_df = sim_df.merge(params_df, on=["simulation_id", "config_index"])
-    sim_df = sim_df.merge(configs_df, on=["simulation_id", "config_index"])
-    
-    return sim_df
-
 def consistency_check1(df):
     """Check that the scores for each agent match the scores they should receive according to the weight
     associated with the strategy profile played."""
@@ -461,6 +414,53 @@ def compute_strategy_frequencies(df, recurrent_states):
                     for v in v.keys()]
     
     return df, strat_states
+
+# TODO: Refactor so that a weight_id_mapping_fn is unneccesary.
+def get_sim_results(params, configs_df, params_df, weight_id_mapping_fn):
+
+    sim_results = []
+    for d in params:
+        for k,v in d.items():
+            if isinstance(v, list):
+                d[k] = numpy.array(v)
+        results = utils.thread_macro(d,
+                            model_utils.create_profiles,
+                            model_utils.apply_profile_filters,
+                            payoffs.build_payoffs,
+                            methods_egt.build_transition_matrix,
+                            methods_egt.find_ergodic_distribution,
+                            )
+        
+        weight_id_mapping = weight_id_mapping_fn(results)
+
+        # Convert nested payoffs to a dataframe.
+        data = {}
+        # Make sure to filter out any payoffs which aren't relevant so that the
+        # weight_id_mapping works as intended
+        # Filter the result_payoffs keys for only those relevant to the sector_strategies
+        sector_strategies = results["sector_strategies"]
+        result_payoffs = results["payoffs"]
+        result_payoffs = {k: v for k, v in result_payoffs.items()
+                        if all([s in sector_strategies[f"S{i+1}"]
+                                for i, s in enumerate(utils.string_to_tuple(k))])}
+        for combination, v in result_payoffs.items():
+            for player, payoff in v.items():
+                weight_id = weight_id_mapping[combination][player]
+                weight_name = f"payoffMatrix_weights_weight_{weight_id}_compare"
+                data[weight_name] = payoff
+        for i, v in enumerate(results["ergodic"].T):
+            data[f"combination_{i}_frequency"] = v
+        df = pandas.DataFrame(data)
+        df["simulation_id"] = d["simulation_id"]
+        df["config_index"] = d["config_index"]
+        sim_results.append(df)
+
+    sim_df = pandas.concat(sim_results).reset_index(drop=True)
+
+    sim_df = sim_df.merge(params_df, on=["simulation_id", "config_index"])
+    sim_df = sim_df.merge(configs_df, on=["simulation_id", "config_index"])
+    
+    return sim_df
 
 # TODO: Make sure to systematically go through all relevant values represented
 # as data below.
