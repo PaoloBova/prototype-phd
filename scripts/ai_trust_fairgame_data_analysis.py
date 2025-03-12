@@ -503,13 +503,13 @@ strategy_id_mapping = {"regulator": {"Option A": 1, "Option B": 2, "Option C": 2
                     "user": {"Option A": 5, "Option B": 6, "Option C": 7}}
 
 # Unfortunately, we always have to take care to specify the strategy set.
-# strategy_set = ["T-C-C", "T-C-D", "T-D-C", "T-D-D",
+# state_labels = ["T-C-C", "T-C-D", "T-D-C", "T-D-D",
 #                 "N-C-C", "N-C-D", "N-D-C", "N-D-D"]
 # recurrent_states = ['5-3-1', '5-3-2', '5-4-1', '5-4-2', '6-3-1', '6-3-2', '6-4-1', '6-4-2']
-strategy_set = ["CT-C-C", "CT-C-D", "CT-D-C", "CT-D-D",
+state_labels = ["CT-C-C", "CT-C-D", "CT-D-C", "CT-D-D",
                 "N-C-C", "N-C-D", "N-D-C", "N-D-D",]
 recurrent_states = ['7-3-1', '7-3-2', '7-4-1', '7-4-2', '6-3-1', '6-3-2', '6-4-1', '6-4-2']
-strategy_state_mapping = dict(zip(strategy_set, recurrent_states))
+strategy_state_mapping = dict(zip(state_labels, recurrent_states))
 
 
 change_personality_for = "developer"
@@ -587,13 +587,13 @@ if create_sim_df:
 # Plots
 
 def plot_strategy_distributions(df,
-                                strategy_set,
+                                state_labels,
                                 strategy_state_mapping,
                                 filename_stub=""):
     """Plot the distribution of strategies of the given df for a harcoded set of parameters."""
     
     plot1 = plot_utils.plot_strategy_distribution(df[(df["cR"] == 0.5) & (df["Eps"] == -0.1)],
-                            strategy_set,
+                            state_labels,
                             x="b_fo",
                             x_label="b_fo",
                             title="Eps = -0.1",
@@ -602,7 +602,7 @@ def plot_strategy_distributions(df,
                             strategy_state_mapping=strategy_state_mapping,
                             )
     plot2 = plot_utils.plot_strategy_distribution(df[(df["cR"] == 0.5) & (df["Eps"] == 0.2)],
-                            strategy_set,
+                            state_labels,
                             x="b_fo",
                             x_label="b_fo",
                             title="Eps = 0.2",
@@ -611,7 +611,7 @@ def plot_strategy_distributions(df,
                             strategy_state_mapping=strategy_state_mapping,
                             )
     plot3 = plot_utils.plot_strategy_distribution(df[(df["cR"] == 5) & (df["Eps"] == -0.1)],
-                            strategy_set,
+                            state_labels,
                             x="b_fo",
                             x_label="b_fo",
                             title="Eps = -0.1",
@@ -620,7 +620,7 @@ def plot_strategy_distributions(df,
                             strategy_state_mapping=strategy_state_mapping,
                             )
     plot4 = plot_utils.plot_strategy_distribution(df[(df["cR"] == 5) & (df["Eps"] == 0.2)],
-                            strategy_set,
+                            state_labels,
                             x="b_fo",
                             x_label="b_fo",
                             title="Eps = 0.2",
@@ -639,13 +639,13 @@ def plot_strategy_distributions(df,
 
 
 def plot_time_series_strategies(df,
-                                strategy_set,
+                                state_labels,
                                 strategy_state_mapping,
                                 filename_stub=""):
     """Plot a time series of strategies of the given df for a harcoded set of parameters."""
     
     plot1 = plot_utils.plot_strategy_distribution(df[(df["cR"] == 0.5) & (df["Eps"] == -0.1)],
-                            strategy_set,
+                            state_labels,
                             x="round",
                             x_label="Round",
                             title="Eps = -0.1",
@@ -654,7 +654,7 @@ def plot_time_series_strategies(df,
                             strategy_state_mapping=strategy_state_mapping,
                             )
     plot2 = plot_utils.plot_strategy_distribution(df[(df["cR"] == 0.5) & (df["Eps"] == 0.2)],
-                            strategy_set,
+                            state_labels,
                             x="round",
                             x_label="Round",
                             title="Eps = 0.2",
@@ -663,7 +663,7 @@ def plot_time_series_strategies(df,
                             strategy_state_mapping=strategy_state_mapping,
                             )
     plot3 = plot_utils.plot_strategy_distribution(df[(df["cR"] == 5) & (df["Eps"] == -0.1)],
-                            strategy_set,
+                            state_labels,
                             x="round",
                             x_label="Round",
                             title="Eps = -0.1",
@@ -672,7 +672,7 @@ def plot_time_series_strategies(df,
                             strategy_state_mapping=strategy_state_mapping,
                             )
     plot4 = plot_utils.plot_strategy_distribution(df[(df["cR"] == 5) & (df["Eps"] == 0.2)],
-                            strategy_set,
+                            state_labels,
                             x="round",
                             x_label="Round",
                             title="Eps = 0.2",
@@ -700,7 +700,7 @@ df = observed_data[observed_data["simulation_id"] == sim_main]
 
 if game_type == "one_shot_game":
     
-    plots = plot_strategy_distributions(df, strategy_set, strategy_state_mapping, filename_stub="one_shot")
+    plots = plot_strategy_distributions(df, state_labels, strategy_state_mapping, filename_stub="one_shot")
     plot_save_id = data_utils.create_id()
     data_utils.save_plots(plots, plots_dir=f"plots/fairgame_replication_plots/one_shot_games/{plot_save_id}")
 
@@ -710,21 +710,21 @@ if game_type == "repeated_game":
     # df (the observed_data) has columns for the frequency of each strategy profile
     # (also called recurrent states) and columns for the frequency of each
     # player's strategy (across recurrent states). We can specify which set of
-    # columns to plot by specifying either strategy_set (which contains the labels of the
+    # columns to plot by specifying either state_labels (which contains the labels of the
     # recurrent states; yes, it's a bit of a misnomer) or strat_set_compact (for the player strategies).
-    # TODO: perhaps relable strategy_set to recurrent_state_labels to avoid
+    # TODO: perhaps relable state_labels to recurrent_state_labels to avoid
     # confusion in future.
     
     # First plot the final round frequencies for each state
     final_round = df["round"].max()
     final_round_df = final_round[final_round["round"] == final_round]
     # Note: assumes all games last the same number of rounds
-    plots = {**plots, **plot_strategy_distributions(df, strategy_set, strategy_state_mapping, strategy_state_mapping)}
+    plots = {**plots, **plot_strategy_distributions(df, state_labels, strategy_state_mapping, strategy_state_mapping)}
 
     # We then want to plot the average frequences across rounds
 
     df_avg = df.groupby(["simulation_id", "config_index"]).mean()
-    plots = {**plots, **plot_strategy_distributions(df_avg, strategy_set, strategy_state_mapping, filename_stub="average_round")}
+    plots = {**plots, **plot_strategy_distributions(df_avg, state_labels, strategy_state_mapping, filename_stub="average_round")}
     
     # Plot each player's final and average strategy frequencies across states
     plots = {**plots, **plot_strategy_distributions(final_round_df, strat_set_compact, filename_stub="player_strategy_frequencies_final")}
@@ -733,7 +733,7 @@ if game_type == "repeated_game":
     # Plot the strategy frequencies per round
     for round in range(final_round + 1):
         round_df = df[df["round"] == round]
-        plots = {**plots, **plot_strategy_distributions(round_df, strategy_set, strategy_state_mapping, filename_stub=f"round_{round}")}
+        plots = {**plots, **plot_strategy_distributions(round_df, state_labels, strategy_state_mapping, filename_stub=f"round_{round}")}
         plots = {**plots, **plot_strategy_distributions(round_df, strat_set_compact, filename_stub=f"player_strategy_frequencies_round_{round}")}
     
     # Plot a time series for each value of the config id
@@ -741,7 +741,7 @@ if game_type == "repeated_game":
         config_df = df[df["config_index"] == config_index]
         # Only b_fo changes when config_index changes, so that's all we add to the filename
         b_fo = config_df["b_fo"].unique()[0]
-        plots = {**plots, **plot_time_series_strategies(config_df, strategy_set, strategy_state_mapping, filename_stub=f"time_series_b_fo_{b_fo}")}
+        plots = {**plots, **plot_time_series_strategies(config_df, state_labels, strategy_state_mapping, filename_stub=f"time_series_b_fo_{b_fo}")}
         plots = {**plots, **plot_time_series_strategies(config_df, strat_set_compact, filename_stub=f"time_series_b_fo_{b_fo}")}
     
     plot_save_id = data_utils.create_id()
