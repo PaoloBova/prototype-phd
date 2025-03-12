@@ -108,8 +108,8 @@ params = {**models.build_ai_trust(Eps=[-0.1],
                                   b_fo=[5],
                                   cW=[0, 5, 10],
                                   pW=[0.5],
-                                  bl=[0, 5, 10],
-                                  cl=[0.5, 5],
+                                  bI=[0, 5, 10],
+                                  cI=[0.5, 5],
                            ),
           "strategy_set": ["C-T-C-C", "C-T-C-D", "C-T-D-C", "C-T-D-D",
                     "C-N-C-C", "C-N-C-D", "C-N-D-C", "C-N-D-D",
@@ -118,14 +118,14 @@ params = {**models.build_ai_trust(Eps=[-0.1],
           "simulation_id": simulation_id,
           "commit": current_commit,
           "dispatch-type": 'multiple-populations',
-          "payoffs_key": "ai-trust-v2",
+          "payoffs_key": "ai-trust-media-investigate-regulators",
           "Z": {"S4": 100, "S3": 100, "S2": 100, "S1": 100},
           "allowed_sectors": {"P4": ["S4"],
                               "P3": ["S3"],
                               "P2": ["S2"],
                               "P1": ["S1"], },
           "sector_strategies": {"S4": [8, 9],
-                                "S3": [6, 7],
+                                "S3": [5, 6],
                                 "S2": [3, 4],
                                 "S1": [1, 2], },
           }
@@ -141,7 +141,7 @@ strategy_dict = {"en": {"strategy1": "Option A",
                         }}
 strategy_mapping = {"1": "strategy1", "2": "strategy2",
                     "3": "strategy1", "4": "strategy2",
-                    "5": "strategy3", "6": "strategy2",
+                    "5": "strategy1", "6": "strategy2",
                     "7": "strategy1",
                     "8": "strategy1", "9": "strategy2"}
 
@@ -183,5 +183,5 @@ fairgame_configs = build_fairgame_configs({
 data_utils.save_data({"_params": params},   
                      data_dir=f"data/fairgame_configs/{simulation_id}")
 for idx, fairgame_config in enumerate(fairgame_configs):
-    data_utils.save_data({f"FAIRGAME_config_ai_trust_four_pop_{idx}": fairgame_config},
+    data_utils.save_data({f"FAIRGAME_config_ai_trust_four_pop_investigate_regulators_{idx}": fairgame_config},
                          data_dir=f"data/fairgame_configs/{simulation_id}")
