@@ -486,6 +486,357 @@ def get_sim_results(params, configs_df, params_df, weight_id_mapping_fn):
     
     return sim_df
 
+def run_data_analysis(args):
+    names = ["model_name", "game_type", "llm", "change_personality_for"]
+    names2 =   ["data_dir",
+                "plots_dir",
+                "input_to_dir_mapping",
+                "folder_to_sim_mapping"]
+    model_name, game_type, llm, change_personality_for = [args[k] for k in names]
+    data_dir, plots_dir, input_to_dir_mapping, folder_to_sim_mapping = [args[k] for k in names2]
+
+    # Our selection is based on the above variables
+    selection = f"{model_name}_{game_type}_{llm}_personality_{change_personality_for}"
+    external_data_dir_stub = "external_data/fairgame_data"
+    external_data_dir_suffix = input_to_dir_mapping[selection]
+    external_data_dir = f"{external_data_dir_stub}/{external_data_dir_suffix}"
+    sims = [folder_to_sim_mapping[external_data_dir_suffix]]
+    # Take care to specify the simulation we are analysing!
+    # Currently, we only have one simulation per directory of fairgame results
+    sim_main = sims[0]
+
+    # Note: All of the filenames for the fairgame results we are analyzing contain
+    # a v1 or v2 to refer to whether the Users use a trust or conditional trust
+    # strategy. This is not a system I want to use long term and it would have
+    # been much better to incude the sim_id itself in the filename or better yet
+    # within the results file somehow. But for now, we have to specify the mapping
+    # of both v1 and v2 to the sim_id we are analyzing. For now, this is always
+    # sim_main.
+    filename_sim_mappings = {"v1": sim_main, "v2": sim_main}
+
+    # Fairgame results confusingly only list the labels and not the strategy ids for
+    # what each player chooses. Even if they did use the strategy ids known to
+    # Fairgame, this would not be consistent with the strategy_ids used in this
+    # repo. Here is a model specific mapping from the labels to the strategy ids.
+    # Note: Sometimes, Option C is not used. I even plan to and have started to
+    # switch to using only options A and B and strategy ids 5 and 6 for users only
+    # when running the 4 population model
+    strategy_id_mapping = {"regulator": {"Option A": 1, "Option B": 2, "Option C": 2},
+                        "developer": {"Option A": 3, "Option B": 4, "Option C": 4},
+                        "user": {"Option A": 5, "Option B": 6, "Option C": 7}}
+
+    # Unfortunately, we need to specify the state labels and recurrent states
+    # because I didn't consistently add them correctly to the params.json files.
+    # Note: In future, enforcing correct creation of params.json files is better
+
+    if model_name.startswith("3pop"):
+        # for 3 populations, we might switch between models that use different
+        # state labels and recurrent_states
+        # With only 8 recurrent states, we should use the following colobar to be
+        # consistent with the original paper
+        cmap = ListedColormap(["red", "brown", "orange", "lightblue", "pink", "green", "mediumblue", "black"])
+        if "full_trust" in model_name:
+            state_labels = ["T-C-C", "T-C-D", "T-D-C", "T-D-D",
+                            "N-C-C", "N-C-D", "N-D-C", "N-D-D"]
+            recurrent_states = ['5-3-1', '5-3-2', '5-4-1', '5-4-2', '6-3-1', '6-3-2', '6-4-1', '6-4-2']
+        if "conditional_trust" in model_name:
+            state_labels = ["CT-C-C", "CT-C-D", "CT-D-C", "CT-D-D",
+                            "N-C-C", "N-C-D", "N-D-C", "N-D-D",]
+            recurrent_states = ['7-3-1', '7-3-2', '7-4-1', '7-4-2', '6-3-1', '6-3-2', '6-4-1', '6-4-2']
+        # Whether to create a sim_df and run the second consistency check.
+        # Must be false for the 4 population model.
+        create_sim_df = True
+    if model_name.startswith("4pop"):
+        # With 16 recurernt states, we need to use a different colormap
+        cmap = plt.colormaps["tab20"]
+        # for 4 populations, we only need one set of labels:
+        strategy_set=["C-T-C-C", "C-T-C-D", "C-T-D-C", "C-T-D-D",
+                        "C-N-C-C", "C-N-C-D", "C-N-D-C", "C-N-D-D",
+                        "D-CT-C-C", "D-CT-C-D", "D-CT-D-C", "D-CT-D-D",
+                        "D-N-C-C", "D-N-C-D", "D-N-D-C", "D-N-D-D"]
+        # Note: 7 is skipped to avoid confusion with the 3 population model
+        recurrent_states = ['8-5-3-1',
+        '8-5-3-2',
+        '8-5-4-1',
+        '8-5-4-2',
+        '8-6-3-1',
+        '8-6-3-2',
+        '8-6-4-1',
+        '8-6-4-2',
+        '9-5-3-1',
+        '9-5-3-2',
+        '9-5-4-1',
+        '9-5-4-2',
+        '9-6-3-1',
+        '9-6-3-2',
+        '9-6-4-1',
+        '9-6-4-2',]
+        # Whether to create a sim_df and run the second consistency check.
+        # Must be false for the 4 population model.
+        create_sim_df = False
+    strategy_state_mapping = dict(zip(state_labels, recurrent_states))
+
+    # ============================================
+    # Load and analyse the data as specified above
+
+    fairgame_data = load_fairgame_data({
+        "data_dir": data_dir,
+        "external_data_dir": external_data_dir,
+        "sims": sims
+    })
+
+    params = fairgame_data["params"]
+    params_df = fairgame_data["params_df"]
+    configs = fairgame_data["configs"]
+    configs_df = fairgame_data["configs_df"]
+    results = fairgame_data["results"]
+    results_df = fairgame_data["results_df"]
+
+    # Log whether the state labels and recurrent states specified in this file
+    # are consistent with those saved to params.json files.
+
+    # Note: In future, we will hopefully rename strategy_set to state_labels
+    # everywhere so that future simulation runs store that as the keyword in
+    # params.json files.
+    for p in params:
+        if "strategy_set" not in p:
+            continue
+        if p["strategy_set"] != state_labels:
+            print("State labels in params.json file do not match those specified in this file. Ignore if this is an intentional workaround on your part.")
+            print("state_labels in params.json file:", p["strategy_set"])
+            print("state_labels in this file:", state_labels)
+        if "recurrent_states" not in p:
+            continue
+        if p["recurrent_states"] != recurrent_states:
+            print("Recurrent states in params.json file do not match those specified in this file. Ignore if this is an intentional workaround on your part.")
+            print("recurrent_states in params.json file:", p["recurrent_states"])
+            print("recurrent_states in this file:", recurrent_states)
+
+    df_wide = results_df
+    df_tidy = results_to_tidy_dataframe(df_wide)
+    df_tidy = add_indices_to_df(df_tidy, filename_sim_mappings)
+
+    # We also need to check that the payoff matrix computed from the params.json file
+    # parameters gives the correct payoff weights. We then need to check that those
+    # parameters plus payoffs give the same observations under our model as we reported
+    # in the paper
+
+    # Note: Data processing code here assumes that all models have the same number
+    # of strategies
+
+    def build_weight_ids_model1(results):
+        """Build weight_id mapping for model 1 from the original paper."""
+        # Build weight_id mapping
+        weight_id_mapping = {}
+        i=1
+        # combinations are assumed to be inserted in order so both commands
+        # should give the same vector of combinations
+        combinations = list(results["payoffs"].keys())
+        # combinations = numpy.sort(list(results["payoffs"].keys()))
+        # Note: unfortunately, we have to assign different combinations to the same
+        # weight_id because of how Fairgame works. This makes this code incredibly
+        # brittle due to hardcoding. It will not work well if the combinations change.
+        for combination in combinations:
+            weight_id_mapping[combination] = {}
+            for player in ["P1", "P2", "P3"]:
+                weight_id = i
+                weight_id_mapping[combination][player] = weight_id
+                i+=1
+        for player in ["P1", "P2", "P3"]:
+            weight_id_mapping["7-3-1"][player] = weight_id_mapping["6-3-1"][player]
+            weight_id_mapping["7-3-2"][player] = weight_id_mapping["6-3-2"][player]
+            weight_id_mapping["7-4-1"][player] = weight_id_mapping["6-4-1"][player]
+            weight_id_mapping["7-4-2"][player] = weight_id_mapping["6-4-2"][player]
+        return weight_id_mapping
+
+    # TODO: Implement the following function for the 4 population models
+    # Only needed if we want to run the second consistency check
+    def build_weight_ids_model_four_pop(results):
+        return None
+
+    consistency_check1(df_tidy)
+
+    if create_sim_df:
+        sim_df = get_sim_results(params, configs_df, params_df, build_weight_ids_model1)
+        consistency_check2(configs_df, sim_df)
+
+    # ==================================================
+    # Plots
+
+    def plot_strategy_distributions(df,
+                                    state_labels,
+                                    strategy_state_mapping,
+                                    cmap=cmap,
+                                    filename_stub=""):
+        """Plot the distribution of strategies of the given df for a harcoded set of parameters."""
+        
+        plot1 = plot_utils.plot_strategy_distribution(df[(df["cR"] == 0.5) & (df["Eps"] == -0.1)],
+                                state_labels,
+                                x="b_fo",
+                                x_label="b_fo",
+                                title="Eps = -0.1",
+                                thresholds=None,
+                                stacked=False,
+                                strategy_state_mapping=strategy_state_mapping,
+                                cmap=cmap,
+                                )
+        plot2 = plot_utils.plot_strategy_distribution(df[(df["cR"] == 0.5) & (df["Eps"] == 0.2)],
+                                state_labels,
+                                x="b_fo",
+                                x_label="b_fo",
+                                title="Eps = 0.2",
+                                thresholds=None,
+                                stacked=False,
+                                strategy_state_mapping=strategy_state_mapping,
+                                cmap=cmap,
+                                )
+        plot3 = plot_utils.plot_strategy_distribution(df[(df["cR"] == 5) & (df["Eps"] == -0.1)],
+                                state_labels,
+                                x="b_fo",
+                                x_label="b_fo",
+                                title="Eps = -0.1",
+                                thresholds=None,
+                                stacked=False,
+                                strategy_state_mapping=strategy_state_mapping,
+                                cmap=cmap,
+                                )
+        plot4 = plot_utils.plot_strategy_distribution(df[(df["cR"] == 5) & (df["Eps"] == 0.2)],
+                                state_labels,
+                                x="b_fo",
+                                x_label="b_fo",
+                                title="Eps = 0.2",
+                                thresholds=None,
+                                stacked=False,
+                                strategy_state_mapping=strategy_state_mapping,
+                                cmap=cmap,
+                                )
+        
+        filename_start = f"llm_replication_{filename_stub}_llm_{llm}_{game_type}_personalities_{change_personality_for}_model_{model_name}"
+        plots = {f"{filename_start}_cr_{0.5}_eps_{-0.1}": plot1,
+                f"{filename_start}_cr_{0.5}_eps_{0.2}": plot2,
+                f"{filename_start}_cr_{5}_eps_{-0.1}": plot3,
+                f"{filename_start}_cr_{5}_eps_{0.2}": plot4}
+        
+        return plots
+
+
+    def plot_time_series_strategies(df,
+                                    state_labels,
+                                    strategy_state_mapping,
+                                    cmap=cmap,
+                                    filename_stub=""):
+        """Plot a time series of strategies of the given df for a harcoded set of parameters."""
+        
+        plot1 = plot_utils.plot_strategy_distribution(df[(df["cR"] == 0.5) & (df["Eps"] == -0.1)],
+                                state_labels,
+                                x="round",
+                                x_label="Round",
+                                title="Eps = -0.1",
+                                thresholds=None,
+                                stacked=False,
+                                strategy_state_mapping=strategy_state_mapping,
+                                cmap=cmap,
+                                )
+        plot2 = plot_utils.plot_strategy_distribution(df[(df["cR"] == 0.5) & (df["Eps"] == 0.2)],
+                                state_labels,
+                                x="round",
+                                x_label="Round",
+                                title="Eps = 0.2",
+                                thresholds=None,
+                                stacked=False,
+                                strategy_state_mapping=strategy_state_mapping,
+                                cmap=cmap,
+                                )
+        plot3 = plot_utils.plot_strategy_distribution(df[(df["cR"] == 5) & (df["Eps"] == -0.1)],
+                                state_labels,
+                                x="round",
+                                x_label="Round",
+                                title="Eps = -0.1",
+                                thresholds=None,
+                                stacked=False,
+                                strategy_state_mapping=strategy_state_mapping,
+                                cmap=cmap,
+                                )
+        plot4 = plot_utils.plot_strategy_distribution(df[(df["cR"] == 5) & (df["Eps"] == 0.2)],
+                                state_labels,
+                                x="round",
+                                x_label="Round",
+                                title="Eps = 0.2",
+                                thresholds=None,
+                                stacked=False,
+                                strategy_state_mapping=strategy_state_mapping,
+                                cmap=cmap,
+                                )
+        
+        filename_start = f"llm_replication_{filename_stub}_llm_{llm}_{game_type}_personalities_{change_personality_for}_model_{model_name}"
+        plots = {f"{filename_start}_cr_{0.5}_eps_{-0.1}": plot1,
+                f"{filename_start}_cr_{0.5}_eps_{0.2}": plot2,
+                f"{filename_start}_cr_{5}_eps_{-0.1}": plot3,
+                f"{filename_start}_cr_{5}_eps_{0.2}": plot4}
+        
+        return plots
+
+    observed_data, observed_profile_freq = df_to_observed_data(df_tidy, params_df, strategy_id_mapping)
+    for state in recurrent_states:
+        if f"{state}_frequency" not in observed_data.columns:
+            observed_data[f"{state}_frequency"] = 0
+    observed_data, states_labels_compact = compute_strategy_frequencies(observed_data, recurrent_states)
+    # For the compact states labels, we want to exclude the last strategy for each player because
+    # that information is redundant.
+
+    states_labels_compact = compact_strategy_labels(states_labels_compact)
+    # Ensure that only one set of simulation results is plotted at a time!
+    df = observed_data[observed_data["simulation_id"] == sim_main]
+
+    if game_type == "one_shot_game":
+        
+        plots = plot_strategy_distributions(df, state_labels, strategy_state_mapping, filename_stub="one_shot")
+        plot_save_id = data_utils.create_id()
+        data_utils.save_plots(plots, plots_dir=f"plots/fairgame_replication_plots/one_shot_games/{plot_save_id}")
+
+    if game_type == "repeated_game":
+        plots = {}
+        
+        # df (the observed_data) has columns for the frequency of each strategy profile
+        # (also called recurrent states) and columns for the frequency of each
+        # player's strategy (across recurrent states). We can specify which set of
+        # columns to plot by specifying either state_labels (which contains the labels of the
+        # recurrent states; yes, it's a bit of a misnomer) or states_labels_compact (for the player strategies).
+        # TODO: perhaps relable state_labels to recurrent_state_labels to avoid
+        # confusion in future.
+        
+        # First plot the final round frequencies for each state
+        final_round = df["round"].max()
+        final_round_df = final_round[final_round["round"] == final_round]
+        # Note: assumes all games last the same number of rounds
+        plots = {**plots, **plot_strategy_distributions(df, state_labels, strategy_state_mapping, strategy_state_mapping)}
+
+        # We then want to plot the average frequences across rounds
+
+        df_avg = df.groupby(["simulation_id", "config_index"]).mean()
+        plots = {**plots, **plot_strategy_distributions(df_avg, state_labels, strategy_state_mapping, filename_stub="average_round")}
+        
+        # Plot each player's final and average strategy frequencies across states
+        plots = {**plots, **plot_strategy_distributions(final_round_df, states_labels_compact, filename_stub="player_strategy_frequencies_final")}
+        plots = {**plots, **plot_strategy_distributions(df_avg, states_labels_compact, filename_stub="player_strategy_frequencies_average")}
+        
+        # Plot the strategy frequencies per round
+        for round in range(final_round + 1):
+            round_df = df[df["round"] == round]
+            plots = {**plots, **plot_strategy_distributions(round_df, state_labels, strategy_state_mapping, filename_stub=f"round_{round}")}
+            plots = {**plots, **plot_strategy_distributions(round_df, states_labels_compact, filename_stub=f"player_strategy_frequencies_round_{round}")}
+        
+        # Plot a time series for each value of the config id
+        for config_index in df["config_index"].unique():
+            config_df = df[df["config_index"] == config_index]
+            # Only b_fo changes when config_index changes, so that's all we add to the filename
+            b_fo = config_df["b_fo"].unique()[0]
+            plots = {**plots, **plot_time_series_strategies(config_df, state_labels, strategy_state_mapping, filename_stub=f"time_series_b_fo_{b_fo}")}
+            plots = {**plots, **plot_time_series_strategies(config_df, states_labels_compact, filename_stub=f"time_series_b_fo_{b_fo}")}
+        
+        plot_save_id = data_utils.create_id()
+        data_utils.save_plots(plots, plots_dir=f"plots/fairgame_replication_plots/repeated_games/{plot_save_id}")
+
 # Load fairgame data
 data_dir = "data"
 plots_dir = "plots"
@@ -535,368 +886,43 @@ input_to_dir_mapping = {
     "3pop_conditional_trust_one_shot_game_mistral_large_personality_none": "Fairgame_results/MistralLarge/V2/one_shot",
     "3pop_full_trust_repeated_game_mistral_large_personality_none": "Fairgame_results/MistralLarge/V1/repeated",
     "3pop_conditional_trust_repeated_game_mistral_large_personality_none": "Fairgame_results/MistralLarge/V2/repeated",
-    "3pop_full_trust_one_shot_game_gpt4o_personality_developer": "3p_with_perso/OpenAIGPT4o/20250311_developer_fix",
-    "3pop_full_trust_one_shot_game_gpt4o_personality_regulator": "3p_with_personality/OpenAIGPT4o/20250311_regulator_fix",
-    "3pop_full_trust_one_shot_game_gpt4o_personality_user": "3p_with_personality/OpenAIGPT4o/20250311_user_fix",
-    "3pop_full_trust_one_shot_game_mistral_large_personality_developer": "3p_with_personality/MistralLarge/20250311_developer_fix",
-    "3pop_full_trust_one_shot_game_mistral_large_personality_regulator": "3p_with_personality/MistralLarge/20250311_regulator_fix",
-    "3pop_full_trust_one_shot_game_mistral_large_personality_user": "3p_with_personality/MistralLarge/20250311_user_fix",
-    "4pop_v1_one_shot_game_gpt4o": "results_4p_v1/OpenAIGPT4o",
-    "4pop_v1_one_shot_game_mistral_large": "results_4p_v1/MistralLarge",
-    "4pop_v2_one_shot_game_gpt4o": "4p_v2_results/OpenAIGPT4o",
-    "4pop_v2_one_shot_game_mistral_large": "4p_v2_results/MistralLarge",
+    "3pop_conditional_trust_one_shot_game_gpt4o_personality_developer": "3p_with_perso/OpenAIGPT4o/20250311_developer_fix",
+    "3pop_conditional_trust_one_shot_game_gpt4o_personality_regulator": "3p_with_personality/OpenAIGPT4o/20250311_regulator_fix",
+    "3pop_conditional_trust_one_shot_game_gpt4o_personality_user": "3p_with_personality/OpenAIGPT4o/20250311_user_fix",
+    "3pop_conditional_trust_one_shot_game_mistral_large_personality_developer": "3p_with_personality/MistralLarge/20250311_developer_fix",
+    "3pop_conditional_trust_one_shot_game_mistral_large_personality_regulator": "3p_with_personality/MistralLarge/20250311_regulator_fix",
+    "3pop_conditional_trust_one_shot_game_mistral_large_personality_user": "3p_with_personality/MistralLarge/20250311_user_fix",
+    "4pop_v1_one_shot_game_gpt4o_personality_none": "results_4p_v1/OpenAIGPT4o",
+    "4pop_v1_one_shot_game_mistral_large_personality_none": "results_4p_v1/MistralLarge",
+    "4pop_v2_one_shot_game_gpt4o_personality_none": "4p_v2_results/OpenAIGPT4o",
+    "4pop_v2_one_shot_game_mistral_large_personality_none": "4p_v2_results/MistralLarge",
 }
 
 # Edit the following:
 # All possible values:
-# change_personality_for = ["none", "developer", "regulator", "user"]
-# model_name = ["3pop_full_trust", "3pop_conditional_trust", "4pop_v1", "4pop_v2"]
-# game_type = ["one_shot_game", "repeated_game"]
-# llm = ["gpt4o", "mistral_large"]
+set_change_personality_for = ["none", "developer", "regulator", "user"]
+set_model_name = ["3pop_full_trust", "3pop_conditional_trust", "4pop_v1", "4pop_v2"]
+set_game_type = ["one_shot_game", "repeated_game"]
+set_llm = ["gpt4o", "mistral_large"]
+# Constraints:
+# We only have results for the 3 population model with personality for the
+# conditional trust model and only for one-shot games.
+# We only have results for the 4 population model for one-shot games.
 
-change_personality_for = "none"
-model_name = "3pop_full_trust"
-game_type = "one_shot_game"
-llm = "gpt4o"
-
-# Our selection is based on the above variables
-selection = f"{model_name}_{game_type}_{llm}_personality_{change_personality_for}"
-external_data_dir_stub = "external_data/fairgame_data"
-external_data_dir_suffix = input_to_dir_mapping[selection]
-external_data_dir = f"{external_data_dir_stub}/{external_data_dir_suffix}"
-sims = [folder_to_sim_mapping[external_data_dir_suffix]]
-# Take care to specify the simulation we are analysing!
-# Currently, we only have one simulation per directory of fairgame results
-sim_main = sims[0]
-
-# Note: All of the filenames for the fairgame results we are analyzing contain
-# a v1 or v2 to refer to whether the Users use a trust or conditional trust
-# strategy. This is not a system I want to use long term and it would have
-# been much better to incude the sim_id itself in the filename or better yet
-# within the results file somehow. But for now, we have to specify the mapping
-# of both v1 and v2 to the sim_id we are analyzing. For now, this is always
-# sim_main.
-filename_sim_mappings = {"v1": sim_main, "v2": sim_main}
-
-# Fairgame results confusingly only list the labels and not the strategy ids for
-# what each player chooses. Even if they did use the strategy ids known to
-# Fairgame, this would not be consistent with the strategy_ids used in this
-# repo. Here is a model specific mapping from the labels to the strategy ids.
-# Note: Sometimes, Option C is not used. I even plan to and have started to
-# switch to using only options A and B and strategy ids 5 and 6 for users only
-# when running the 4 population model
-strategy_id_mapping = {"regulator": {"Option A": 1, "Option B": 2, "Option C": 2},
-                    "developer": {"Option A": 3, "Option B": 4, "Option C": 4},
-                    "user": {"Option A": 5, "Option B": 6, "Option C": 7}}
-
-# Unfortunately, we need to specify the state labels and recurrent states
-# because I didn't consistently add them correctly to the params.json files.
-# Note: In future, enforcing correct creation of params.json files is better
-
-if model_name.startswith("3pop"):
-    # for 3 populations, we might switch between models that use different
-    # state labels and recurrent_states
-    # With only 8 recurrent states, we should use the following colobar to be
-    # consistent with the original paper
-    cmap = ListedColormap(["red", "brown", "orange", "lightblue", "pink", "green", "mediumblue", "black"])
-    if "full_trust" in model_name:
-        state_labels = ["T-C-C", "T-C-D", "T-D-C", "T-D-D",
-                        "N-C-C", "N-C-D", "N-D-C", "N-D-D"]
-        recurrent_states = ['5-3-1', '5-3-2', '5-4-1', '5-4-2', '6-3-1', '6-3-2', '6-4-1', '6-4-2']
-    if "conditional_trust" in model_name:
-        state_labels = ["CT-C-C", "CT-C-D", "CT-D-C", "CT-D-D",
-                        "N-C-C", "N-C-D", "N-D-C", "N-D-D",]
-        recurrent_states = ['7-3-1', '7-3-2', '7-4-1', '7-4-2', '6-3-1', '6-3-2', '6-4-1', '6-4-2']
-    # Whether to create a sim_df and run the second consistency check.
-    # Must be false for the 4 population model.
-    create_sim_df = True
-if model_name.startswith("4pop"):
-    # With 16 recurernt states, we need to use a different colormap
-    cmap = plt.colormaps["tab20"]
-    # for 4 populations, we only need one set of labels:
-    strategy_set=["C-T-C-C", "C-T-C-D", "C-T-D-C", "C-T-D-D",
-                    "C-N-C-C", "C-N-C-D", "C-N-D-C", "C-N-D-D",
-                    "D-CT-C-C", "D-CT-C-D", "D-CT-D-C", "D-CT-D-D",
-                    "D-N-C-C", "D-N-C-D", "D-N-D-C", "D-N-D-D"]
-    # Note: 7 is skipped to avoid confusion with the 3 population model
-    recurrent_states = ['8-5-3-1',
-     '8-5-3-2',
-     '8-5-4-1',
-     '8-5-4-2',
-     '8-6-3-1',
-     '8-6-3-2',
-     '8-6-4-1',
-     '8-6-4-2',
-     '9-5-3-1',
-     '9-5-3-2',
-     '9-5-4-1',
-     '9-5-4-2',
-     '9-6-3-1',
-     '9-6-3-2',
-     '9-6-4-1',
-     '9-6-4-2',]
-    # Whether to create a sim_df and run the second consistency check.
-    # Must be false for the 4 population model.
-    create_sim_df = False
-strategy_state_mapping = dict(zip(state_labels, recurrent_states))
-
-# ============================================
-# Load and analyse the data as specified above
-
-fairgame_data = load_fairgame_data({
-    "data_dir": data_dir,
-    "external_data_dir": external_data_dir,
-    "sims": sims
-})
-
-params = fairgame_data["params"]
-params_df = fairgame_data["params_df"]
-configs = fairgame_data["configs"]
-configs_df = fairgame_data["configs_df"]
-results = fairgame_data["results"]
-results_df = fairgame_data["results_df"]
-
-# Log whether the state labels and recurrent states specified in this file
-# are consistent with those saved to params.json files.
-
-# Note: In future, we will hopefully rename strategy_set to state_labels
-# everywhere so that future simulation runs store that as the keyword in
-# params.json files.
-for p in params:
-    if "strategy_set" not in p:
+for change_personality_for in set_change_personality_for:
+    for model_name in set_model_name:
+     if change_personality_for != "none" and model_name != "3pop_conditional_trust":
         continue
-    if p["strategy_set"] != state_labels:
-        print("State labels in params.json file do not match those specified in this file. Ignore if this is an intentional workaround on your part.")
-        print("state_labels in params.json file:", p["strategy_set"])
-        print("state_labels in this file:", state_labels)
-    if "recurrent_states" not in p:
-        continue
-    if p["recurrent_states"] != recurrent_states:
-        print("Recurrent states in params.json file do not match those specified in this file. Ignore if this is an intentional workaround on your part.")
-        print("recurrent_states in params.json file:", p["recurrent_states"])
-        print("recurrent_states in this file:", recurrent_states)
-
-df_wide = results_df
-df_tidy = results_to_tidy_dataframe(df_wide)
-df_tidy = add_indices_to_df(df_tidy, filename_sim_mappings)
-
-# We also need to check that the payoff matrix computed from the params.json file
-# parameters gives the correct payoff weights. We then need to check that those
-# parameters plus payoffs give the same observations under our model as we reported
-# in the paper
-
-# Note: Data processing code here assumes that all models have the same number
-# of strategies
-
-def build_weight_ids_model1(results):
-    """Build weight_id mapping for model 1 from the original paper."""
-    # Build weight_id mapping
-    weight_id_mapping = {}
-    i=1
-    # combinations are assumed to be inserted in order so both commands
-    # should give the same vector of combinations
-    combinations = list(results["payoffs"].keys())
-    # combinations = numpy.sort(list(results["payoffs"].keys()))
-    # Note: unfortunately, we have to assign different combinations to the same
-    # weight_id because of how Fairgame works. This makes this code incredibly
-    # brittle due to hardcoding. It will not work well if the combinations change.
-    for combination in combinations:
-        weight_id_mapping[combination] = {}
-        for player in ["P1", "P2", "P3"]:
-            weight_id = i
-            weight_id_mapping[combination][player] = weight_id
-            i+=1
-    for player in ["P1", "P2", "P3"]:
-        weight_id_mapping["7-3-1"][player] = weight_id_mapping["6-3-1"][player]
-        weight_id_mapping["7-3-2"][player] = weight_id_mapping["6-3-2"][player]
-        weight_id_mapping["7-4-1"][player] = weight_id_mapping["6-4-1"][player]
-        weight_id_mapping["7-4-2"][player] = weight_id_mapping["6-4-2"][player]
-    return weight_id_mapping
-
-# TODO: Implement the following function for the 4 population models
-# Only needed if we want to run the second consistency check
-def build_weight_ids_model_four_pop(results):
-    return None
-
-consistency_check1(df_tidy)
-
-if create_sim_df:
-    sim_df = get_sim_results(params, configs_df, params_df, build_weight_ids_model1)
-    consistency_check2(configs_df, sim_df)
-
-# ==================================================
-# Plots
-
-def plot_strategy_distributions(df,
-                                state_labels,
-                                strategy_state_mapping,
-                                cmap=cmap,
-                                filename_stub=""):
-    """Plot the distribution of strategies of the given df for a harcoded set of parameters."""
-    
-    plot1 = plot_utils.plot_strategy_distribution(df[(df["cR"] == 0.5) & (df["Eps"] == -0.1)],
-                            state_labels,
-                            x="b_fo",
-                            x_label="b_fo",
-                            title="Eps = -0.1",
-                            thresholds=None,
-                            stacked=False,
-                            strategy_state_mapping=strategy_state_mapping,
-                            cmap=cmap,
-                            )
-    plot2 = plot_utils.plot_strategy_distribution(df[(df["cR"] == 0.5) & (df["Eps"] == 0.2)],
-                            state_labels,
-                            x="b_fo",
-                            x_label="b_fo",
-                            title="Eps = 0.2",
-                            thresholds=None,
-                            stacked=False,
-                            strategy_state_mapping=strategy_state_mapping,
-                            cmap=cmap,
-                            )
-    plot3 = plot_utils.plot_strategy_distribution(df[(df["cR"] == 5) & (df["Eps"] == -0.1)],
-                            state_labels,
-                            x="b_fo",
-                            x_label="b_fo",
-                            title="Eps = -0.1",
-                            thresholds=None,
-                            stacked=False,
-                            strategy_state_mapping=strategy_state_mapping,
-                            cmap=cmap,
-                            )
-    plot4 = plot_utils.plot_strategy_distribution(df[(df["cR"] == 5) & (df["Eps"] == 0.2)],
-                            state_labels,
-                            x="b_fo",
-                            x_label="b_fo",
-                            title="Eps = 0.2",
-                            thresholds=None,
-                            stacked=False,
-                            strategy_state_mapping=strategy_state_mapping,
-                            cmap=cmap,
-                            )
-    
-    filename_start = f"llm_replication_{filename_stub}_llm_{llm}_{game_type}_personalities_{change_personality_for}_model_{model_name}"
-    plots = {f"{filename_start}_cr_{0.5}_eps_{-0.1}": plot1,
-             f"{filename_start}_cr_{0.5}_eps_{0.2}": plot2,
-             f"{filename_start}_cr_{5}_eps_{-0.1}": plot3,
-             f"{filename_start}_cr_{5}_eps_{0.2}": plot4}
-    
-    return plots
-
-
-def plot_time_series_strategies(df,
-                                state_labels,
-                                strategy_state_mapping,
-                                cmap=cmap,
-                                filename_stub=""):
-    """Plot a time series of strategies of the given df for a harcoded set of parameters."""
-    
-    plot1 = plot_utils.plot_strategy_distribution(df[(df["cR"] == 0.5) & (df["Eps"] == -0.1)],
-                            state_labels,
-                            x="round",
-                            x_label="Round",
-                            title="Eps = -0.1",
-                            thresholds=None,
-                            stacked=False,
-                            strategy_state_mapping=strategy_state_mapping,
-                            cmap=cmap,
-                            )
-    plot2 = plot_utils.plot_strategy_distribution(df[(df["cR"] == 0.5) & (df["Eps"] == 0.2)],
-                            state_labels,
-                            x="round",
-                            x_label="Round",
-                            title="Eps = 0.2",
-                            thresholds=None,
-                            stacked=False,
-                            strategy_state_mapping=strategy_state_mapping,
-                            cmap=cmap,
-                            )
-    plot3 = plot_utils.plot_strategy_distribution(df[(df["cR"] == 5) & (df["Eps"] == -0.1)],
-                            state_labels,
-                            x="round",
-                            x_label="Round",
-                            title="Eps = -0.1",
-                            thresholds=None,
-                            stacked=False,
-                            strategy_state_mapping=strategy_state_mapping,
-                            cmap=cmap,
-                            )
-    plot4 = plot_utils.plot_strategy_distribution(df[(df["cR"] == 5) & (df["Eps"] == 0.2)],
-                            state_labels,
-                            x="round",
-                            x_label="Round",
-                            title="Eps = 0.2",
-                            thresholds=None,
-                            stacked=False,
-                            strategy_state_mapping=strategy_state_mapping,
-                            cmap=cmap,
-                            )
-    
-    filename_start = f"llm_replication_{filename_stub}_llm_{llm}_{game_type}_personalities_{change_personality_for}_model_{model_name}"
-    plots = {f"{filename_start}_cr_{0.5}_eps_{-0.1}": plot1,
-             f"{filename_start}_cr_{0.5}_eps_{0.2}": plot2,
-             f"{filename_start}_cr_{5}_eps_{-0.1}": plot3,
-             f"{filename_start}_cr_{5}_eps_{0.2}": plot4}
-    
-    return plots
-
-observed_data, observed_profile_freq = df_to_observed_data(df_tidy, params_df, strategy_id_mapping)
-for state in recurrent_states:
-    if f"{state}_frequency" not in observed_data.columns:
-        observed_data[f"{state}_frequency"] = 0
-observed_data, states_labels_compact = compute_strategy_frequencies(observed_data, recurrent_states)
-# For the compact states labels, we want to exclude the last strategy for each player because
-# that information is redundant.
-
-states_labels_compact = compact_strategy_labels(states_labels_compact)
-# Ensure that only one set of simulation results is plotted at a time!
-df = observed_data[observed_data["simulation_id"] == sim_main]
-
-if game_type == "one_shot_game":
-    
-    plots = plot_strategy_distributions(df, state_labels, strategy_state_mapping, filename_stub="one_shot")
-    plot_save_id = data_utils.create_id()
-    data_utils.save_plots(plots, plots_dir=f"plots/fairgame_replication_plots/one_shot_games/{plot_save_id}")
-
-if game_type == "repeated_game":
-    plots = {}
-    
-    # df (the observed_data) has columns for the frequency of each strategy profile
-    # (also called recurrent states) and columns for the frequency of each
-    # player's strategy (across recurrent states). We can specify which set of
-    # columns to plot by specifying either state_labels (which contains the labels of the
-    # recurrent states; yes, it's a bit of a misnomer) or states_labels_compact (for the player strategies).
-    # TODO: perhaps relable state_labels to recurrent_state_labels to avoid
-    # confusion in future.
-    
-    # First plot the final round frequencies for each state
-    final_round = df["round"].max()
-    final_round_df = final_round[final_round["round"] == final_round]
-    # Note: assumes all games last the same number of rounds
-    plots = {**plots, **plot_strategy_distributions(df, state_labels, strategy_state_mapping, strategy_state_mapping)}
-
-    # We then want to plot the average frequences across rounds
-
-    df_avg = df.groupby(["simulation_id", "config_index"]).mean()
-    plots = {**plots, **plot_strategy_distributions(df_avg, state_labels, strategy_state_mapping, filename_stub="average_round")}
-    
-    # Plot each player's final and average strategy frequencies across states
-    plots = {**plots, **plot_strategy_distributions(final_round_df, states_labels_compact, filename_stub="player_strategy_frequencies_final")}
-    plots = {**plots, **plot_strategy_distributions(df_avg, states_labels_compact, filename_stub="player_strategy_frequencies_average")}
-    
-    # Plot the strategy frequencies per round
-    for round in range(final_round + 1):
-        round_df = df[df["round"] == round]
-        plots = {**plots, **plot_strategy_distributions(round_df, state_labels, strategy_state_mapping, filename_stub=f"round_{round}")}
-        plots = {**plots, **plot_strategy_distributions(round_df, states_labels_compact, filename_stub=f"player_strategy_frequencies_round_{round}")}
-    
-    # Plot a time series for each value of the config id
-    for config_index in df["config_index"].unique():
-        config_df = df[df["config_index"] == config_index]
-        # Only b_fo changes when config_index changes, so that's all we add to the filename
-        b_fo = config_df["b_fo"].unique()[0]
-        plots = {**plots, **plot_time_series_strategies(config_df, state_labels, strategy_state_mapping, filename_stub=f"time_series_b_fo_{b_fo}")}
-        plots = {**plots, **plot_time_series_strategies(config_df, states_labels_compact, filename_stub=f"time_series_b_fo_{b_fo}")}
-    
-    plot_save_id = data_utils.create_id()
-    data_utils.save_plots(plots, plots_dir=f"plots/fairgame_replication_plots/repeated_games/{plot_save_id}")
+    for game_type in set_game_type:
+        if game_type != "one_shot_game" and model_name.contains("4pop"):
+            continue
+        for llm in set_llm:
+            run_data_analysis({
+                "data_dir": data_dir,
+                "plots_dir": plots_dir,
+                "input_to_dir_mapping": input_to_dir_mapping,
+                "folder_to_sim_mapping": folder_to_sim_mapping,
+                "model_name": model_name,
+                "game_type": game_type,
+                "llm": llm,
+                "change_personality_for": change_personality_for})
