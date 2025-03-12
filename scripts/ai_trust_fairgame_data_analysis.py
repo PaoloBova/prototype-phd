@@ -481,9 +481,23 @@ sim2 = "whiten_uncritical_chows_dc41924b"
 sims = [sim1]
 # Take care to specify the simulation we are analysing!
 # Usually we only have one simulation per directory of fairgame results
-sim_main = sim1
+sim_main = sims[0]
+# Note: All of the filenames for the fairgame results we are analyzing contain
+# a v1 or v2 to refer to whether the Users use a trust or conditional trust
+# strategy. This is not a system I want to use long term and it would have
+# been much better to incude the sim_id itself in the filename or better yet
+# within the results file somehow. But for now, we have to specify the mapping
+# of both v1 and v2 to the sim_id we are analyzing. For now, this is always
+# sim_main.
 filename_sim_mappings = {"v1": sim_main, "v2": sim_main}
 
+# Fairgame results confusingly only list the labels and not the strategy ids for
+# what each player chooses. Even if they did use the strategy ids known to
+# Fairgame, this would not be consistent with the strategy_ids used in this
+# repo. Here is a model specific mapping from the labels to the strategy ids.
+# Note: Sometimes, Option C is not used. I even plan to and have started to
+# switch to using only options A and B and strategy ids 5 and 6 for users only
+# when running the 4 population model
 strategy_id_mapping = {"regulator": {"Option A": 1, "Option B": 2, "Option C": 2},
                     "developer": {"Option A": 3, "Option B": 4, "Option C": 4},
                     "user": {"Option A": 5, "Option B": 6, "Option C": 7}}
