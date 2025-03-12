@@ -693,7 +693,7 @@ observed_data, observed_profile_freq = df_to_observed_data(df_tidy, params_df, s
 for state in recurrent_states:
     if f"{state}_frequency" not in observed_data.columns:
         observed_data[f"{state}_frequency"] = 0
-observed_data, strat_set_compact = compute_strategy_frequencies(observed_data, recurrent_states)
+observed_data, states_labels_compact = compute_strategy_frequencies(observed_data, recurrent_states)
 
 # Ensure that only one set of simulation results is plotted at a time!
 df = observed_data[observed_data["simulation_id"] == sim_main]
@@ -711,7 +711,7 @@ if game_type == "repeated_game":
     # (also called recurrent states) and columns for the frequency of each
     # player's strategy (across recurrent states). We can specify which set of
     # columns to plot by specifying either state_labels (which contains the labels of the
-    # recurrent states; yes, it's a bit of a misnomer) or strat_set_compact (for the player strategies).
+    # recurrent states; yes, it's a bit of a misnomer) or states_labels_compact (for the player strategies).
     # TODO: perhaps relable state_labels to recurrent_state_labels to avoid
     # confusion in future.
     
@@ -727,14 +727,14 @@ if game_type == "repeated_game":
     plots = {**plots, **plot_strategy_distributions(df_avg, state_labels, strategy_state_mapping, filename_stub="average_round")}
     
     # Plot each player's final and average strategy frequencies across states
-    plots = {**plots, **plot_strategy_distributions(final_round_df, strat_set_compact, filename_stub="player_strategy_frequencies_final")}
-    plots = {**plots, **plot_strategy_distributions(df_avg, strat_set_compact, filename_stub="player_strategy_frequencies_average")}
+    plots = {**plots, **plot_strategy_distributions(final_round_df, states_labels_compact, filename_stub="player_strategy_frequencies_final")}
+    plots = {**plots, **plot_strategy_distributions(df_avg, states_labels_compact, filename_stub="player_strategy_frequencies_average")}
     
     # Plot the strategy frequencies per round
     for round in range(final_round + 1):
         round_df = df[df["round"] == round]
         plots = {**plots, **plot_strategy_distributions(round_df, state_labels, strategy_state_mapping, filename_stub=f"round_{round}")}
-        plots = {**plots, **plot_strategy_distributions(round_df, strat_set_compact, filename_stub=f"player_strategy_frequencies_round_{round}")}
+        plots = {**plots, **plot_strategy_distributions(round_df, states_labels_compact, filename_stub=f"player_strategy_frequencies_round_{round}")}
     
     # Plot a time series for each value of the config id
     for config_index in df["config_index"].unique():
@@ -742,7 +742,7 @@ if game_type == "repeated_game":
         # Only b_fo changes when config_index changes, so that's all we add to the filename
         b_fo = config_df["b_fo"].unique()[0]
         plots = {**plots, **plot_time_series_strategies(config_df, state_labels, strategy_state_mapping, filename_stub=f"time_series_b_fo_{b_fo}")}
-        plots = {**plots, **plot_time_series_strategies(config_df, strat_set_compact, filename_stub=f"time_series_b_fo_{b_fo}")}
+        plots = {**plots, **plot_time_series_strategies(config_df, states_labels_compact, filename_stub=f"time_series_b_fo_{b_fo}")}
     
     plot_save_id = data_utils.create_id()
     data_utils.save_plots(plots, plots_dir=f"plots/fairgame_replication_plots/repeated_games/{plot_save_id}")
