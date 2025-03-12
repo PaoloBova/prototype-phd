@@ -415,7 +415,8 @@ def save_plots(plots, plots_dir=None):
         # If plot is a matplotlib figure, save it as a PNG file
         if isinstance(plot, plt.Figure):
             filepath = os.path.join(plots_dir, f'{filename_stub}.png')
-            plot.savefig(filepath)
+            # plt.tight_layout()
+            plot.savefig(filepath, bbox_inches="tight")
             print(f"Saved file: {filepath}")
         # If plot is a plotly figure, save it as an HTML file
         elif isinstance(plot, go.Figure):
