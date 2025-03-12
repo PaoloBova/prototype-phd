@@ -496,29 +496,79 @@ sim2 = "whiten_uncritical_chows_dc41924b"
 sim3 = "fillers_preliminary_preppier_eba9e339"
 sim4 = "welcomed_benefice_Kahlua_27c6ec76"
 
-# TODO: Make sure to systematically go through all relevant values represented
-# as data below. It would be possible to go through all the available directories
-# and store them in one go if we wrap everything in a for loop. be careful because
-# the sim ids are closely tied to which of the higher level directories we use
-# as the external_data_dir
+folder_to_sim_mapping = {
+    # We longer use the one-shot-results folder: this was just for practise
+    # "one-shot-results": sim1,
+    # The baseline results for both 3 population models
+    "Fairgame_results/OpenAIGPT4o/V1/one_shot": sim1,
+    "Fairgame_results/OpenAIGPT4o/V2/one_shot": sim2,
+    "Fairgame_results/MistralLarge/V1/one_shot": sim1,
+    "Fairgame_results/MistralLarge/V2/one_shot": sim2,
+    "Fairgame_results/OpenAIGPT4o/V1/repeated": sim1,
+    "Fairgame_results/OpenAIGPT4o/V2/repeated": sim2,
+    "Fairgame_results/MistralLarge/V1/repeated": sim1,
+    "Fairgame_results/MistralLarge/V2/repeated": sim2,
+    # Personality simulations only used the conditional trust 3 population model
+    # and are only for one-shot games
+    "3p_with_perso/OpenAIGPT4o/20250311_developer_fix": sim2,
+    "3p_with_perso/OpenAIGPT4o/20250311_regulator_fix": sim2,
+    "3p_with_perso/OpenAIGPT4o/20250311_user_fix": sim2,
+    "3p_with_perso/MistralLarge/20250311_developer_fix": sim2,
+    "3p_with_perso/MistralLarge/20250311_regulator_fix": sim2,
+    "3p_with_perso/MistralLarge/20250311_user_fix": sim2,
+    # The 4 population models
+    # v1 is for the model where commentariat investigates developers
+    # v2 if for the model where commentariat investigate the regulators
+    # Again, these rsults are only for one-shot games.
+    "results_4p_v1/OpenAIGPT4o": sim3,
+    "results_4p_v1/MistralLarge": sim3,
+    "4p_v2_results/OpenAIGPT4o": sim4,
+    "4p_v2_results/MistralLarge": sim4,
+}
+
+input_to_dir_mapping = {
+    "3pop_full_trust_one_shot_game_gpt4o_personality_none": "Fairgame_results/OpenAIGPT4o/V1/one_shot",
+    "3pop_conditional_trust_one_shot_game_gpt4o_personality_none": "Fairgame_results/OpenAIGPT4o/V2/one_shot",
+    "3pop_full_trust_repeated_game_gpt4o_personality_none": "Fairgame_results/OpenAIGPT4o/V1/repeated",
+    "3pop_conditional_trust_repeated_game_gpt4o_personality_none": "Fairgame_results/OpenAIGPT4o/V2/repeated",
+    "3pop_full_trust_one_shot_game_mistral_large_personality_none": "Fairgame_results/MistralLarge/V1/one_shot",
+    "3pop_conditional_trust_one_shot_game_mistral_large_personality_none": "Fairgame_results/MistralLarge/V2/one_shot",
+    "3pop_full_trust_repeated_game_mistral_large_personality_none": "Fairgame_results/MistralLarge/V1/repeated",
+    "3pop_conditional_trust_repeated_game_mistral_large_personality_none": "Fairgame_results/MistralLarge/V2/repeated",
+    "3pop_full_trust_one_shot_game_gpt4o_personality_developer": "3p_with_perso/OpenAIGPT4o/20250311_developer_fix",
+    "3pop_full_trust_one_shot_game_gpt4o_personality_regulator": "3p_with_personality/OpenAIGPT4o/20250311_regulator_fix",
+    "3pop_full_trust_one_shot_game_gpt4o_personality_user": "3p_with_personality/OpenAIGPT4o/20250311_user_fix",
+    "3pop_full_trust_one_shot_game_mistral_large_personality_developer": "3p_with_personality/MistralLarge/20250311_developer_fix",
+    "3pop_full_trust_one_shot_game_mistral_large_personality_regulator": "3p_with_personality/MistralLarge/20250311_regulator_fix",
+    "3pop_full_trust_one_shot_game_mistral_large_personality_user": "3p_with_personality/MistralLarge/20250311_user_fix",
+    "4pop_v1_one_shot_game_gpt4o": "results_4p_v1/OpenAIGPT4o",
+    "4pop_v1_one_shot_game_mistral_large": "results_4p_v1/MistralLarge",
+    "4pop_v2_one_shot_game_gpt4o": "4p_v2_results/OpenAIGPT4o",
+    "4pop_v2_one_shot_game_mistral_large": "4p_v2_results/MistralLarge",
+}
 
 # Edit the following:
-sims = [sim1]
-external_data_dir = "external_data/fairgame_data/one-shot-results"
-external_data_dir = "external_data/fairgame_data/Fairgame_results/OpenAIGPT4o/V1/one_shot"
-# Whether to create a sim_df and run the second consistency check.
-# Must be false for the 4 population model.
-create_sim_df = True
-# The following values are just used for naming plot files and not for processing
-# the data
-change_personality_for = "developer"
+# All possible values:
+# change_personality_for = ["none", "developer", "regulator", "user"]
+# model_name = ["3pop_full_trust", "3pop_conditional_trust", "4pop_v1", "4pop_v2"]
+# game_type = ["one_shot_game", "repeated_game"]
+# llm = ["gpt4o", "mistral_large"]
+
+change_personality_for = "none"
 model_name = "3pop_full_trust"
 game_type = "one_shot_game"
 llm = "gpt4o"
 
+# Our selection is based on the above variables
+selection = f"{model_name}_{game_type}_{llm}_personality_{change_personality_for}"
+external_data_dir_stub = "external_data/fairgame_data"
+external_data_dir_suffix = input_to_dir_mapping[selection]
+external_data_dir = f"{external_data_dir_stub}/{external_data_dir_suffix}"
+sims = [folder_to_sim_mapping[external_data_dir_suffix]]
 # Take care to specify the simulation we are analysing!
 # Currently, we only have one simulation per directory of fairgame results
 sim_main = sims[0]
+
 # Note: All of the filenames for the fairgame results we are analyzing contain
 # a v1 or v2 to refer to whether the Users use a trust or conditional trust
 # strategy. This is not a system I want to use long term and it would have
@@ -557,6 +607,9 @@ if model_name.startswith("3pop"):
         state_labels = ["CT-C-C", "CT-C-D", "CT-D-C", "CT-D-D",
                         "N-C-C", "N-C-D", "N-D-C", "N-D-D",]
         recurrent_states = ['7-3-1', '7-3-2', '7-4-1', '7-4-2', '6-3-1', '6-3-2', '6-4-1', '6-4-2']
+    # Whether to create a sim_df and run the second consistency check.
+    # Must be false for the 4 population model.
+    create_sim_df = True
 if model_name.startswith("4pop"):
     # With 16 recurernt states, we need to use a different colormap
     cmap = plt.colormaps["tab20"]
@@ -582,6 +635,9 @@ if model_name.startswith("4pop"):
      '9-6-3-2',
      '9-6-4-1',
      '9-6-4-2',]
+    # Whether to create a sim_df and run the second consistency check.
+    # Must be false for the 4 population model.
+    create_sim_df = False
 strategy_state_mapping = dict(zip(state_labels, recurrent_states))
 
 # ============================================
