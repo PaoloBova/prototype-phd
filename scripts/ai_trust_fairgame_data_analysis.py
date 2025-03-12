@@ -92,13 +92,12 @@ def results_to_tidy_dataframe(df):
     list_agent_fields = ['strategies', 'scores', 'messages']
     
     # Calculate number of agents
-    n_agents = len([col for col in df.columns if col.startswith('agent') and col.endswith('_name')])
-    # n_agents = 3
+    n_players = len([col for col in df.columns if col.startswith('agent') and col.endswith('_name')])
     
     # Make sure lists are not strings:
     # Some columns of results_df have lists as values but they are currently represented as strings.
     # We need to convert them to lists
-    for i in range(1, n_agents+1):
+    for i in range(1, n_players+1):
         for col_name in [f"agent{i}_scores", f"agent{i}_strategies", f"agent{i}_messages"]:
             if isinstance(results_df[col_name].iloc[0], str):
                 results_df[col_name] = results_df[col_name].apply(lambda x: eval(x))
@@ -106,7 +105,7 @@ def results_to_tidy_dataframe(df):
     # Verify that the dataframe stores round lists consistently
     # All round-based columns must share the same length equal to rounds_played
     # n_rounds = results_df["played_rounds"].unique()[0]
-    # for i in range(1, n_agents+1):
+    # for i in range(1, n_players+1):
     #     for col_name in [f"agent{i}_scores", f"agent{i}_strategies", f"agent{i}_messages"]:
     #         # print(f"Checking {col_name}")
     #         # print(results_df[col_name].apply(len).unique())
@@ -123,7 +122,7 @@ def results_to_tidy_dataframe(df):
         base_info = {field: row[field] for field in game_fields}
         
         # Process each agent
-        for agent in range(1, n_agents+1):
+        for agent in range(1, n_players+1):
             # Read the constant fields for the agent.
             agent_constant = {
                 f'agent_{field}': row[f'agent{agent}_{field}'] for field in constant_agent_fields
@@ -150,7 +149,7 @@ def results_to_tidy_dataframe(df):
 
 def check_scores_consistency(df):
     """
-    For each game and round (group of three rows), this function:
+    For each game and round (group of n_agent rows), this function:
       1. Extracts the strategies chosen by the three agents.
       2. Iterates over the available payoffMatrix_combinations_combination columns until one
          of them matches the strategies observed.
@@ -171,7 +170,7 @@ def check_scores_consistency(df):
     weight_cols = {f"weight_{i}": col for i, col in enumerate(weight_cols, 1)}
     strategy_cols = [col for col in df.columns if col.startswith('payoffMatrix_strategies')]
     # Count number of agents (assumes all rows have the same number of agents)
-    n_agents = df.agent.nunique()
+    n_players = df.agent.nunique()
     errors = []
 
     # Group by game id and round number so that each group has the three agents
@@ -206,12 +205,12 @@ def check_scores_consistency(df):
             #   (expected_strategy_agent2, weight_id2),
             #   (expected_strategy_agent3, weight_id3) ]
             # print("strategies", strategies, type(strategies))
-            if isinstance(comb_list, list) and len(comb_list) == n_agents:
+            if isinstance(comb_list, list) and len(comb_list) == n_players:
                 # Check each agent's strategy against the combination.
                 # print("comb_list", comb_list, type(comb_list))
                 # print("strategies: ", strategies)
                 if all(comb_list[i][0] == strategies.get(i+1)
-                       for i in range(n_agents)):
+                       for i in range(n_players)):
                     # Found the matching combination.
                     combination_found = True
                     # print("Combination found")
@@ -220,7 +219,7 @@ def check_scores_consistency(df):
                         agent_idx = row['agent']
                         # Get the expected weight id using the appropriate tuple in comb_list.
                         expected_weight_id = comb_list[agent_idx - 1][1]
-                        expected_weight_ids = [comb_list[i][1] for i in range(n_agents)]
+                        expected_weight_ids = [comb_list[i][1] for i in range(n_players)]
                         expected_weights = [weight_cols.get(weight_id) for weight_id in expected_weight_ids]
                         weight_col_name = weight_cols.get(expected_weight_id)
                         # print("Details: ", agent_idx, expected_weight_id, weight_col_name)
@@ -275,6 +274,7 @@ def add_indices_to_df(df, sim_mapping):
 
     return df
 
+# TODO: Refactor so that a weight_id_mapping_fn is unneccesary.
 def get_sim_results(params, configs_df, params_df, weight_id_mapping_fn):
 
     sim_results = []
@@ -331,8 +331,8 @@ def consistency_check1(df):
             game, rnd, agent, msg = err
             agent_str = f"Agent {agent}" if agent is not None else "Group"
             print(f"Game {game}, Round {rnd}, {agent_str}: {msg}")
-    else:
-        print("All agent_scores are consistent with the payoff matrix weights.")
+    # else:
+    #     print("All agent_scores are consistent with the payoff matrix weights.")
     return None
 
 def consistency_check2(configs_df, sim_df):
@@ -341,6 +341,9 @@ def consistency_check2(configs_df, sim_df):
     weight_cols = [col for col in configs_df.columns if col.startswith('payoffMatrix_weights_weight_')]
     for col in weight_cols:
         if col.endswith("_compare"):
+            continue
+        if f"{col}_compare" not in configs_df.columns:
+            # Assume the consistency check is not necessary
             continue
         x1 = configs_df.sort_values(by=["simulation_id","config_index"])[col]
         x2 = sim_df.sort_values(by=["simulation_id","config_index"])[f"{col}_compare"]
@@ -357,13 +360,10 @@ def df_to_observed_data(df_tidy, params_df, strategy_id_mapping):
     """Derives observed data on strategy profile frequencies from the tidy dataframe.
     
     Notes:
-    - Assumes 3 player types only.
     - Assumes all groups have the same number of agents."""
     # ==================================================
     # Part 0: Create strategy_id columns with the given mapping
     # ==================================================
-    # Option A is usually the cooperate strategy, B is the defect strategy,
-    # and C is the conditional strategy for the relevant player type
     df_tidy["agent_strategy_id"] = df_tidy.apply(
         lambda x: strategy_id_mapping[x["agent_name"]][x["agent_strategies"]], axis=1)
     # ==================================================
@@ -376,18 +376,20 @@ def df_to_observed_data(df_tidy, params_df, strategy_id_mapping):
         values="agent_strategy_id",
         aggfunc="first"
     ).reset_index()
+    
+    n_players = df_tidy.agent.nunique()
 
-    # Rename pivoted columns for clarity. (Assumes agent labels 1,2,3.)
-    profile_df = profile_df.rename(columns={1: "agent1_strategy_id",
-                                            2: "agent2_strategy_id",
-                                            3: "agent3_strategy_id"})
+    # Rename pivoted columns for clarity. (Assumes agents are labelled 1 to n.)
+    agent_col_renames = {i: f"agent{i}_strategy_id" for i in range(1, n_players+1)}
+    profile_df = profile_df.rename(columns=agent_col_renames)
 
     # Create a combined strategy profile string (e.g., "cooperate-defect-retaliate").
-    profile_df["strategy_profile"] = (
-        profile_df["agent3_strategy_id"].astype(str) + "-" +
-        profile_df["agent2_strategy_id"].astype(str) + "-" +
-        profile_df["agent1_strategy_id"].astype(str)
-    )
+    agent_cols = [f"agent{i}_strategy_id" for i in range(1, n_players+1)]
+    profile_df["strategy_profile"] = ""
+    for col in agent_cols[::-1]:
+        profile_df["strategy_profile"] += profile_df[col].astype(str)
+        if col != agent_cols[0]:
+            profile_df["strategy_profile"] +=  "-"
 
     # Group by simulation_id, config_index, round, and strategy_profile to count replications.
     profile_counts = profile_df.groupby(
@@ -405,12 +407,6 @@ def df_to_observed_data(df_tidy, params_df, strategy_id_mapping):
 
     # Create a column for each strategy profile frequency by reshaping observed_profile_freq
     
-    # TODO: As missing strategy profile combinations that are not observed
-    # are not included in the data, we need to add them in with a frequency of 0.
-    # This will require a full outer join with the complete set of strategy profiles.
-    # We can then fill missing values with 0.
-    
-    
     observed_data = observed_profile_freq.pivot_table(
         index=["simulation_id", "config_index", "round"],
         columns="strategy_profile",
@@ -420,18 +416,59 @@ def df_to_observed_data(df_tidy, params_df, strategy_id_mapping):
 
     observed_data = observed_data.fillna(0)
     # Rename frequency columns to end in _frequency
-
     observed_data.columns = [f"{col}_frequency" if col != "simulation_id" and col != "config_index" and col != "round"
                             else col for col in observed_data.columns]
 
+    # Merge with params_df to get the parameter values for each simulation and config
     observed_data = pandas.merge(observed_data, params_df, on=["simulation_id", "config_index"])
     
     return observed_data, observed_profile_freq
 
+def compute_strategy_frequencies(df, recurrent_states):
+    """
+    For each row in df, compute the frequency that each player chooses each
+    strategy.
+    
+    df must have columns named like "<state>_frequency". One for each state in
+    recurrent_states. Otherwise, this function will throw a KeyError.
+    
+    Adds columns to df with names like "P<player_index>_strat_<strat>_likelihood".
+    
+    Also returns the player strategies found in recurrent states for later use.
+    """
+    # Identify number of players from recurrent_states
+    n_players = len(recurrent_states[0].split("-"))
+
+    # Construct a dictionary that for each player and a given strategy holds
+    # a list of the recurrent_states where that player employes that strategy
+    strat_states_mapping = {}
+    for player_index in range(n_players):
+        player_strats = numpy.unique([state.split("-")[player_index]
+                                      for state in recurrent_states])
+        player_states = {strat: [state for state in recurrent_states
+                                 if state.split("-")[player_index] == strat]
+                         for strat in player_strats}
+        strat_states_mapping[f"P{player_index+1}"] = player_states
+
+    # For each player, sum over the frequency columns corresponding to the strat
+    for player in range(1, n_players+1):
+        for strat, states in strat_states_mapping[f"P{player}"].items():
+            cols = [f"{state}_frequency" for state in states]
+            df[f"P{player}_strat_{strat}_frequency"] = df[cols].sum(axis=1)
+    
+    strat_states = [f"{player}_strat_{strat}"
+                    for player, v in strat_states_mapping.items()
+                    for v in v.keys()]
+    
+    return df, strat_states
+
+# TODO: Make sure to systematically go through all relevant values represented
+# as data below.
+
 # Load fairgame data
 data_dir = "data"
 external_data_dir = "external_data/fairgame_data/one-shot-results"
-external_data_dir = "external_data/fairgame_data/Fairgame_results/OpenAIGPT4o/V1/one-shot"
+external_data_dir = "external_data/fairgame_data/Fairgame_results/OpenAIGPT4o/V1/one_shot"
 plots_dir = "plots"
 # 3 population models configs simulation ids
 sim1 = "bellyfuls_skewering_expels_cc4dc882"
@@ -442,7 +479,34 @@ sim2 = "whiten_uncritical_chows_dc41924b"
 
 # Edit the following:
 sims = [sim1]
-filename_sim_mappings = {"v1": sim1, "v2": sim2}
+# Take care to specify the simulation we are analysing!
+# Usually we only have one simulation per directory of fairgame results
+sim_main = sim1
+filename_sim_mappings = {"v1": sim_main, "v2": sim_main}
+
+strategy_id_mapping = {"regulator": {"Option A": 1, "Option B": 2, "Option C": 2},
+                    "developer": {"Option A": 3, "Option B": 4, "Option C": 4},
+                    "user": {"Option A": 5, "Option B": 6, "Option C": 7}}
+
+# Unfortunately, we always have to take care to specify the strategy set.
+# strategy_set = ["T-C-C", "T-C-D", "T-D-C", "T-D-D",
+#                 "N-C-C", "N-C-D", "N-D-C", "N-D-D"]
+# recurrent_states = ['5-3-1', '5-3-2', '5-4-1', '5-4-2', '6-3-1', '6-3-2', '6-4-1', '6-4-2']
+strategy_set = ["CT-C-C", "CT-C-D", "CT-D-C", "CT-D-D",
+                "N-C-C", "N-C-D", "N-D-C", "N-D-D",]
+recurrent_states = ['7-3-1', '7-3-2', '7-4-1', '7-4-2', '6-3-1', '6-3-2', '6-4-1', '6-4-2']
+strategy_state_mapping = dict(zip(strategy_set, recurrent_states))
+
+
+change_personality_for = "developer"
+model_name = "3pop_full_trust"
+game_type = "one_shot_game"
+llm = "gpt4o"
+
+create_sim_df = True
+
+# ============================================
+# Load and analyse the data as specified above
 
 fairgame_data = load_fairgame_data({
     "data_dir": data_dir,
@@ -494,74 +558,177 @@ def build_weight_ids_model1(results):
         weight_id_mapping["7-4-2"][player] = weight_id_mapping["6-4-2"][player]
     return weight_id_mapping
 
-sim_df = get_sim_results(params, configs_df, params_df, build_weight_ids_model1)
+# TODO: Implement the following function for the 4 population models
+# Only needed if we want to run the second consistency check
+def build_weight_ids_model_four_pop(results):
+    return None
 
 consistency_check1(df_tidy)
-consistency_check2(configs_df, sim_df)
+
+if create_sim_df:
+    sim_df = get_sim_results(params, configs_df, params_df, build_weight_ids_model1)
+    consistency_check2(configs_df, sim_df)
 
 # ==================================================
 # Plots
 
-# Since the model code is well tested already, it should be sufficient to check
-# that the plots generated from sim_df data match those reported in the paper.
+def plot_strategy_distributions(df,
+                                strategy_set,
+                                strategy_state_mapping,
+                                filename_stub=""):
+    """Plot the distribution of strategies of the given df for a harcoded set of parameters."""
+    
+    plot1 = plot_utils.plot_strategy_distribution(df[(df["cR"] == 0.5) & (df["Eps"] == -0.1)],
+                            strategy_set,
+                            x="b_fo",
+                            x_label="b_fo",
+                            title="Eps = -0.1",
+                            thresholds=None,
+                            stacked=False,
+                            strategy_state_mapping=strategy_state_mapping,
+                            )
+    plot2 = plot_utils.plot_strategy_distribution(df[(df["cR"] == 0.5) & (df["Eps"] == 0.2)],
+                            strategy_set,
+                            x="b_fo",
+                            x_label="b_fo",
+                            title="Eps = 0.2",
+                            thresholds=None,
+                            stacked=False,
+                            strategy_state_mapping=strategy_state_mapping,
+                            )
+    plot3 = plot_utils.plot_strategy_distribution(df[(df["cR"] == 5) & (df["Eps"] == -0.1)],
+                            strategy_set,
+                            x="b_fo",
+                            x_label="b_fo",
+                            title="Eps = -0.1",
+                            thresholds=None,
+                            stacked=False,
+                            strategy_state_mapping=strategy_state_mapping,
+                            )
+    plot4 = plot_utils.plot_strategy_distribution(df[(df["cR"] == 5) & (df["Eps"] == 0.2)],
+                            strategy_set,
+                            x="b_fo",
+                            x_label="b_fo",
+                            title="Eps = 0.2",
+                            thresholds=None,
+                            stacked=False,
+                            strategy_state_mapping=strategy_state_mapping,
+                            )
+    
+    filename_start = f"llm_replication_{filename_stub}_llm_{llm}_{game_type}_personalities_{change_personality_for}_model_{model_name}"
+    plots = {f"{filename_start}_cr_{0.5}_eps_{-0.1}": plot1,
+             f"{filename_start}_cr_{0.5}_eps_{0.2}": plot2,
+             f"{filename_start}_cr_{5}_eps_{-0.1}": plot3,
+             f"{filename_start}_cr_{5}_eps_{0.2}": plot4}
+    
+    return plots
 
-df = sim_df[sim_df["simulation_id"] == sim1]
-df = df[df["cR"] ==0.5]
-# df["strategy_set"] = df["strategy_set"].apply(eval)
-# strategy_set = df["strategy_set"].values[0]
-strategy_set = [f"combination_{i}" for i in range(8)]
-plot1 = plot_utils.plot_strategy_distribution(df[df["Eps"] == -0.1],
-                           strategy_set,
-                           x="b_fo",
-                           x_label="b_fo",
-                           thresholds=None,
-                           stacked=True,
-                           )
-plot2 = plot_utils.plot_strategy_distribution(df[df["Eps"] == 0.2],
-                           strategy_set,
-                           x="b_fo",
-                           x_label="b_fo",
-                           thresholds=None,
-                           stacked=True,
-                           )
 
-strategy_id_mapping = {"regulator": {"Option A": 1, "Option B": 2, "Option C": 2},
-                    "developer": {"Option A": 3, "Option B": 4, "Option C": 4},
-                    "user": {"Option A": 5, "Option B": 6, "Option C": 7}}
+def plot_time_series_strategies(df,
+                                strategy_set,
+                                strategy_state_mapping,
+                                filename_stub=""):
+    """Plot a time series of strategies of the given df for a harcoded set of parameters."""
+    
+    plot1 = plot_utils.plot_strategy_distribution(df[(df["cR"] == 0.5) & (df["Eps"] == -0.1)],
+                            strategy_set,
+                            x="round",
+                            x_label="Round",
+                            title="Eps = -0.1",
+                            thresholds=None,
+                            stacked=False,
+                            strategy_state_mapping=strategy_state_mapping,
+                            )
+    plot2 = plot_utils.plot_strategy_distribution(df[(df["cR"] == 0.5) & (df["Eps"] == 0.2)],
+                            strategy_set,
+                            x="round",
+                            x_label="Round",
+                            title="Eps = 0.2",
+                            thresholds=None,
+                            stacked=False,
+                            strategy_state_mapping=strategy_state_mapping,
+                            )
+    plot3 = plot_utils.plot_strategy_distribution(df[(df["cR"] == 5) & (df["Eps"] == -0.1)],
+                            strategy_set,
+                            x="round",
+                            x_label="Round",
+                            title="Eps = -0.1",
+                            thresholds=None,
+                            stacked=False,
+                            strategy_state_mapping=strategy_state_mapping,
+                            )
+    plot4 = plot_utils.plot_strategy_distribution(df[(df["cR"] == 5) & (df["Eps"] == 0.2)],
+                            strategy_set,
+                            x="round",
+                            x_label="Round",
+                            title="Eps = 0.2",
+                            thresholds=None,
+                            stacked=False,
+                            strategy_state_mapping=strategy_state_mapping,
+                            )
+    
+    filename_start = f"llm_replication_{filename_stub}_llm_{llm}_{game_type}_personalities_{change_personality_for}_model_{model_name}"
+    plots = {f"{filename_start}_cr_{0.5}_eps_{-0.1}": plot1,
+             f"{filename_start}_cr_{0.5}_eps_{0.2}": plot2,
+             f"{filename_start}_cr_{5}_eps_{-0.1}": plot3,
+             f"{filename_start}_cr_{5}_eps_{0.2}": plot4}
+    
+    return plots
+
 observed_data, observed_profile_freq = df_to_observed_data(df_tidy, params_df, strategy_id_mapping)
-
-# Since the model code is well tested already, it should be sufficient to check
-# that the plots generated from sim_df data match those reported in the paper.
-
-df = observed_data[observed_data["simulation_id"] == sim2]
-df = df[df["cR"] ==5]
-# strategy_set = [f"combination_{i}" for i in range(8)]
-# strategy_set = ["T-C-C", "T-C-D", "T-D-C", "T-D-D",
-#                 "N-C-C", "N-C-D", "N-D-C", "N-D-D"]
-strategy_set = ["CT-C-C", "CT-C-D", "CT-D-C", "CT-D-D",
-                "N-C-C", "N-C-D", "N-D-C", "N-D-D",]
-recurrent_states = ['7-3-1', '7-3-2', '7-4-1', '7-4-2', '6-3-1', '6-3-2', '6-4-1', '6-4-2']
 for state in recurrent_states:
-    if f"{state}_frequency" not in df.columns:
-        df[f"{state}_frequency"] = 0
-strategy_state_mapping = dict(zip(strategy_set, recurrent_states))
-plot1 = plot_utils.plot_strategy_distribution(df[df["Eps"] == -0.1],
-                           strategy_set,
-                           x="b_fo",
-                           x_label="b_fo",
-                           thresholds=None,
-                           stacked=False,
-                           strategy_state_mapping=strategy_state_mapping,
-                           )
-plot2 = plot_utils.plot_strategy_distribution(df[df["Eps"] == 0.2],
-                           strategy_set,
-                           x="b_fo",
-                           x_label="b_fo",
-                           thresholds=None,
-                           stacked=False,
-                           strategy_state_mapping=strategy_state_mapping,
-                           )
+    if f"{state}_frequency" not in observed_data.columns:
+        observed_data[f"{state}_frequency"] = 0
+observed_data, strat_set_compact = compute_strategy_frequencies(observed_data, recurrent_states)
 
-plots = {f"llm_replication_model_3pop_conditional_trust_cr_{5}_eps_{-0.1}": plot1,
-         f"llm_replication_model_3pop_conditional_trust_cr_{5}_eps_{0.2}": plot2}
-data_utils.save_plots(plots, plots_dir="plots/fairgame_replication_plots")
+# Ensure that only one set of simulation results is plotted at a time!
+df = observed_data[observed_data["simulation_id"] == sim_main]
+
+if game_type == "one_shot_game":
+    
+    plots = plot_strategy_distributions(df, strategy_set, strategy_state_mapping, filename_stub="one_shot")
+    plot_save_id = data_utils.create_id()
+    data_utils.save_plots(plots, plots_dir=f"plots/fairgame_replication_plots/one_shot_games/{plot_save_id}")
+
+if game_type == "repeated_game":
+    plots = {}
+    
+    # df (the observed_data) has columns for the frequency of each strategy profile
+    # (also called recurrent states) and columns for the frequency of each
+    # player's strategy (across recurrent states). We can specify which set of
+    # columns to plot by specifying either strategy_set (which contains the labels of the
+    # recurrent states; yes, it's a bit of a misnomer) or strat_set_compact (for the player strategies).
+    # TODO: perhaps relable strategy_set to recurrent_state_labels to avoid
+    # confusion in future.
+    
+    # First plot the final round frequencies for each state
+    final_round = df["round"].max()
+    final_round_df = final_round[final_round["round"] == final_round]
+    # Note: assumes all games last the same number of rounds
+    plots = {**plots, **plot_strategy_distributions(df, strategy_set, strategy_state_mapping, strategy_state_mapping)}
+
+    # We then want to plot the average frequences across rounds
+
+    df_avg = df.groupby(["simulation_id", "config_index"]).mean()
+    plots = {**plots, **plot_strategy_distributions(df_avg, strategy_set, strategy_state_mapping, filename_stub="average_round")}
+    
+    # Plot each player's final and average strategy frequencies across states
+    plots = {**plots, **plot_strategy_distributions(final_round_df, strat_set_compact, filename_stub="player_strategy_frequencies_final")}
+    plots = {**plots, **plot_strategy_distributions(df_avg, strat_set_compact, filename_stub="player_strategy_frequencies_average")}
+    
+    # Plot the strategy frequencies per round
+    for round in range(final_round + 1):
+        round_df = df[df["round"] == round]
+        plots = {**plots, **plot_strategy_distributions(round_df, strategy_set, strategy_state_mapping, filename_stub=f"round_{round}")}
+        plots = {**plots, **plot_strategy_distributions(round_df, strat_set_compact, filename_stub=f"player_strategy_frequencies_round_{round}")}
+    
+    # Plot a time series for each value of the config id
+    for config_index in df["config_index"].unique():
+        config_df = df[df["config_index"] == config_index]
+        # Only b_fo changes when config_index changes, so that's all we add to the filename
+        b_fo = config_df["b_fo"].unique()[0]
+        plots = {**plots, **plot_time_series_strategies(config_df, strategy_set, strategy_state_mapping, filename_stub=f"time_series_b_fo_{b_fo}")}
+        plots = {**plots, **plot_time_series_strategies(config_df, strat_set_compact, filename_stub=f"time_series_b_fo_{b_fo}")}
+    
+    plot_save_id = data_utils.create_id()
+    data_utils.save_plots(plots, plots_dir=f"plots/fairgame_replication_plots/repeated_games/{plot_save_id}")
