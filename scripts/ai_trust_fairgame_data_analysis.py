@@ -10,6 +10,8 @@ import prototype_phd.plot_utils as plot_utils
 import prototype_phd.utils as utils
 
 import json
+import matplotlib.pyplot as plt
+from matplotlib.colors import ListedColormap
 import numpy
 import pandas
 
@@ -396,10 +398,10 @@ def compute_strategy_frequencies(df, recurrent_states):
     # a list of the recurrent_states where that player employes that strategy
     strat_states_mapping = {}
     for player_index in range(n_players):
-        player_strats = numpy.unique([state.split("-")[player_index]
+        player_strats = numpy.unique([state.split("-")[::-1][player_index]
                                       for state in recurrent_states])
         player_states = {strat: [state for state in recurrent_states
-                                 if state.split("-")[player_index] == strat]
+                                 if state.split("-")[::-1][player_index] == strat]
                          for strat in player_strats}
         strat_states_mapping[f"P{player_index+1}"] = player_states
 
@@ -411,9 +413,31 @@ def compute_strategy_frequencies(df, recurrent_states):
     
     strat_states = [f"{player}_strat_{strat}"
                     for player, v in strat_states_mapping.items()
-                    for v in v.keys()]
+                    for strat in v.keys()]
     
     return df, strat_states
+
+def compact_strategy_labels(strategy_labels):
+    """
+    Given a list of strategy labels in the form "P{player}_strat_{strat}",
+    return a new list where for each player the last strategy (in order of appearance)
+    is dropped.
+    """
+    per_player = {}
+    # Group labels by player
+    for label in strategy_labels:
+        player = label.split("_")[0]  # e.g., "P1"
+        per_player.setdefault(player, []).append(label)
+    
+    compact = []
+    for player, labels in per_player.items():
+        # Assume the order of labels is the order in which they were generated.
+        # Drop the last strategy if there is more than one for this player.
+        if len(labels) > 1:
+            compact.extend(labels[:-1])
+        else:
+            compact.extend(labels)
+    return compact
 
 # TODO: Refactor so that a weight_id_mapping_fn is unneccesary.
 def get_sim_results(params, configs_df, params_df, weight_id_mapping_fn):
@@ -522,15 +546,20 @@ strategy_id_mapping = {"regulator": {"Option A": 1, "Option B": 2, "Option C": 2
 if model_name.startswith("3pop"):
     # for 3 populations, we might switch between models that use different
     # state labels and recurrent_states
-    if model_name.contains("full_trust"):
+    # With only 8 recurrent states, we should use the following colobar to be
+    # consistent with the original paper
+    cmap = ListedColormap(["red", "brown", "orange", "lightblue", "pink", "green", "mediumblue", "black"])
+    if "full_trust" in model_name:
         state_labels = ["T-C-C", "T-C-D", "T-D-C", "T-D-D",
                         "N-C-C", "N-C-D", "N-D-C", "N-D-D"]
         recurrent_states = ['5-3-1', '5-3-2', '5-4-1', '5-4-2', '6-3-1', '6-3-2', '6-4-1', '6-4-2']
-    if model_name.contains("conditional_trust"):
+    if "conditional_trust" in model_name:
         state_labels = ["CT-C-C", "CT-C-D", "CT-D-C", "CT-D-D",
                         "N-C-C", "N-C-D", "N-D-C", "N-D-D",]
         recurrent_states = ['7-3-1', '7-3-2', '7-4-1', '7-4-2', '6-3-1', '6-3-2', '6-4-1', '6-4-2']
 if model_name.startswith("4pop"):
+    # With 16 recurernt states, we need to use a different colormap
+    cmap = plt.colormaps["tab20"]
     # for 4 populations, we only need one set of labels:
     strategy_set=["C-T-C-C", "C-T-C-D", "C-T-D-C", "C-T-D-D",
                     "C-N-C-C", "C-N-C-D", "C-N-D-C", "C-N-D-D",
@@ -645,6 +674,7 @@ if create_sim_df:
 def plot_strategy_distributions(df,
                                 state_labels,
                                 strategy_state_mapping,
+                                cmap=cmap,
                                 filename_stub=""):
     """Plot the distribution of strategies of the given df for a harcoded set of parameters."""
     
@@ -656,6 +686,7 @@ def plot_strategy_distributions(df,
                             thresholds=None,
                             stacked=False,
                             strategy_state_mapping=strategy_state_mapping,
+                            cmap=cmap,
                             )
     plot2 = plot_utils.plot_strategy_distribution(df[(df["cR"] == 0.5) & (df["Eps"] == 0.2)],
                             state_labels,
@@ -665,6 +696,7 @@ def plot_strategy_distributions(df,
                             thresholds=None,
                             stacked=False,
                             strategy_state_mapping=strategy_state_mapping,
+                            cmap=cmap,
                             )
     plot3 = plot_utils.plot_strategy_distribution(df[(df["cR"] == 5) & (df["Eps"] == -0.1)],
                             state_labels,
@@ -674,6 +706,7 @@ def plot_strategy_distributions(df,
                             thresholds=None,
                             stacked=False,
                             strategy_state_mapping=strategy_state_mapping,
+                            cmap=cmap,
                             )
     plot4 = plot_utils.plot_strategy_distribution(df[(df["cR"] == 5) & (df["Eps"] == 0.2)],
                             state_labels,
@@ -683,6 +716,7 @@ def plot_strategy_distributions(df,
                             thresholds=None,
                             stacked=False,
                             strategy_state_mapping=strategy_state_mapping,
+                            cmap=cmap,
                             )
     
     filename_start = f"llm_replication_{filename_stub}_llm_{llm}_{game_type}_personalities_{change_personality_for}_model_{model_name}"
@@ -697,6 +731,7 @@ def plot_strategy_distributions(df,
 def plot_time_series_strategies(df,
                                 state_labels,
                                 strategy_state_mapping,
+                                cmap=cmap,
                                 filename_stub=""):
     """Plot a time series of strategies of the given df for a harcoded set of parameters."""
     
@@ -708,6 +743,7 @@ def plot_time_series_strategies(df,
                             thresholds=None,
                             stacked=False,
                             strategy_state_mapping=strategy_state_mapping,
+                            cmap=cmap,
                             )
     plot2 = plot_utils.plot_strategy_distribution(df[(df["cR"] == 0.5) & (df["Eps"] == 0.2)],
                             state_labels,
@@ -717,6 +753,7 @@ def plot_time_series_strategies(df,
                             thresholds=None,
                             stacked=False,
                             strategy_state_mapping=strategy_state_mapping,
+                            cmap=cmap,
                             )
     plot3 = plot_utils.plot_strategy_distribution(df[(df["cR"] == 5) & (df["Eps"] == -0.1)],
                             state_labels,
@@ -726,6 +763,7 @@ def plot_time_series_strategies(df,
                             thresholds=None,
                             stacked=False,
                             strategy_state_mapping=strategy_state_mapping,
+                            cmap=cmap,
                             )
     plot4 = plot_utils.plot_strategy_distribution(df[(df["cR"] == 5) & (df["Eps"] == 0.2)],
                             state_labels,
@@ -735,6 +773,7 @@ def plot_time_series_strategies(df,
                             thresholds=None,
                             stacked=False,
                             strategy_state_mapping=strategy_state_mapping,
+                            cmap=cmap,
                             )
     
     filename_start = f"llm_replication_{filename_stub}_llm_{llm}_{game_type}_personalities_{change_personality_for}_model_{model_name}"
@@ -750,7 +789,10 @@ for state in recurrent_states:
     if f"{state}_frequency" not in observed_data.columns:
         observed_data[f"{state}_frequency"] = 0
 observed_data, states_labels_compact = compute_strategy_frequencies(observed_data, recurrent_states)
+# For the compact states labels, we want to exclude the last strategy for each player because
+# that information is redundant.
 
+states_labels_compact = compact_strategy_labels(states_labels_compact)
 # Ensure that only one set of simulation results is plotted at a time!
 df = observed_data[observed_data["simulation_id"] == sim_main]
 
