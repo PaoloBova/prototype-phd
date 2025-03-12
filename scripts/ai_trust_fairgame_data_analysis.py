@@ -462,25 +462,38 @@ def get_sim_results(params, configs_df, params_df, weight_id_mapping_fn):
     
     return sim_df
 
-# TODO: Make sure to systematically go through all relevant values represented
-# as data below.
-
 # Load fairgame data
 data_dir = "data"
-external_data_dir = "external_data/fairgame_data/one-shot-results"
-external_data_dir = "external_data/fairgame_data/Fairgame_results/OpenAIGPT4o/V1/one_shot"
 plots_dir = "plots"
 # 3 population models configs simulation ids
 sim1 = "bellyfuls_skewering_expels_cc4dc882"
 sim2 = "whiten_uncritical_chows_dc41924b"
 # 4 population models configs simulation ids
-# sim3 = fillers_preliminary_preppier_eba9e339
-# sim4 = welcomed_benefice_Kahlua_27c6ec76
+sim3 = "fillers_preliminary_preppier_eba9e339"
+sim4 = "welcomed_benefice_Kahlua_27c6ec76"
+
+# TODO: Make sure to systematically go through all relevant values represented
+# as data below. It would be possible to go through all the available directories
+# and store them in one go if we wrap everything in a for loop. be careful because
+# the sim ids are closely tied to which of the higher level directories we use
+# as the external_data_dir
 
 # Edit the following:
 sims = [sim1]
+external_data_dir = "external_data/fairgame_data/one-shot-results"
+external_data_dir = "external_data/fairgame_data/Fairgame_results/OpenAIGPT4o/V1/one_shot"
+# Whether to create a sim_df and run the second consistency check.
+# Must be false for the 4 population model.
+create_sim_df = True
+# The following values are just used for naming plot files and not for processing
+# the data
+change_personality_for = "developer"
+model_name = "3pop_full_trust"
+game_type = "one_shot_game"
+llm = "gpt4o"
+
 # Take care to specify the simulation we are analysing!
-# Usually we only have one simulation per directory of fairgame results
+# Currently, we only have one simulation per directory of fairgame results
 sim_main = sims[0]
 # Note: All of the filenames for the fairgame results we are analyzing contain
 # a v1 or v2 to refer to whether the Users use a trust or conditional trust
@@ -502,22 +515,45 @@ strategy_id_mapping = {"regulator": {"Option A": 1, "Option B": 2, "Option C": 2
                     "developer": {"Option A": 3, "Option B": 4, "Option C": 4},
                     "user": {"Option A": 5, "Option B": 6, "Option C": 7}}
 
-# Unfortunately, we always have to take care to specify the strategy set.
-# state_labels = ["T-C-C", "T-C-D", "T-D-C", "T-D-D",
-#                 "N-C-C", "N-C-D", "N-D-C", "N-D-D"]
-# recurrent_states = ['5-3-1', '5-3-2', '5-4-1', '5-4-2', '6-3-1', '6-3-2', '6-4-1', '6-4-2']
-state_labels = ["CT-C-C", "CT-C-D", "CT-D-C", "CT-D-D",
-                "N-C-C", "N-C-D", "N-D-C", "N-D-D",]
-recurrent_states = ['7-3-1', '7-3-2', '7-4-1', '7-4-2', '6-3-1', '6-3-2', '6-4-1', '6-4-2']
+# Unfortunately, we need to specify the state labels and recurrent states
+# because I didn't consistently add them correctly to the params.json files.
+# Note: In future, enforcing correct creation of params.json files is better
+
+if model_name.startswith("3pop"):
+    # for 3 populations, we might switch between models that use different
+    # state labels and recurrent_states
+    if model_name.contains("full_trust"):
+        state_labels = ["T-C-C", "T-C-D", "T-D-C", "T-D-D",
+                        "N-C-C", "N-C-D", "N-D-C", "N-D-D"]
+        recurrent_states = ['5-3-1', '5-3-2', '5-4-1', '5-4-2', '6-3-1', '6-3-2', '6-4-1', '6-4-2']
+    if model_name.contains("conditional_trust"):
+        state_labels = ["CT-C-C", "CT-C-D", "CT-D-C", "CT-D-D",
+                        "N-C-C", "N-C-D", "N-D-C", "N-D-D",]
+        recurrent_states = ['7-3-1', '7-3-2', '7-4-1', '7-4-2', '6-3-1', '6-3-2', '6-4-1', '6-4-2']
+if model_name.startswith("4pop"):
+    # for 4 populations, we only need one set of labels:
+    strategy_set=["C-T-C-C", "C-T-C-D", "C-T-D-C", "C-T-D-D",
+                    "C-N-C-C", "C-N-C-D", "C-N-D-C", "C-N-D-D",
+                    "D-CT-C-C", "D-CT-C-D", "D-CT-D-C", "D-CT-D-D",
+                    "D-N-C-C", "D-N-C-D", "D-N-D-C", "D-N-D-D"]
+    # Note: 7 is skipped to avoid confusion with the 3 population model
+    recurrent_states = ['8-5-3-1',
+     '8-5-3-2',
+     '8-5-4-1',
+     '8-5-4-2',
+     '8-6-3-1',
+     '8-6-3-2',
+     '8-6-4-1',
+     '8-6-4-2',
+     '9-5-3-1',
+     '9-5-3-2',
+     '9-5-4-1',
+     '9-5-4-2',
+     '9-6-3-1',
+     '9-6-3-2',
+     '9-6-4-1',
+     '9-6-4-2',]
 strategy_state_mapping = dict(zip(state_labels, recurrent_states))
-
-
-change_personality_for = "developer"
-model_name = "3pop_full_trust"
-game_type = "one_shot_game"
-llm = "gpt4o"
-
-create_sim_df = True
 
 # ============================================
 # Load and analyse the data as specified above
@@ -534,6 +570,26 @@ configs = fairgame_data["configs"]
 configs_df = fairgame_data["configs_df"]
 results = fairgame_data["results"]
 results_df = fairgame_data["results_df"]
+
+# Log whether the state labels and recurrent states specified in this file
+# are consistent with those saved to params.json files.
+
+# Note: In future, we will hopefully rename strategy_set to state_labels
+# everywhere so that future simulation runs store that as the keyword in
+# params.json files.
+for p in params:
+    if "strategy_set" not in p:
+        continue
+    if p["strategy_set"] != state_labels:
+        print("State labels in params.json file do not match those specified in this file. Ignore if this is an intentional workaround on your part.")
+        print("state_labels in params.json file:", p["strategy_set"])
+        print("state_labels in this file:", state_labels)
+    if "recurrent_states" not in p:
+        continue
+    if p["recurrent_states"] != recurrent_states:
+        print("Recurrent states in params.json file do not match those specified in this file. Ignore if this is an intentional workaround on your part.")
+        print("recurrent_states in params.json file:", p["recurrent_states"])
+        print("recurrent_states in this file:", recurrent_states)
 
 df_wide = results_df
 df_tidy = results_to_tidy_dataframe(df_wide)
