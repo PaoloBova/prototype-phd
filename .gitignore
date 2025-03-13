@@ -152,4 +152,5 @@ checklink/cookies.txt
 
 # Data and plot files
 /data
+/external_data
 /plots
