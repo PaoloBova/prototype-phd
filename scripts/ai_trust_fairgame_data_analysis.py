@@ -320,17 +320,20 @@ def consistency_check2(configs_df, sim_df):
 def df_to_observed_data(df_tidy, params_df, strategy_id_mapping):
     """Derives observed data on strategy profile frequencies from the tidy dataframe.
     
+    Also computes a personality profile from each agent’s personality.
+    
     Notes:
-    - Assumes all groups have the same number of agents."""
+    - Assumes all groups have the same number of agents.
+    """
     # ==================================================
     # Part 0: Create strategy_id columns with the given mapping
     # ==================================================
     df_tidy["agent_strategy_id"] = df_tidy.apply(
         lambda x: strategy_id_mapping[x["agent_name"]][x["agent_strategies"]], axis=1)
+    
     # ==================================================
-    # Part 1: Compute Observed Strategy Profile Frequencies
+    # Part 1a: Pivot df_tidy to get one row per replication round for strategy IDs.
     # ==================================================
-    # Pivot df_tidy to have one row per replication round with each agent's strategy.
     profile_df = df_tidy.pivot_table(
         index=["simulation_id", "config_index", "replication_index", "round"],
         columns="agent",
@@ -347,14 +350,56 @@ def df_to_observed_data(df_tidy, params_df, strategy_id_mapping):
     # Create a combined strategy profile string (e.g., "cooperate-defect-retaliate").
     agent_cols = [f"agent{i}_strategy_id" for i in range(1, n_players+1)]
     profile_df["strategy_profile"] = ""
-    for col in agent_cols[::-1]:
+    for i, col in enumerate(agent_cols[::-1]):
         profile_df["strategy_profile"] += profile_df[col].astype(str)
-        if col != agent_cols[0]:
-            profile_df["strategy_profile"] +=  "-"
+        if i != len(agent_cols)-1:
+            profile_df["strategy_profile"] += "-"
+    
+    # ==================================================
+    # Part 1b: Create a personality profile string.
+    # ==================================================
+    # Pivot df_tidy to get agent personality values.
+    print(df_tidy.columns)
+    df_tidy.agent_personality = df_tidy.agent_personality.fillna("none")
+    personality_df = df_tidy.pivot_table(
+        index=["simulation_id", "config_index", "replication_index", "round"],
+        columns="agent",
+        values="agent_personality",
+        aggfunc="first"
+    ).reset_index()
+    
+    # Rename the personality columns for clarity.
+    personality_col_renames = {i: f"agent{i}_personality" for i in range(1, n_players+1)}
+    personality_df = personality_df.rename(columns=personality_col_renames)
+    print(personality_df.columns)
 
-    # Group by simulation_id, config_index, round, and strategy_profile to count replications.
+    # Create a combined personality profile string (e.g., "nan-aggressive-nan").
+    personality_cols = [f"agent{i}_personality" for i in range(1, n_players+1)]
+    personality_df["personality_profile"] = ""
+    for i, col in enumerate(personality_cols[::-1]):
+        personality =  personality_df[col].astype(str)
+        # Only take the first word of the personality, not including
+        # any punctuation including commas
+        personality = personality.str.split(" ").str[0]
+        personality = personality.str.replace(",", "")
+        personality_df["personality_profile"] += personality
+        if i != len(personality_cols)-1:
+            personality_df["personality_profile"] += "-"
+    
+    print(personality_df.columns)
+    print(personality_df["personality_profile"].unique())
+    
+    # Merge personality_profile into profile_df on the pivot keys.
+    profile_df = profile_df.merge(personality_df[["simulation_id", "config_index", "replication_index", "round", "personality_profile"]],
+                                  on=["simulation_id", "config_index", "replication_index", "round"],
+                                  how="left")
+    
+    # ==================================================
+    # Part 2: Group by simulation_id, config_index, round, strategy_profile, and personality_profile
+    # to count replications.
+    # ==================================================
     profile_counts = profile_df.groupby(
-        ["simulation_id", "config_index", "round", "strategy_profile"]
+        ["simulation_id", "config_index", "round", "strategy_profile", "personality_profile"]
     ).agg(count=("replication_index", "count")).reset_index()
 
     # Determine the total number of replications for each simulation/config/round.
@@ -363,13 +408,16 @@ def df_to_observed_data(df_tidy, params_df, strategy_id_mapping):
     ).size().reset_index(name="replications")
 
     # Merge counts and compute frequency as count divided by replications.
-    observed_profile_freq = profile_counts.merge(total_reps, on=["simulation_id", "config_index", "round"])
+    observed_profile_freq = profile_counts.merge(total_reps,
+                                                 on=["simulation_id", "config_index", "round"])
     observed_profile_freq["frequency"] = observed_profile_freq["count"] / observed_profile_freq["replications"]
 
-    # Create a column for each strategy profile frequency by reshaping observed_profile_freq
-    
+    # ==================================================
+    # Part 3: Reshape observed_profile_freq so that each strategy personality profile frequency gets its own column.
+    # Keep all personality_profiles within one column.
+    # ==================================================
     observed_data = observed_profile_freq.pivot_table(
-        index=["simulation_id", "config_index", "round"],
+        index=["simulation_id", "config_index", "round", "personality_profile"],
         columns="strategy_profile",
         values="frequency",
         aggfunc="first"
@@ -377,12 +425,12 @@ def df_to_observed_data(df_tidy, params_df, strategy_id_mapping):
 
     observed_data = observed_data.fillna(0)
     # Rename frequency columns to end in _frequency
-    observed_data.columns = [f"{col}_frequency" if col != "simulation_id" and col != "config_index" and col != "round"
-                            else col for col in observed_data.columns]
+    observed_data.columns = [f"{col}_frequency" if col not in ["simulation_id", "config_index", "round", "personality_profile"] else col
+                             for col in observed_data.columns]
 
-    # Merge with params_df to get the parameter values for each simulation and config
+    # Merge with params_df to get the parameter values for each simulation and config.
     observed_data = pandas.merge(observed_data, params_df, on=["simulation_id", "config_index"])
-    
+
     return observed_data, observed_profile_freq
 
 def compute_strategy_frequencies(df, recurrent_states):
@@ -426,8 +474,7 @@ def compute_strategy_frequencies(df, recurrent_states):
 def compact_strategy_labels(strategy_labels):
     """
     Given a list of strategy labels in the form "P{player}_strat_{strat}",
-    return a new list where for each player the last strategy (in order of appearance)
-    is dropped.
+    return a new list where only the first strategy for each player is kept.
     """
     per_player = {}
     # Group labels by player
@@ -700,126 +747,77 @@ def run_data_analysis(args):
             
             filename_start = f"llm_replication_{filename_stub}_llm_{llm}_{game_type}_personalities_{change_personality_for}_model_{model_name}"
             plots = {}
-            df1 = df[(df["cR"] == 0.5) & (df["Eps"] == -0.1)]
-            df2 = df[(df["cR"] == 0.5) & (df["Eps"] == 0.2)]
-            df3 = df[(df["cR"] == 5) & (df["Eps"] == -0.1)]
-            df4 = df[(df["cR"] == 5) & (df["Eps"] == 0.2)]
-            if len(df1) > 1:
-                plot1 = plot_utils.plot_strategy_distribution(df1,
-                                        state_labels,
-                                        x=x,
-                                        x_label=x_label,
-                                        title="Eps = -0.1",
-                                        thresholds=None,
-                                        stacked=False,
-                                        strategy_state_mapping=strategy_state_mapping,
-                                        cmap=cmap,
-                                        )
-                plots = {**plots, f"{filename_start}_cr_{0.5}_eps_{-0.1}": plot1,}
-            if len(df2) > 1:
-                plot2 = plot_utils.plot_strategy_distribution(df[(df["cR"] == 0.5) & (df["Eps"] == 0.2)],
-                                        state_labels,
-                                        x=x,
-                                        x_label=x_label,
-                                        title="Eps = 0.2",
-                                        thresholds=None,
-                                        stacked=False,
-                                        strategy_state_mapping=strategy_state_mapping,
-                                        cmap=cmap,
-                                        )
-                plots = {**plots, f"{filename_start}_cr_{0.5}_eps_{0.2}": plot2,}
-            if len(df3) > 1:
-                plot3 = plot_utils.plot_strategy_distribution(df[(df["cR"] == 5) & (df["Eps"] == -0.1)],
-                                        state_labels,
-                                        x=x,
-                                        x_label=x_label,
-                                        title="Eps = -0.1",
-                                        thresholds=None,
-                                        stacked=False,
-                                        strategy_state_mapping=strategy_state_mapping,
-                                        cmap=cmap,
-                                        )
-                plots = {**plots, f"{filename_start}_cr_{5}_eps_{-0.1}": plot3,}
-            if len(df4) > 1:
-                plot4 = plot_utils.plot_strategy_distribution(df[(df["cR"] == 5) & (df["Eps"] == 0.2)],
-                                        state_labels,
-                                        x=x,
-                                        x_label=x_label,
-                                        title="Eps = 0.2",
-                                        thresholds=None,
-                                        stacked=False,
-                                        strategy_state_mapping=strategy_state_mapping,
-                                        cmap=cmap,
-                                        )
-                plots = {**plots, f"{filename_start}_cr_{5}_eps_{0.2}": plot4,}
-            
-            return plots
+            slices = [[cR, Eps, personality_profile ]
+                      for cR in [0.5, 5]
+                      for Eps in [-0.1, 0.2]
+                      for personality_profile in df["personality_profile"].unique()]
+            for cR, Eps, personality_profile in slices:
+                filename = f"{filename_start}_cR_{cR}_Eps_{Eps}_personality_profile_{personality_profile}"
+                df1 = df[(df["cR"] == cR)
+                         & (df["Eps"] == Eps)
+                         & (df["personality_profile"] == personality_profile)]
+                if len(df1) > 1:
+                    plot_title = f"{title}"
+                    y_label='Frequency'
+                    if strategy_state_mapping!=None:
+                        recurrent_states = [strategy_state_mapping[strategy]
+                                            for strategy in state_labels]
+                    else:
+                        recurrent_states = state_labels    
+                    fig, ax = plt.subplots()
+                    # Define a list of marker shapes to distinguish each strategy.
+                    markers = ['o', 's', '^', 'D', 'v', '*', 'P', 'X', '<', '>', '1', '2', '3', '4', 'h', 'H', '+', 'x', '|', '_']
+                    # Plot scatter points for each strategy with a unique marker.
+                    for i, state in enumerate(recurrent_states):
+                        marker = markers[i % len(markers)]
+                        x_values = df1[x].values
+                        jitter_size = 0.1
+                        jitter = numpy.random.uniform(-jitter_size, jitter_size, size=x_values.shape)
+                        jittered_x = x_values + jitter
+                        y_values = df1[state + "_frequency"].values
+                        # sort the jittered values so the line connects them
+                        sort_idx = numpy.argsort(jittered_x)
+                        sorted_x = jittered_x[sort_idx]
+                        sorted_y = y_values[sort_idx]
+                        # If there are only 3 states, then I want to use
+                        # custom labels
+                        if len(state_labels) == 3:
+                            custom_labels = {"P1_strat_1": "Regulator Cooperates",
+                                                "P2_strat_3": "Developer Cooperates",
+                                                "P3_strat_5": "User Trusts",
+                                                "P3_strat_6": "User Distrusts",
+                                                "P4_strat_8": "Commentariat Cooperates"}
+                            label = custom_labels[state]
+                        else:
+                            label = state
+                        # Plot connected points with markers and a line between them
+                        ax.plot(sorted_x,
+                                sorted_y,
+                                color=cmap(i),
+                                marker=marker,
+                                markersize=20,   # adjust as needed
+                                linestyle='-',
+                                linewidth=1,
+                                label=label)
 
-
-        def plot_time_series_strategies(df,
-                                        state_labels,
-                                        strategy_state_mapping,
-                                        cmap=cmap,
-                                        filename_stub=""):
-            """Plot a time series of strategies of the given df for a harcoded set of parameters."""
-            filename_start = f"llm_replication_{filename_stub}_llm_{llm}_{game_type}_personalities_{change_personality_for}_model_{model_name}"
-            plots = {}
-            df1 = df[(df["cR"] == 0.5) & (df["Eps"] == -0.1)]
-            df2 = df[(df["cR"] == 0.5) & (df["Eps"] == 0.2)]
-            df3 = df[(df["cR"] == 5) & (df["Eps"] == -0.1)]
-            df4 = df[(df["cR"] == 5) & (df["Eps"] == 0.2)]
-            
-            if len(df1) > 1:
-                plot1 = plot_utils.plot_strategy_distribution(df1,
-                                        state_labels,
-                                        x="round",
-                                        x_label="Round",
-                                        title="Eps = -0.1",
-                                        thresholds=None,
-                                        stacked=False,
-                                        strategy_state_mapping=strategy_state_mapping,
-                                        cmap=cmap,
-                                        )
-                plots = {**plots, f"{filename_start}_cr_{0.5}_eps_{-0.1}": plot1,}
-            if len(df2) > 1:
-                plot2 = plot_utils.plot_strategy_distribution(df2,
-                                        state_labels,
-                                        x="round",
-                                        x_label="Round",
-                                        title="Eps = 0.2",
-                                        thresholds=None,
-                                        stacked=False,
-                                        strategy_state_mapping=strategy_state_mapping,
-                                        cmap=cmap,
-                                        )
-                plots = {**plots, f"{filename_start}_cr_{0.5}_eps_{0.2}": plot2,}
-            if len(df3) > 1:
-                plot3 = plot_utils.plot_strategy_distribution(df3,
-                                        state_labels,
-                                        x="round",
-                                        x_label="Round",
-                                        title="Eps = -0.1",
-                                        thresholds=None,
-                                        stacked=False,
-                                        strategy_state_mapping=strategy_state_mapping,
-                                        cmap=cmap,
-                                        )
-                plots = {**plots, f"{filename_start}_cr_{5}_eps_{-0.1}": plot3,}
-            if len(df4) > 1:
-                plot4 = plot_utils.plot_strategy_distribution(df4,
-                                        state_labels,
-                                        x="round",
-                                        x_label="Round",
-                                        title="Eps = 0.2",
-                                        thresholds=None,
-                                        stacked=False,
-                                        strategy_state_mapping=strategy_state_mapping,
-                                        cmap=cmap,
-                                        )
-                plots = {**plots, f"{filename_start}_cr_{5}_eps_{0.2}": plot4,}
+                    # ax.legend(loc='upper left')                 
+                    # Move legend outside the figure
+                    # ax.legend(bbox_to_anchor=(1.05, 1), loc='upper left')
+                    ax.legend(bbox_to_anchor=(1.05, 1),
+                            loc='upper left',
+                            markerscale=0.5,      # reduce marker size in legend
+                            # handlelength=2,       # length of the legend handle
+                            # handletextpad=0.5  # space between marker and text
+                            )   
+                    ax.set_title(plot_title)
+                    ax.set_xlabel(x_label)
+                    ax.set_ylabel(y_label)
+                    plt.tight_layout()
+        
+                    plots = {**plots, filename: fig}
 
             return plots
-    
+
     if "4pop" in model_name:
         
         def plot_strategy_distributions(df,
@@ -835,108 +833,80 @@ def run_data_analysis(args):
             filename_start = f"llm_replication_{filename_stub}_llm_{llm}_{game_type}_personalities_{change_personality_for}_model_{model_name}"
             plots = {}
             
-            # we need to improve the plotting here.
-            # Use a line plot instead.
-            
-            for cW in [0, 5, 10]:
-                for cI in [0.5, 5]:
-                    df1 = df[(df["cI"] == cI) & (df["cW"] == cW)]
-                    if len(df1) > 1:
-                        plot_title = f"{title}cI={cI}, cW={cW}"
-                        y_label='Frequency'
-                        if strategy_state_mapping!=None:
-                            recurrent_states = [strategy_state_mapping[strategy]
-                                                for strategy in state_labels]
+            slices = [[cW, cI, personality_profile ]
+                      for cW in [0, 5, 10]
+                      for cI in [0.5, 5]
+                      for personality_profile in df["personality_profile"].unique()]
+            for cW, cI, personality_profile in slices:
+                filename = f"{filename_start}_cI_{cI}_cW_{cW}_personality_profile_{personality_profile}"
+                df1 = df[(df["cI"] == cI)
+                         & (df["cW"] == cW)
+                         & (df["personality_profile"] == personality_profile)]
+                if len(df1) > 1:
+                    plot_title = f"{title}cI={cI}, cW={cW}"
+                    y_label='Frequency'
+                    if strategy_state_mapping!=None:
+                        recurrent_states = [strategy_state_mapping[strategy]
+                                            for strategy in state_labels]
+                    else:
+                        recurrent_states = state_labels    
+                    fig, ax = plt.subplots()
+                    # Define a list of marker shapes to distinguish each strategy.
+                    markers = ['o', 's', '^', 'D', 'v', '*', 'P', 'X', '<', '>', '1', '2', '3', '4', 'h', 'H', '+', 'x', '|', '_']
+                    # Plot scatter points for each strategy with a unique marker.
+                    for i, state in enumerate(recurrent_states):
+                        marker = markers[i % len(markers)]
+                        x_values = df1[x].values
+                        jitter_size = 0.1
+                        jitter = numpy.random.uniform(-jitter_size, jitter_size, size=x_values.shape)
+                        jittered_x = x_values + jitter
+                        y_values = df1[state + "_frequency"].values
+                        # sort the jittered values so the line connects them
+                        sort_idx = numpy.argsort(jittered_x)
+                        sorted_x = jittered_x[sort_idx]
+                        sorted_y = y_values[sort_idx]
+                        # If there are only 4 states, then I want to use
+                        # custom labels
+                        if len(state_labels) == 4:
+                            custom_labels = {"P1_strat_1": "Regulator Cooperates",
+                                                "P2_strat_3": "Developer Cooperates",
+                                                "P3_strat_5": "User Trusts",
+                                                "P4_strat_8": "Commentariat Cooperates"}
+                            label = custom_labels[state]
                         else:
-                            recurrent_states = state_labels    
-                        fig, ax = plt.subplots()
-                        # Define a list of marker shapes to distinguish each strategy.
-                        markers = ['o', 's', '^', 'D', 'v', '*', 'P', 'X', '<', '>', '1', '2', '3', '4', 'h', 'H', '+', 'x', '|', '_']
-                        # Plot scatter points for each strategy with a unique marker.
-                        for i, state in enumerate(recurrent_states):
-                            marker = markers[i % len(markers)]
-                            x_values = df1[x].values
-                            jitter_size = 0.1
-                            jitter = numpy.random.uniform(-jitter_size, jitter_size, size=x_values.shape)
-                            jittered_x = x_values + jitter
-                            y_values = df1[state + "_frequency"].values
-                            # sort the jittered values so the line connects them
-                            sort_idx = numpy.argsort(jittered_x)
-                            sorted_x = jittered_x[sort_idx]
-                            sorted_y = y_values[sort_idx]
-                            # If there are only 4 states, then I want to use
-                            # custom labels
-                            if len(state_labels) == 4:
-                                custom_labels = {"P1_strat_1": "Regulator Cooperates",
-                                                 "P2_strat_3": "Developer Cooperates",
-                                                 "P3_strat_5": "User Trusts",
-                                                 "P4_strat_8": "Commentariat Cooperates"}
-                                label = custom_labels[i]
-                            else:
-                                label = state
-                            # Plot connected points with markers and a line between them
-                            ax.plot(sorted_x,
-                                    sorted_y,
-                                    color=cmap(i),
-                                    marker=marker,
-                                    markersize=20,   # adjust as needed
-                                    linestyle='-',
-                                    linewidth=1,
-                                    label=label)
+                            label = state
+                        # Plot connected points with markers and a line between them
+                        ax.plot(sorted_x,
+                                sorted_y,
+                                color=cmap(i),
+                                marker=marker,
+                                markersize=20,   # adjust as needed
+                                linestyle='-',
+                                linewidth=1,
+                                label=label)
 
-                        # ax.legend(loc='upper left')                 
-                        # Move legend outside the figure
-                        # ax.legend(bbox_to_anchor=(1.05, 1), loc='upper left')
-                        ax.legend(bbox_to_anchor=(1.05, 1),
-                                loc='upper left',
-                                markerscale=0.5,      # reduce marker size in legend
-                                # handlelength=2,       # length of the legend handle
-                                # handletextpad=0.5  # space between marker and text
-                                )   
-                        ax.set_title(plot_title)
-                        ax.set_xlabel(x_label)
-                        ax.set_ylabel(y_label)
-                        plt.tight_layout()
-            
-                        plots = {**plots, f"{filename_start}_cI_{cI}_cW_{cW}": fig}
+                    # ax.legend(loc='upper left')                 
+                    # Move legend outside the figure
+                    # ax.legend(bbox_to_anchor=(1.05, 1), loc='upper left')
+                    ax.legend(bbox_to_anchor=(1.05, 1),
+                            loc='upper left',
+                            markerscale=0.5,      # reduce marker size in legend
+                            # handlelength=2,       # length of the legend handle
+                            # handletextpad=0.5  # space between marker and text
+                            )   
+                    ax.set_title(plot_title)
+                    ax.set_xlabel(x_label)
+                    ax.set_ylabel(y_label)
+                    plt.tight_layout()
+        
+                    plots = {**plots, filename: fig}
             
             return plots
-
-
-        def plot_time_series_strategies(df,
-                                        state_labels,
-                                        strategy_state_mapping,
-                                        title="",
-                                        cmap=cmap,
-                                        filename_stub=""):
-            """Plot a time series of strategies of the given df for a harcoded set of parameters."""
-            filename_start = f"llm_replication_{filename_stub}_llm_{llm}_{game_type}_personalities_{change_personality_for}_model_{model_name}"
-            plots = {}
-
-            for cW in [0, 5, 10]:
-                for cI in [0.5, 5]:
-                    df1 = df[(df["cI"] == cI) & (df["cW"] == cW)]
-                    if len(df1) > 1:
-                        plot1 = plot_utils.plot_strategy_distribution(df1,
-                                                state_labels,
-                                                x="round",
-                                                x_label="Round",
-                                                title=f"{title}_cI={cI}, cW={cW}",
-                                                thresholds=None,
-                                                stacked=False,
-                                                strategy_state_mapping=strategy_state_mapping,
-                                                cmap=cmap,
-                                                )
-                        plots = {**plots, f"{filename_start}_cI_{cI}_cW_{cW}": plot1,}
-
-            return plots
-    
-    # TODO: We need to filter by agent personalities given change_personality_for (only one agent sees a change in personality at a time)
-    # print("df: columns", df_tidy.columns)
-    # print("df.agent_personality", df_tidy.agent_personality.unique())
-    # raise ValueError("Stop here")
 
     observed_data, observed_profile_freq = df_to_observed_data(df_tidy, params_df, strategy_id_mapping)
+    observed_data = pandas.merge(observed_data, configs_df, on=["simulation_id", "config_index"])
+    
+    print(observed_data.personality_profile.unique())
     for state in recurrent_states:
         if f"{state}_frequency" not in observed_data.columns:
             observed_data[f"{state}_frequency"] = 0
@@ -1001,8 +971,8 @@ def run_data_analysis(args):
             config_df = df[df["config_index"] == config_index]
             # Only b_fo changes when config_index changes, so that's all we add to the filename
             b_fo = config_df["b_fo"].unique()[0]
-            plots = {**plots, **plot_time_series_strategies(config_df, state_labels, strategy_state_mapping, filename_stub=f"time_series_b_fo_{b_fo}")}
-            plots = {**plots, **plot_time_series_strategies(config_df, states_labels_compact, state_mapping_compact, filename_stub=f"time_series_b_fo_{b_fo}")}
+            plots = {**plots, **plot_strategy_distributions(config_df, state_labels, strategy_state_mapping, x="round", x_label="Round", filename_stub=f"time_series_b_fo_{b_fo}")}
+            plots = {**plots, **plot_strategy_distributions(config_df, states_labels_compact, state_mapping_compact, x="round", x_label="Round", filename_stub=f"time_series_b_fo_{b_fo}")}
 
         data_utils.save_plots(plots, plots_dir=plots_dir)
         
