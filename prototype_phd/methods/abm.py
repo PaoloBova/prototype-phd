@@ -21,36 +21,49 @@ def set_random_seed(seed: int):
     # Note that Autogen only offers a seed cache which must be set
     # each time a new API call to an LLM is made.
 
-def init_agents(params):
-    """Initialize and return a list of agents"""
-    agent_specs = params['agent_specs']
+def init_agents(params, group_by_category=False, randomize=True):
+    """Initialize agents by creating instances of the agent class.
+    
+    Parameters:
+    params: A dictionary containing the parameters for the simulations.
+    group_by_category: Whether to group agents by category.
+    randomize: Whether to randomize the order of agent specs.
+    
+    Returns:
+    agents: A list of agents or a dictionary of agents grouped by category.
+    
+    Notes:
+    - The `agent_specs` parameter should be a list of dictionaries.
+    - The `agent_secrets` parameter should be a dictionary of secrets.
+    - For each spec:
+        - The `agent_category` parameter is optional (default is None).
+        - The `num_agents` parameter is optional (default is 1).
+        - The `agent_spec_id` parameter is optional (default is None).
+    """
+    agent_specs = params.get('agent_specs', [])
     agent_secrets = params.get('agent_secrets', {})
-    agents = []
-    # Randomise order of agent specs to avoid any implicit ordering
-    random.shuffle(agent_specs)
+    agents = {} if group_by_category else []
+    if randomize:
+        # Randomize order of agent specs
+        random.shuffle(agent_specs)
+    i == 0
     for spec in agent_specs:
         agent_class = spec['agent_class']
         num_agents = spec.get('num_agents', 1)
         agent_params = spec.get('agent_params', {})
         spec_id = spec.get('agent_spec_id', None)
         secrets = agent_secrets.get(spec_id, {})
-        
+        agent_category = spec.get('agent_category', None)
         for _ in range(num_agents):
-            agent_id = len(agents) + 1
+            # Assign each agent a unique id based on insertion order
+            i += 1
+            agent_id = i
             agent = agent_class(agent_id=agent_id, **agent_params, **secrets)
-            agents.append(agent)
-
+            if group_by_category:
+                agents.setdefault(agent_category, []).append(agent)
+            else:
+                agents.append(agent)
     return agents
-
-def init_adjudicator(params):
-    """Initialize and return an adjudicator agent"""
-    spec = params['adjudicator_spec']
-    agent_secrets = params.get('agent_secrets', {})
-    agent_class = spec['agent_class']
-    agent_params = spec.get('agent_params', {})
-    spec_id = spec.get('agent_spec_id', None)
-    secrets = agent_secrets.get(spec_id, {})
-    return agent_class(agent_id=f"adjudicator_{0}", **agent_params, **secrets)
 
 def run(model, parameters):
     logging.info(f"Starting simulation with {len(model.agents)} agents.")
@@ -69,12 +82,7 @@ def run(model, parameters):
 def run_simulation(params):
     """Initialize the agents and model, then run the model."""
     model_class = params['model_class']
-    if params.get('adjudicator_spec'):
-        params["adjudicator_agent"] = init_adjudicator(params)
-    if params.get('agent_specs'):
-        agents = init_agents(params)
-    else:
-        agents = None
+    agents = init_agents(params)
     model = model_class(agents, params)
     agent_results, model_results = run(model, params)
     return model, agent_results, model_results
