@@ -3,22 +3,24 @@ import collections
 import datetime
 import hashlib
 import json
-import os
+import logging
 from matplotlib.animation import FuncAnimation
 import matplotlib.pyplot as plt
 import numpy as np
 import networkx
+import os
 import pandas as pd
 import plotly.graph_objects as go
 import plotly.io as pio
 import pprint
 import random
 import regex
+from scipy.stats import qmc
 import subprocess
 import tqdm
-from typing import Any, Dict, List, Union
+from typing import Any, Dict, List, Union, Tuple
 import uuid
-import logging
+     
 
 def setup_logging(log_path='logs/chat_logs.log', level=logging.INFO):
     # Get the directory portion of the log_path.
@@ -615,7 +617,7 @@ def get_graph_data(args):
 def get_llm_network_data(args):
     return {**get_chat_data(args), **get_graph_data(args)}
 
-def setup_project(save_tracker=True):
+def setup_project(save_tracker=True, log_path='logs/default_logs.log'):
     """Set up the project by creating ids and directories.
     
     Returns:
@@ -647,7 +649,7 @@ def setup_project(save_tracker=True):
         save_sim_to_tracker("data", simulation_id)
 
     # Setup logging
-    setup_logging()
+    setup_logging(log_path=log_path)
     return simulation_id, current_commit, data_dir, plots_dir
 
 def collect_stats_default(model, parameters): 
@@ -663,6 +665,41 @@ def collect_stats_default(model, parameters):
         'num_agents': len(model.agents),
         **parameters
     })
+
+def generate_qmc_samples(param_limits: Dict[str, Tuple[float, float]], n_samples: int) -> Dict[str, np.ndarray]:
+    """
+    Generate quasi Monte Carlo samples for a set of one-dimensional parameters.
+
+    This function uses a Sobol sequence to produce a quasi-random sample in a multi-dimensional space.
+    Each parameter is assumed to be one-dimensional and its limits are given by a (min, max) tuple.
+    The generated samples for each parameter are scaled to the corresponding range.
+
+    Args:
+        param_limits (Dict[str, Tuple[float, float]]): A dictionary mapping each parameter name to a tuple (min, max)
+            that defines the range of that parameter.
+        n_samples (int): The number of samples to generate.
+
+    Returns:
+        Dict[str, np.ndarray]: A dictionary mapping each parameter name to a numpy array of shape (n_samples,)
+            containing the quasi Monte Carlo sample values scaled to the parameter's limits.
+
+    Example:
+        >>> param_limits = {'a': (0, 10), 'b': (5, 15)}
+        >>> samples = generate_qmc_samples(param_limits, 100)
+        >>> samples['a']  # 100 samples between 0 and 10
+        >>> samples['b']  # 100 samples between 5 and 15
+    """
+    dim = len(param_limits)
+    sampler = qmc.Sobol(d=dim, scramble=True)
+    sample = sampler.random(n=n_samples)  # shape: (n_samples, dim), values in [0, 1)
+    
+    sample_scaled = {}
+    keys = list(param_limits.keys())
+    for i, key in enumerate(keys):
+        low, high = param_limits[key]
+        # Scale the i-th column of sample from [0, 1) to [low, high]
+        sample_scaled[key] = qmc.scale(sample[:, [i]], low, high)[:, 0]
+    return sample_scaled
 
 dropped_items_warning=f"""Several items in `results` are not suitable for conversion to
 a dataframe. This may be because they are not numpy arrays or because they
@@ -705,6 +742,65 @@ def results_to_dataframe_egt(results:dict, # A dictionary containing items from 
         result_sums = np.sum(results['ergodic'], axis=-1)
         assert np.allclose(result_sums, 1, atol=1e-10)
     return pd.DataFrame(flat_results)    
+
+def compute_strategy_frequencies(df, recurrent_states):
+    """
+    For each row in df, compute the frequency that each player chooses each
+    strategy.
+    
+    df must have columns named like "<state>_frequency". One for each state in
+    recurrent_states. Otherwise, this function will throw a KeyError.
+    
+    Adds columns to df with names like "P<player_index>_strat_<strat>_likelihood".
+    
+    Also returns the player strategies found in recurrent states for later use.
+    """
+    # Identify number of players from recurrent_states
+    n_players = len(recurrent_states[0].split("-"))
+
+    # Construct a dictionary that for each player and a given strategy holds
+    # a list of the recurrent_states where that player employs that strategy
+    strat_states_mapping = {}
+    for player_index in range(n_players):
+        player_strats = np.unique([state.split("-")[::-1][player_index]
+                                      for state in recurrent_states])
+        player_states = {strat: [state for state in recurrent_states
+                                 if state.split("-")[::-1][player_index] == strat]
+                         for strat in player_strats}
+        strat_states_mapping[f"P{player_index+1}"] = player_states
+
+    # For each player, sum over the frequency columns corresponding to the strat
+    for player in range(1, n_players+1):
+        for strat, states in strat_states_mapping[f"P{player}"].items():
+            cols = [f"{state}_frequency" for state in states]
+            df[f"P{player}_strat_{strat}_frequency"] = df[cols].sum(axis=1)
+    
+    strat_states = [f"{player}_strat_{strat}"
+                    for player, v in strat_states_mapping.items()
+                    for strat in v.keys()]
+    
+    return df, strat_states
+
+def compact_strategy_labels(strategy_labels):
+    """
+    Given a list of strategy labels in the form "P{player}_strat_{strat}",
+    return a new list where only the first strategy for each player is kept.
+    """
+    per_player = {}
+    # Group labels by player
+    for label in strategy_labels:
+        player = label.split("_")[0]  # e.g., "P1"
+        per_player.setdefault(player, []).append(label)
+    
+    compact = []
+    for player, labels in per_player.items():
+        # Assume the order of labels is the order in which they were generated.
+        # Drop the last strategy if there is more than one for this player.
+        if len(labels) > 1:
+            compact.extend(labels[:-1])
+        else:
+            compact.extend(labels)
+    return compact
 
 def process_dsair_data(data):
     """Process DSAIR model results dataframe."""
