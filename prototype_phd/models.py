@@ -1,5 +1,5 @@
 from .model_utils import *
-from .types import *
+from .custom_types import *
 from .utils import *
 import prototype_phd.data_utils as data_utils
 import prototype_phd.payoffs as payoffs

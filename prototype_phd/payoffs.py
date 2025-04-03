@@ -1,5 +1,5 @@
 from .utils import *
-from .types import *
+from .custom_types import *
 from .methods import *
 from .model_utils import *
 

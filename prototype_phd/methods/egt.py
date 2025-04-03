@@ -1,6 +1,6 @@
 from prototype_phd.utils import *
 from prototype_phd.model_utils import *
-from prototype_phd.types import *
+from prototype_phd.custom_types import *
 
 import collections
 import typing
