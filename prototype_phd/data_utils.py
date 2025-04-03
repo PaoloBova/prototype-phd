@@ -248,7 +248,7 @@ def append_ndjson(record, file_path):
 
 def read_ndjson(file_path):
     results = []
-    with open(file_path, 'r') as f:
+    with open(file_path, 'r', encoding="utf-8") as f:
         for line in f:
             results.append(json.loads(line))
     return results
