@@ -33,15 +33,9 @@ dependencies = [
     "networkx (>=3.4.2,<4.0.0)",
     "autogen (>=0.7.5,<0.8.0)",
     "pyautogen (>=0.7.5,<0.8.0)",
-    "dotenv (>=0.9.9,<0.10.0)"
-]
-
-[project.optional-dependencies]
-# Development and testing dependencies: These are only required for development.
-dev = [
-    "ipykernel>=6.0",
-    "jupyterlab>=3.0",
-    "pytest>=6.0",
+    "dotenv (>=0.9.9,<0.10.0)",
+    "statsmodels (>=0.14.4,<0.15.0)",
+    "hypothesis (>=6.130.8,<7.0.0)",
 ]
 
 [project.urls]
@@ -51,8 +45,13 @@ IssueTracker = "https://github.com/tofusplat/prototype-phd/issues"
 
 [tool.poetry]
 
+[tool.poetry.group.dev]
+optional = true
+
 [tool.poetry.group.dev.dependencies]
 pytest = "^8.3.4"
 ipykernel = "^6.29.5"
 jupyterlab = "^4.3.5"
+itables = "^2.2.5"
+rich = "^13.9.4"
 
