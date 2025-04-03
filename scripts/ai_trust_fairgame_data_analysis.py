@@ -13,6 +13,7 @@ import prototype_phd.utils as utils
 import json
 import matplotlib.pyplot as plt
 from matplotlib.colors import ListedColormap
+from matplotlib.ticker import MaxNLocator
 import numpy
 import pandas
 
@@ -359,7 +360,6 @@ def df_to_observed_data(df_tidy, params_df, strategy_id_mapping):
     # Part 1b: Create a personality profile string.
     # ==================================================
     # Pivot df_tidy to get agent personality values.
-    print(df_tidy.columns)
     df_tidy.agent_personality = df_tidy.agent_personality.fillna("none")
     personality_df = df_tidy.pivot_table(
         index=["simulation_id", "config_index", "replication_index", "round"],
@@ -371,7 +371,6 @@ def df_to_observed_data(df_tidy, params_df, strategy_id_mapping):
     # Rename the personality columns for clarity.
     personality_col_renames = {i: f"agent{i}_personality" for i in range(1, n_players+1)}
     personality_df = personality_df.rename(columns=personality_col_renames)
-    print(personality_df.columns)
 
     # Create a combined personality profile string (e.g., "nan-aggressive-nan").
     personality_cols = [f"agent{i}_personality" for i in range(1, n_players+1)]
@@ -386,8 +385,6 @@ def df_to_observed_data(df_tidy, params_df, strategy_id_mapping):
         if i != len(personality_cols)-1:
             personality_df["personality_profile"] += "-"
     
-    print(personality_df.columns)
-    print(personality_df["personality_profile"].unique())
     
     # Merge personality_profile into profile_df on the pivot keys.
     profile_df = profile_df.merge(personality_df[["simulation_id", "config_index", "replication_index", "round", "personality_profile"]],
@@ -641,11 +638,6 @@ def run_data_analysis(args):
     results_df = fairgame_data["results_df"]
     
     if "4pop" in model_name:
-        print("4 population model")
-        print("params_df cols: ", params_df.columns)
-        print("cI in params_df", "cI" in params_df.columns)
-        print("cW in params_df", "cW" in params_df.columns)
-        print("bI in params_df", "bI" in params_df.columns)
         # We need to rename the cl and bl columns to cI and bI
         
         # Rename the columns to match the expected names
@@ -676,11 +668,6 @@ def run_data_analysis(args):
             print("recurrent_states in this file:", recurrent_states)
 
     df_wide = results_df
-    
-    print("df_wide cols: ", df_wide.columns)
-    print("df_wide_agent1_personality: ", df_wide["agent1_personality"].unique())
-    print("df_wide_agent2_personality: ", df_wide["agent2_personality"].unique())
-    print("df_wide_agent3_personality: ", df_wide["agent3_personality"].unique())
     df_tidy = results_to_tidy_dataframe(df_wide)
     df_tidy = add_indices_to_df(df_tidy, filename_sim_mappings)
     df_tidy = df_tidy.merge(params_df, on=["simulation_id", "config_index"])
@@ -747,7 +734,7 @@ def run_data_analysis(args):
             
             filename_start = f"llm_replication_{filename_stub}_llm_{llm}_{game_type}_personalities_{change_personality_for}_model_{model_name}"
             plots = {}
-            slices = [[cR, Eps, personality_profile ]
+            slices = [[cR, Eps, personality_profile]
                       for cR in [0.5, 5]
                       for Eps in [-0.1, 0.2]
                       for personality_profile in df["personality_profile"].unique()]
@@ -786,10 +773,12 @@ def run_data_analysis(args):
                                                 "P2_strat_3": "Developer Cooperates",
                                                 "P3_strat_5": "User Trusts",
                                                 "P3_strat_6": "User Distrusts",
+                                                "P3_strat_7": "User Trusts (conditional)",
                                                 "P4_strat_8": "Commentariat Cooperates"}
                             label = custom_labels[state]
                         else:
-                            label = state
+                            # Convert state to the corresponding strategy profile
+                            label = state_labels[i]
                         # Plot connected points with markers and a line between them
                         ax.plot(sorted_x,
                                 sorted_y,
@@ -799,22 +788,44 @@ def run_data_analysis(args):
                                 linestyle='-',
                                 linewidth=1,
                                 label=label)
+                    ax.set_title(plot_title, fontsize=24)
+                    ax.set_xlabel(x_label, fontsize=20)
+                    ax.set_ylabel(y_label, fontsize=20)
+                    # Increase tick label size
+                    ax.tick_params(axis='both', which='major', labelsize=16)  # Adjust font size
 
-                    # ax.legend(loc='upper left')                 
-                    # Move legend outside the figure
-                    # ax.legend(bbox_to_anchor=(1.05, 1), loc='upper left')
-                    ax.legend(bbox_to_anchor=(1.05, 1),
-                            loc='upper left',
-                            markerscale=0.5,      # reduce marker size in legend
-                            # handlelength=2,       # length of the legend handle
-                            # handletextpad=0.5  # space between marker and text
-                            )   
-                    ax.set_title(plot_title)
-                    ax.set_xlabel(x_label)
-                    ax.set_ylabel(y_label)
-                    plt.tight_layout()
-        
-                    plots = {**plots, filename: fig}
+                    # Reduce the number of ticks
+                    ax.xaxis.set_major_locator(MaxNLocator(nbins=5))  # Limit the number of x-axis ticks
+                    ax.yaxis.set_major_locator(MaxNLocator(nbins=5))  # Limit the number of y-axis ticks
+                    # plt.tight_layout()
+                    
+                    # Plot legend seperately
+                    fig_legend = plt.figure(figsize=(3, 1))
+                    ax_legend = fig_legend.add_subplot(111)
+                    legend = ax.legend()
+                    ax_legend.axis("off")  # Turn off the axis
+                    fig_legend.legend(handles=legend.legend_handles,
+                                      labels=[t.get_text() for t in legend.texts],
+                                      frameon=False,
+                                      markerscale=0.5,
+                                      loc="center")
+
+                    fig_legend_horizontal = plt.figure(figsize=(3, 1))
+                    ax_legend_horizontal = fig_legend_horizontal.add_subplot(111)
+                    ax_legend_horizontal.axis("off")  # Turn off the axis
+                    fig_legend_horizontal.legend(handles=legend.legend_handles,
+                                      labels=[t.get_text() for t in legend.texts],
+                                      frameon=False,
+                                      markerscale=0.8,
+                                      loc="center",
+                                      ncol=len(legend.texts))
+                    
+                    # Remove the legend from the original figure
+                    legend.remove()
+                    
+                    plots = {**plots, filename: fig,
+                             f"legend_only_{filename}": fig_legend,
+                             f"legend_only_horizontal_{filename}": fig_legend_horizontal}
 
             return plots
 
@@ -870,11 +881,11 @@ def run_data_analysis(args):
                         if len(state_labels) == 4:
                             custom_labels = {"P1_strat_1": "Regulator Cooperates",
                                                 "P2_strat_3": "Developer Cooperates",
-                                                "P3_strat_5": "User Trusts",
+                                                "P3_strat_5": "User Trusts (conditional)",
                                                 "P4_strat_8": "Commentariat Cooperates"}
                             label = custom_labels[state]
                         else:
-                            label = state
+                            label = state_labels[i]
                         # Plot connected points with markers and a line between them
                         ax.plot(sorted_x,
                                 sorted_y,
@@ -884,29 +895,50 @@ def run_data_analysis(args):
                                 linestyle='-',
                                 linewidth=1,
                                 label=label)
+                    ax.set_title(plot_title, fontsize=24)
+                    ax.set_xlabel(x_label, fontsize=20)
+                    ax.set_ylabel(y_label, fontsize=20)
+                    # Increase tick label size
+                    ax.tick_params(axis='both', which='major', labelsize=16)  # Adjust font size
 
-                    # ax.legend(loc='upper left')                 
-                    # Move legend outside the figure
-                    # ax.legend(bbox_to_anchor=(1.05, 1), loc='upper left')
-                    ax.legend(bbox_to_anchor=(1.05, 1),
-                            loc='upper left',
-                            markerscale=0.5,      # reduce marker size in legend
-                            # handlelength=2,       # length of the legend handle
-                            # handletextpad=0.5  # space between marker and text
-                            )   
-                    ax.set_title(plot_title)
-                    ax.set_xlabel(x_label)
-                    ax.set_ylabel(y_label)
-                    plt.tight_layout()
-        
-                    plots = {**plots, filename: fig}
-            
+                    # Reduce the number of ticks
+                    ax.xaxis.set_major_locator(MaxNLocator(nbins=5))  # Limit the number of x-axis ticks
+                    ax.yaxis.set_major_locator(MaxNLocator(nbins=5))  # Limit the number of y-axis ticks
+                    # plt.tight_layout()
+                    
+                    # Plot legend seperately
+                    fig_legend = plt.figure(figsize=(3, 1))
+                    ax_legend = fig_legend.add_subplot(111)
+                    ax_legend.axis("off")  # Turn off the axis
+                    legend = ax.legend()
+                    fig_legend.legend(handles=legend.legend_handles,
+                                      labels=[t.get_text() for t in legend.texts],
+                                      frameon=False,
+                                      markerscale=0.5,
+                                      loc="center")
+
+                    fig_legend_horizontal = plt.figure(figsize=(3, 1))
+                    ax_legend_horizontal = fig_legend_horizontal.add_subplot(111)
+                    ax_legend_horizontal.axis("off")  # Turn off the axis
+                    fig_legend_horizontal.legend(handles=legend.legend_handles,
+                                      labels=[t.get_text() for t in legend.texts],
+                                      frameon=False,
+                                      markerscale=0.8,
+                                      loc="center",
+                                      ncol=len(legend.texts))
+                    
+                    # Remove the legend from the original figure
+                    legend.remove()
+                    
+                    plots = {**plots, filename: fig,
+                             f"legend_only_{filename}": fig_legend,
+                             f"legend_only_horizontal_{filename}": fig_legend_horizontal}
+
             return plots
 
     observed_data, observed_profile_freq = df_to_observed_data(df_tidy, params_df, strategy_id_mapping)
     observed_data = pandas.merge(observed_data, configs_df, on=["simulation_id", "config_index"])
     
-    print(observed_data.personality_profile.unique())
     for state in recurrent_states:
         if f"{state}_frequency" not in observed_data.columns:
             observed_data[f"{state}_frequency"] = 0
@@ -916,6 +948,9 @@ def run_data_analysis(args):
 
     # TODO: Improve states_labels_compact labelling to be easier to interpret
     states_labels_compact = compact_strategy_labels(states_labels_compact)
+    # Replace P3_strat_6 with P3_strat_7
+    states_labels_compact = [s.replace("P3_strat_6", "P3_strat_7") for s in states_labels_compact]
+    print("states_labels_compact", states_labels_compact)
     state_mapping_compact = dict(zip(states_labels_compact, states_labels_compact))
     # Ensure that only one set of simulation results is plotted at a time!
     df = observed_data[observed_data["simulation_id"] == sim_main]
@@ -1078,3 +1113,4 @@ for model_name in set_model_name:
                     "game_type": game_type,
                     "llm": llm,
                     "change_personality_for": change_personality_for})
+                # raise ValueError("Only run one simulation at a time.")
