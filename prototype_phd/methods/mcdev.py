@@ -77,6 +77,7 @@ class PlotConfig(BaseModel):
     B_values: List[float] = Field(..., description="List of budget levels.")
     psi: np.ndarray = Field(..., description="Psi array of length K.")
     gamma: np.ndarray = Field(..., description="Gamma array of length K.")
+    df: pd.DataFrame = Field(..., description="DataFrame containing the computed allocations.")
 
     class Config:
         arbitrary_types_allowed = True
@@ -183,25 +184,14 @@ def scenario_diminishing(k_vec: np.ndarray, a: float=1.0, b: float=0.5) -> np.nd
 # ---------------------------
 # 5. Plotting
 # ---------------------------
-def plot_allocations(config: PlotConfig) -> object:
-    """Plot heatmap and violin plots of optimal allocations for a given scenario and alpha.
-
-    If use_iterative=True, uses the iterative solver for corner solutions.
-    Otherwise uses the closed-form (direct) approach.
+def compute_allocations_dataframe(scenario: ScenarioConfig, alpha: float, B_values: List[float],
+                                  psi: np.ndarray, gamma: np.ndarray) -> pd.DataFrame:
     """
-    scenario_func = config.scenario.scenario_func
-    scenario_name = config.scenario.scenario_name
-    K = config.scenario.K
-    alpha = config.alpha
-    B_values = config.B_values
-    psi = config.psi
-    gamma = config.gamma
-
-    # Generate price vector
-    k_vec = np.arange(1, K + 1)
-    p = scenario_func(k_vec)
-
-    # Collect allocations
+    Compute allocations for a given scenario and alpha over specified budget values,
+    and return a long-format dataframe.
+    """
+    k_vec = np.arange(1, scenario.K + 1)
+    p = scenario.scenario_func(k_vec)
     allocations = []
     for B in B_values:
         demand_cfg = DemandConfig(
@@ -213,20 +203,19 @@ def plot_allocations(config: PlotConfig) -> object:
         )
         x_star = compute_optimal_demands(demand_cfg)
         allocations.append(x_star)
-
     allocations = np.array(allocations)
-
-    # New Faceted Bar Chart Plot for Demands using facet rows for Budget:
-    B_values = np.array(config.B_values)
-    num_items = config.scenario.K
-
-    # Build long-format DataFrame with one observation per item per budget.
     long_data = []
     for i, B in enumerate(B_values):
-        for k in range(num_items):
+        for k in range(scenario.K):
             long_data.append({'Item': k + 1, 'Demand': allocations[i, k], 'Budget': B})
     df = pd.DataFrame(long_data)
+    return df
 
+def plot_allocations(config: PlotConfig) -> object:
+    """
+    Plot heatmap and violin plots of optimal allocations using precomputed dataframe in config.df.
+    """
+    df = config.df
     # Create a faceted bar chart with a facet row for each Budget,
     # retaining hues for each Budget.
     # Make sure wrap facets if there are too many budgets.
@@ -245,7 +234,7 @@ def plot_allocations(config: PlotConfig) -> object:
     )
     g.set_axis_labels("Item", "Demand")
     g.set_titles("Budget = {col_name}")
-    plot_title = f"Bar Chart of Demands by Item and Budget: {scenario_name}, alpha={alpha}"
+    plot_title = f"Bar Chart of Demands by Item and Budget: {config.scenario.scenario_name}, alpha={config.alpha}"
     g.figure.suptitle(plot_title, y=1.02)
     plt.tight_layout()
     return g.figure  # Return the figure object

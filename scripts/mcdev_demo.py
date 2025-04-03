@@ -3,6 +3,7 @@ from prototype_phd.methods.mcdev import (
     PlotConfig,
     ScenarioConfig,
     plot_allocations,
+    compute_allocations_dataframe,  # new function for dataframe creation
     scenario_constant,
     scenario_increasing,
     scenario_diminishing,
@@ -31,7 +32,7 @@ scenarios = [
     ),
 ]
 
-alpha_values = [0.0, 0.5, 0.9]
+alpha_values = [-2.0, -1.0, 0.0, 0.5, 0.9]
 B_values = list(np.linspace(10, 100, 10))
 
 # psi=1, gamma=1
@@ -41,16 +42,18 @@ gamma = np.ones(K)
 plots = {}  # Dictionary to collect figure objects
 for scenario in scenarios:
     for alpha in alpha_values:
+        # Compute dataframe externally using the provided function.
+        df = compute_allocations_dataframe(scenario, alpha, B_values, psi, gamma)
         pc_direct = PlotConfig(
             scenario=scenario,
             alpha=alpha,
             B_values=B_values,
             psi=psi,
-            gamma=gamma
+            gamma=gamma,
+            df=df  # set the precomputed dataframe here
         )
         fig = plot_allocations(pc_direct)
-        key = f"{scenario.scenario_name.replace(' ', '_')}_alpha_{alpha}"
-        key += f"sim_id_{sim_id}.png"
+        key = f"{scenario.scenario_name.replace(' ', '_')}_alpha_{alpha}_sim_id_{sim_id}.png"
         plots[key] = fig
 
 data_utils.save_plots(plots, plots_dir=f"{plots_dir}/mcdev")
