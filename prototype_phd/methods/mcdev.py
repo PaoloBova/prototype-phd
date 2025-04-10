@@ -52,6 +52,7 @@ class ScenarioConfig(BaseModel):
 
 class DemandConfig(BaseModel):
     """Configuration model for computing optimal demands (closed-form)."""
+    scenario_config: ScenarioConfig
     B: float = Field(..., description="Budget level.")
     p: np.ndarray = Field(..., description="Price array of length K.")
     psi: np.ndarray = Field(..., description="Psi array of length K.")
@@ -72,13 +73,10 @@ class DemandConfig(BaseModel):
 
 class PlotConfig(BaseModel):
     """Configuration model for generating plots of the MCDEV allocations."""
-    scenario: ScenarioConfig
-    alpha: float = Field(..., description="Alpha parameter.")
-    B_values: List[float] = Field(..., description="List of budget levels.")
-    psi: np.ndarray = Field(..., description="Psi array of length K.")
-    gamma: np.ndarray = Field(..., description="Gamma array of length K.")
+    plot_group: dict = Field(..., description="Group that is being plotted, e.g. 'Alpha:0', 'Scenario:Increasing'.")
     df: pd.DataFrame = Field(..., description="DataFrame containing the computed allocations.")
-
+    y_var: str = Field("Demand", description="Y-axis variable for plotting.")
+    
     class Config:
         arbitrary_types_allowed = True
 
@@ -181,33 +179,33 @@ def scenario_diminishing(k_vec: np.ndarray, a: float=1.0, b: float=0.5) -> np.nd
     """p_k = a + b * log(1 + k)."""
     return a + b * np.log(1.0 + k_vec)
 
+def scenario_exponential(k_vec: np.ndarray, a: float=1.0, b: float=1.0) -> np.ndarray:
+    """p_k = a * exp(b * k)."""
+    return a * np.exp2(b * k_vec)
+
 # ---------------------------
-# 5. Plotting
+# 5. Run the Model
 # ---------------------------
-def compute_allocations_dataframe(scenario: ScenarioConfig, alpha: float, B_values: List[float],
-                                  psi: np.ndarray, gamma: np.ndarray) -> pd.DataFrame:
+
+def compute_allocations(scenarios: List[DemandConfig]) -> pd.DataFrame:
     """
     Compute allocations for a given scenario and alpha over specified budget values,
     and return a long-format dataframe.
     """
-    k_vec = np.arange(1, scenario.K + 1)
-    p = scenario.scenario_func(k_vec)
-    allocations = []
-    for B in B_values:
-        demand_cfg = DemandConfig(
-            B=B,
-            p=p,
-            psi=psi,
-            gamma=gamma,
-            alpha=alpha
-        )
-        x_star = compute_optimal_demands(demand_cfg)
-        allocations.append(x_star)
+    allocations = [compute_optimal_demands(cfg) for cfg in scenarios]
     allocations = np.array(allocations)
     long_data = []
-    for i, B in enumerate(B_values):
-        for k in range(scenario.K):
-            long_data.append({'Item': k + 1, 'Demand': allocations[i, k], 'Budget': B})
+    for i, scenario in enumerate(scenarios):
+        for k in range(scenario.scenario_config.K):
+            long_data.append({'Item': k + 1,
+                              'Demand': allocations[i, k],
+                              'Expenditure': allocations[i, k] * scenario.p[k],
+                              'Price': scenario.p[k],
+                              'Psi': scenario.psi[k],
+                              'Gamma': scenario.gamma[k],
+                              'Alpha': scenario.alpha,
+                              "Scenario": scenario.scenario_config.scenario_name,
+                              'Budget': scenario.B})
     df = pd.DataFrame(long_data)
     return df
 
@@ -220,10 +218,11 @@ def plot_allocations(config: PlotConfig) -> object:
     # retaining hues for each Budget.
     # Make sure wrap facets if there are too many budgets.
     # Use seaborn's catplot for faceting
+    y_var=config.y_var
     g = sns.catplot(
          data=df,
          x="Item",
-         y="Demand",
+         y=y_var,
          hue="Budget",
          col="Budget",
          kind="bar",
@@ -231,10 +230,16 @@ def plot_allocations(config: PlotConfig) -> object:
          aspect=1.5,
          palette="viridis",
          col_wrap=4,
+         sharey=False,
     )
-    g.set_axis_labels("Item", "Demand")
+    g.set_axis_labels("Item", y_var)
     g.set_titles("Budget = {col_name}")
-    plot_title = f"Bar Chart of Demands by Item and Budget: {config.scenario.scenario_name}, alpha={config.alpha}"
+    group_string = [f"{group_var}={group_val}".replace(" ", "_")
+                    for group_var, group_val in config.plot_group.items()]
+    group_string = " ".join(group_string)
+    plot_title = f"Bar Chart of {y_var} by Item and Budget: {group_string}"
     g.figure.suptitle(plot_title, y=1.02)
+    # Remove the legend from the bar plots
+    g._legend.remove()
     plt.tight_layout()
     return g.figure  # Return the figure object
