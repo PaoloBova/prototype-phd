@@ -316,21 +316,3 @@ alias_df["threshold_se"] = thresholds_se
 # ax.set_title("Thresholds for each alias with respect to release date")
 
 plt.show()
-
-# Counterfactual budget constraints
-
-# We need to redo the above plots for different bootstrap samples.
-# Each set of boostrap samples follows a different budget constraint.
-# With no budget constraint, we have the full dataset, i.e. all rows have
-# equal weight when sampled.
-# With a budget constraint, we sample rows with replacement, but each row
-# has a different weight. We have a few approaches to calculating weights.
-# Approach 1: The weight depends on the inverse of the generation
-# cost of the row.
-# Approach 2: The weight depends on the inverse of the task time baseline (or
-# the inverse of the human baseline cost which should give similar results).
-# We also consider a completely different sampling approach, where given a 
-# budget constraint, we sample the average number of rows, moving sequentially
-# from shorter to longer task time baselines until we reach the budget.
-# We then calculate the average success rate for each model for each bootstrap
-# sample on each task family.
