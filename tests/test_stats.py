@@ -7,15 +7,16 @@ import statsmodels.genmod.generalized_linear_model
 statsmodels.genmod.generalized_linear_model.SET_USE_BIC_LLF(True)
 
 from prototype_phd.stats import (
-    robust_logistic_fit,
-    compute_threshold,
+    fit_logistic,
+    compute_threshold_from_result,
     run_diagnostics,
-    compare_link_functions
+    compare_link_functions,
+    LogRegConfig
 )
 
 def test_binary_data():
     """
-    Test robust_logistic_fit with one predictor and binary outcomes.
+    Test fit_logistic with one predictor and binary outcomes.
     Expect the estimated 50% threshold (i.e. -beta0/beta1) to be near 5.
     """
     # Create synthetic data: predictor x, binary outcome y
@@ -25,10 +26,9 @@ def test_binary_data():
     np.random.seed(0)
     y = np.random.binomial(1, p)
 
-    # Fit without frequency weights (each row is a single trial)
-    result = robust_logistic_fit(x, y, freq_weights=None, regularize=False,
-                                 link=sm.families.links.logit())
-    threshold = compute_threshold(result)
+    config = LogRegConfig(engine="statsmodels", link=sm.families.links.logit(), regularize=False, freq_weights=None)
+    model_result = fit_logistic(x, y, config)
+    threshold = compute_threshold_from_result(model_result)
     # Check that threshold is computed and close to expected value.
     assert threshold is not None
     assert abs(threshold - 5) < 1.0
@@ -36,7 +36,7 @@ def test_binary_data():
 
 def test_proportion_data():
     """
-    Test robust_logistic_fit with one predictor and proportion outcomes.
+    Test fit_logistic with one predictor and proportion outcomes.
     Frequency weights (number of trials) are provided.
     The estimated threshold should be close to the true value.
     """
@@ -49,9 +49,9 @@ def test_proportion_data():
     counts = np.random.binomial(trials, p)
     y = counts / trials
 
-    result = robust_logistic_fit(x, y, freq_weights=trials, regularize=False,
-                                 link=sm.families.links.logit())
-    threshold = compute_threshold(result)
+    config = LogRegConfig(engine="statsmodels", link=sm.families.links.logit(), regularize=False, freq_weights=trials)
+    model_result = fit_logistic(x, y, config)
+    threshold = compute_threshold_from_result(model_result)
     assert threshold is not None
     assert abs(threshold - 5) < 1.0
 
@@ -63,7 +63,8 @@ def test_input_validation():
     x = np.linspace(0, 10, 50)
     y = np.linspace(0, 1, 40)  # Mismatch length
     with pytest.raises(ValueError):
-        robust_logistic_fit(x, y)
+        config = LogRegConfig(engine="statsmodels", link=sm.families.links.logit())
+        fit_logistic(x, y, config)
 
 def test_run_diagnostics():
     """
@@ -74,8 +75,9 @@ def test_run_diagnostics():
     p = 1 / (1 + np.exp(-(beta0 + beta1 * x)))
     np.random.seed(2)
     y = np.random.binomial(1, p)
-    result = robust_logistic_fit(x, y, link=sm.families.links.logit())
-    diagnostics = run_diagnostics(result)
+    config = LogRegConfig(engine="statsmodels", link=sm.families.links.logit())
+    model_result = fit_logistic(x, y, config)
+    diagnostics = run_diagnostics(model_result)
     expected_keys = ["AIC", "BIC", "Deviance", "DF_Resid", "Deviance/DF",
                      "Pearson_Chi2", "Pearson/DF", "Max_Leverage", "Max_Cooks_D"]
     for key in expected_keys:
@@ -94,9 +96,36 @@ def test_compare_link_functions():
     np.random.seed(3)
     counts = np.random.binomial(trials, p)
     y = counts / trials
-
-    metrics, best_link = compare_link_functions(x, y, freq_weights=trials)
+    config = LogRegConfig(engine="statsmodels", freq_weights=trials)
+    metrics, best_link = compare_link_functions(x, y, config=config)
     # Expected keys in metrics.
     for link in ["logit", "probit", "cloglog"]:
         assert link in metrics
     assert best_link in metrics
+
+def test_all_ones():
+    """
+    Test fit_logistic when y is all ones.
+    Expect model_result warning 'all_success' and intercept set to -1.
+    """
+    x = np.linspace(1, 10, 100)
+    y = np.ones(100)
+    config = LogRegConfig(engine="statsmodels", link=sm.families.links.logit())
+    model_result = fit_logistic(x, y, config)
+    assert model_result.warning == "all_success"
+    assert model_result.coeffs[0] == -1
+
+def test_all_zeros():
+    """
+    Test fit_logistic when y is all zeros.
+    Expect model_result warning 'all_failure' and intercept set to -1.
+    """
+    x = np.linspace(1, 10, 100)
+    y = np.zeros(100)
+    config = LogRegConfig(engine="statsmodels", link=sm.families.links.logit())
+    model_result = fit_logistic(x, y, config)
+    assert model_result.warning == "all_failure"
+    assert model_result.coeffs[0] == -1
+
+if __name__ == "__main__":
+    pytest.main([__file__])

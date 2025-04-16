@@ -2,6 +2,7 @@ import numpy as np
 import pytest
 from hypothesis import given, strategies as st
 from prototype_phd.methods.mcdev import compute_optimal_demands, DemandConfig
+import prototype_phd.methods.mcdev as mcdev
 
 @given(
     B=st.floats(min_value=0.1, max_value=1e3),
@@ -17,8 +18,14 @@ def test_iterative_solver(B, alpha, K):
     p = np.random.uniform(low=0.1, high=10.0, size=K)
     psi = np.ones(K)
     gamma = np.ones(K)
+    
+    scenario_config = mcdev.ScenarioConfig(
+            scenario_name="Exponential Increase",
+            scenario_func=mcdev.scenario_exponential,
+            K=K)
 
-    config = DemandConfig(B=B, p=p, psi=psi, gamma=gamma, alpha=alpha)
+    config = DemandConfig(scenario_config=scenario_config,
+                          B=B, p=p, psi=psi, gamma=gamma, alpha=alpha)
     x_star = compute_optimal_demands(config)
 
     assert np.all(x_star >= -1e-7), "Demands must be >= 0"

@@ -48,11 +48,10 @@ Example Usage:
 
 import numpy as np
 import pandas as pd
-from typing import Callable, List, Optional, Protocol, runtime_checkable
+import prototype_phd.stats as stats
 from pydantic import BaseModel, Field, field_validator
 from scipy.stats import sem, ttest_1samp, normaltest
-from prototype_phd.stats import robust_logistic_fit
-
+from typing import Callable, List, Optional, Protocol, runtime_checkable
 
 class BootstrapConfig(BaseModel):
     n_bootstrap: int = Field(..., description="Number of bootstrap replications.")
@@ -70,6 +69,10 @@ class BootstrapConfig(BaseModel):
     random_state: Optional[int] = Field(
         None,
         description="Random seed for reproducibility"
+    )
+    hierarchy_columns: Optional[List[str]] = Field(
+        None,
+        description="List of column names that define hierarchical groups. If provided, bootstrapping will be performed first over groups, then within groups."
     )
 
     class Config:
@@ -147,6 +150,46 @@ def generate_bootstrap_indices(input_data: BootstrapData) -> List[np.ndarray]:
 
     return indices_list
 
+def generate_hierarchical_bootstrap_indices(input_data: BootstrapData) -> List[dict]:
+    """
+    Generate a list of bootstrap indices for hierarchical sampling.
+    
+    For each bootstrap replicate, sample groups with replacement 
+    (using the first hierarchy column) and then sample indices within each group.
+    
+    Returns a list where each replicate is a dictionary mapping group names to sampled indices.
+    """
+    df = input_data.df
+    config = input_data.bootstrap_config
+    hierarchy = config.hierarchy_columns
+    if not hierarchy or len(hierarchy) == 0:
+        # Fallback to standard bootstrap indices
+        indices_list = generate_bootstrap_indices(input_data)
+        return [{"all": ind} for ind in indices_list]
+
+    group_col = hierarchy[0]
+    groups = df[group_col].unique()
+    rng = np.random.default_rng(config.random_state)
+    nested_indices_list = []
+    
+    for _ in range(config.n_bootstrap):
+        # Sample groups with replacement
+        chosen_groups = rng.choice(groups, size=len(groups), replace=True)
+        indices_for_replicate = {}
+        for group in chosen_groups:
+            group_data = df[df[group_col] == group]
+            group_indices = group_data.index.to_numpy()
+            sample_size = config.sample_size if config.sample_size is not None else len(group_indices)
+            # Sample within the group with replacement
+            sampled_indices = rng.choice(group_indices, size=sample_size, replace=True)
+            # Append or initialize the sampled indices for the group
+            if group in indices_for_replicate:
+                indices_for_replicate[group] = np.concatenate([indices_for_replicate[group], sampled_indices])
+            else:
+                indices_for_replicate[group] = sampled_indices
+        nested_indices_list.append(indices_for_replicate)
+    return nested_indices_list
+
 
 def apply_bootstrap_functions(
     indices_list: List[np.ndarray],
@@ -196,21 +239,33 @@ def run_bootstrap(input_data: BootstrapData) -> pd.DataFrame:
 # Below: Example analysis functions for bootstrapping.
 # -----------------------------------------------------------------------------
 
-def analysis_logistic_regression(indices: np.ndarray, data: pd.DataFrame,
-                                 x_cols:List[str]=["x"], y_col:str="y") -> pd.DataFrame:
-    # use 2D indexing to select rows for 3D array
+def analysis_logistic_regression(indices: np.ndarray,
+                                 data: pd.DataFrame,
+                                 config: stats.LogRegConfig = stats.LogRegConfig(),
+                                 x_cols: List[str] = ["x"],
+                                 y_col: str = "y") -> pd.DataFrame:
+    # X is an array with shape (n_samples, n_observations, n_features)
     X = data[x_cols].to_numpy()[indices, :]
+    # y is an array with shape (n_samples, n_observations, 1)
     y = data[[y_col]].to_numpy()[indices, :]
-    # Fit a logistic regression model for each bootstrap sample
     n_samples = X.shape[0]
-    coefficients = np.zeros((n_samples, X.shape[-1]+1))
+    coefficients = np.zeros((n_samples, X.shape[-1] + 1))
+    result_objs = []
     for i in range(n_samples):
-        results = robust_logistic_fit(X[i, ...], y[i, ...])
-        # Extract the coefficients
-        coefficients[i, :] = results.params
-    # Create a DataFrame with the coefficients
-    results = dict(zip([f"coeff_{i}" for i in range(len(coefficients.T))], coefficients.T))
-    return pd.DataFrame(results)
+        result_obj = stats.fit_logistic(X[i, ...], y[i, :, 0], config)
+        result_objs.append(result_obj)
+        coefficients[i, :] = result_obj.coeffs
+    results_dict = dict(zip([f"coeff_{i}" for i in range(coefficients.shape[1])],
+                            coefficients.T))
+    results_dict["convergence"] = np.array([result.convergence for result in result_objs])
+    results_dict["warning"] = np.array([result.warning for result in result_objs])
+    return pd.DataFrame(results_dict)
+
+# Note: Some functions like the above don't really benefit from the multi-indexing
+# and are more straightforward with 2D arrays. However, we keep the
+# multi-indexing for consistency with the rest of the code.
+# In principle, we could write our own logistic regression implementation to
+# allow for numpy broadcasting for multiple regressions.
 
 # -----------------------------------------------------------------------------
 # Below: Additional utility functions for analyzing bootstrap results.

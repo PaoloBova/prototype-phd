@@ -14,13 +14,13 @@ Because Hypothesis does not provide a built-in strategy for creating DataFrames,
 import pytest
 import numpy as np
 import pandas as pd
-from typing import Optional
+from typing import Optional, List
 
 from hypothesis import given, strategies as st, settings
 from pydantic import BaseModel, Field
 
 import prototype_phd.methods.bootstrap as bootstrap
-
+from prototype_phd.stats import fit_logistic, LogRegConfig
 
 # We define a simple analysis function that returns the mean of each column
 def analysis_mean(indices: np.ndarray, data: pd.DataFrame) -> pd.DataFrame:
@@ -49,30 +49,6 @@ def analysis_combine_x_y(indices: np.ndarray, data: pd.DataFrame) -> pd.DataFram
     new_data = np.mean(new_data, axis=1)
     results = dict(zip(["col_1+col_2"], new_data.T))
     return results
-
-# A function to compute logistic regression coefficients for y ~ x
-def analysis_logistic_regression(indices: np.ndarray, data: pd.DataFrame) -> pd.DataFrame:
-    from prototype_phd.stats import robust_logistic_fit
-    arr = data[["col_1", "col_2"]].to_numpy()
-    sub = arr[indices, :]  # use 2D indexing to select rows for 3D array
-    X = sub[..., :-1]  # all columns except the last one
-    y = sub[..., -1]   # the last column
-    # Fit a logistic regression model for each bootstrap sample
-    n_samples = X.shape[0]
-    coefficients = np.zeros((n_samples, X.shape[-1]+1))
-    for i in range(n_samples):
-        results = robust_logistic_fit(X[i, ...], y[i, ...])
-        # Extract the coefficients
-        coefficients[i, :] = results.params
-    # Create a DataFrame with the coefficients
-    results = dict(zip([f"coeff_{i}" for i in range(len(coefficients.T))], coefficients.T))
-    return pd.DataFrame(results)
-
-# Note: Some functions like the above don't really benefit from the multi-indexing
-# and are more straightforward with 2D arrays. However, we keep the
-# multi-indexing for consistency with the rest of the code.
-# In principle, we could write our own logistic regression implementation to
-# allow for numpy broadcasting for multiple regressions.
 
 class BootstrapDataExample(BaseModel):
     df: pd.DataFrame = Field(..., description="Input DataFrame for bootstrap analysis.")
@@ -167,16 +143,18 @@ def small_numeric_dataframe_with_missing(draw):
 
 @st.composite
 def logistic_data_strategy(draw):
-    # Generate true logistic parameters
-    beta0 = draw(st.floats(min_value=-1, max_value=1))
-    beta1 = draw(st.floats(min_value=-2, max_value=2))
-    n = draw(st.integers(min_value=150, max_value=250))
-    # Generate predictor values
-    x_list = draw(st.lists(st.floats(min_value=-3, max_value=3, allow_nan=False, allow_infinity=False), min_size=n, max_size=n))
-    x = np.array(x_list)
+    # Generate true logistic parameters using decimals for better precision
+    beta0 = float(draw(
+        st.decimals(min_value="-1", max_value="1", allow_nan=False, allow_infinity=False, places=2)
+    ))
+    beta1 = float(draw(
+        st.decimals(min_value="-2", max_value="2", allow_nan=False, allow_infinity=False, places=2)
+    ))
+    n = draw(st.integers(min_value=150, max_value=200))
+    # Generate predictor values as decimals then convert to floats
+    x = np.linspace(-3, 3, n)
     linear_term = beta0 + beta1 * x
     probs = 1 / (1 + np.exp(-linear_term))
-    # Use a fixed seed for consistency
     rng = np.random.default_rng(42)
     y = rng.binomial(1, probs)
     df = pd.DataFrame({"col_1": x, "col_2": y})
@@ -195,31 +173,6 @@ def test_run_bootstrap_property(df, bootstrap_config):
     # as soon as n_bootstrap >=1 and n_rows>0
     if len(df) > 0 and bootstrap_config.n_bootstrap >= 1:
         assert len(results) > 0
-
-
-@settings(deadline=None)
-@given(logistic_data=logistic_data_strategy())
-def test_bootstrap_logistic_regression_estimates(logistic_data):
-    df, true_beta0, true_beta1 = logistic_data
-    cfg = bootstrap.BootstrapConfig(
-        n_bootstrap=20,
-        sample_size=len(df),
-        random_state=123,
-        weights=None,
-        analysis_funcs=[analysis_logistic_regression]
-    )
-    # Use the concrete BootstrapDataExample to wrap the inputs.
-    input_data = BootstrapDataExample(df=df, bootstrap_config=cfg)
-    results = bootstrap.run_bootstrap(input_data)
-    
-    # The analysis function prefixes the returned columns with "analysis_logistic_regression_"
-    col0 = results["coeff_0"].mean()
-    col1 = results["coeff_1"].mean()
-    
-    tol = 1 # tolerance for the estimates
-    assert abs(col0 - true_beta0) < tol, f"Intercept estimate {col0} not within {tol} of true {true_beta0}"
-    assert abs(col1 - true_beta1) < tol, f"Coefficient estimate {col1} not within {tol} of true {true_beta1}"
-
 
 # We can keep some smaller direct tests for coverage
 
@@ -288,12 +241,19 @@ def test_bootstrap_logistic_regression():
     })
     
     # Set up a BootstrapConfig using only the logistic regression analysis function.
+    stats_fn = lambda indices, data: bootstrap.analysis_logistic_regression(
+        indices=indices,
+        data=data,
+        x_cols=["col_1"],
+        y_col="col_2",
+        config=LogRegConfig(engine="statsmodels", regularize=False)
+    )
     cfg = bootstrap.BootstrapConfig(
         n_bootstrap=10,
         sample_size=100,
         random_state=42,
         weights=None,
-        analysis_funcs=[analysis_logistic_regression]
+        analysis_funcs=[stats_fn]
     )
     input_data = BootstrapDataExample(df=df, bootstrap_config=cfg)
     results = bootstrap.run_bootstrap(input_data)
@@ -307,6 +267,173 @@ def test_bootstrap_logistic_regression():
     # Check that the coefficients are numeric.
     for col in expected_cols:
         assert pd.api.types.is_numeric_dtype(results[col])
+
+@pytest.mark.skip(reason="statsmodels regularization is not working as expected")
+def test_bootstrap_regularized_logistic_regression():
+    # For regularized logistic regression one does not expect consistency to the true parameter,
+    # but rather that the bootstrap distribution centers on the full-sample regularized estimate.
+    # Compute the full-sample regularized estimate:
+    true_beta0 = 0.5
+    true_beta1 = -1.25
+    n = 10000
+    np.random.seed(42)
+    x = np.linspace(-3, 3, n)
+    linear_term = true_beta0 + true_beta1 * x
+    probs = 1 / (1 + np.exp(-linear_term))
+    rng = np.random.default_rng(42)
+    y = rng.binomial(1, probs)
+    df = pd.DataFrame({"col_1": x, "col_2": y})
+    
+    # Compute the full-sample regularized estimate using fit_logistic.
+    config_full = LogRegConfig(engine="statsmodels", regularize=True, alpha=1.0, L1_wt=1.0)
+    X_full = df["col_1"].values.reshape(-1, 1)
+    y_full = df["col_2"].values
+    full_res = fit_logistic(X_full, y_full, config_full)
+    full_coef0, full_coef1 = full_res.coeffs
+
+    # Set up BootstrapConfig using the current regularized analysis function.
+    cfg = bootstrap.BootstrapConfig(
+        n_bootstrap=1000,         # More bootstrap samples for stability.
+        sample_size=df.shape[0],
+        random_state=42,
+        weights=None,
+        analysis_funcs=[bootstrap.analysis_logistic_regression]
+    )
+    input_data = BootstrapDataExample(df=df, bootstrap_config=cfg)
+    results = bootstrap.run_bootstrap(input_data)
+    
+    # Compute the mean estimates across bootstrap samples.
+    coef0_mean = results["coeff_0"].mean()
+    coef1_mean = results["coeff_1"].mean()
+    threshold_boot = -coef0_mean / coef1_mean
+    
+    # Rather than using the true parameters, we compare against the full-sample regularized estimates.
+    tol = 0.2  # Tolerance for regularized estimates.
+    # Helpful comments:
+    # - For regularized regression the estimator is biased (shrunken) and the asymptotic distribution centers
+    #   on the full-sample regularized estimate rather than the true generating parameter.
+    assert abs(coef0_mean - full_coef0) < tol, (
+        f"Regularized intercept bootstrap mean {coef0_mean} not within {tol} of full-sample {full_coef0}"
+    )
+    assert abs(coef1_mean - full_coef1) < tol, (
+        f"Regularized coefficient bootstrap mean {coef1_mean} not within {tol} of full-sample {full_coef1}"
+    )
+    # Optionally, verify the threshold consistency.
+    full_threshold = -full_coef0 / full_coef1
+    assert abs(threshold_boot - full_threshold) < tol, (
+        f"Bootstrap threshold {threshold_boot} not within {tol} of full-sample threshold {full_threshold}"
+    )
+    # TODO: The regularization implementation in stastmodels is either poor
+    # or I've failed to call it correctly. Currently, this perfect example for
+    # it provides coefficients of exactly 0. Investigate why this happens.
+    # If no cause is found use scikit learn for regularization instead.
+    # I've looked into it and I seem to be calling it correctly. Time
+    # to switch to scikit-learn for regularization.
+
+
+# Note: The procedural tests for logistic regression are expensive as even
+# somewhat reliable estimates require a lot of samples.
+# Note: In practise, setting n_bootstrap very high can help for smaller
+# sample sizes, but this is not a good test for the code.
+# Skip this test for now
+# @pytest.mark.skip(reason="Skipping expensive bootstrap regression test for now")
+@settings(deadline=None, max_examples=2)
+@given(logistic_data=logistic_data_strategy())
+def test_bootstrap_logistic_regression_estimates(logistic_data):
+    df, true_beta0, true_beta1 = logistic_data
+    log_reg_config = LogRegConfig(engine="statsmodels", regularize=False)
+    stats_fn = lambda indices, data: bootstrap.analysis_logistic_regression(
+        indices=indices,
+        data=data,
+        x_cols=["col_1"],
+        y_col="col_2",
+        config=log_reg_config
+    )
+    cfg = bootstrap.BootstrapConfig(
+        n_bootstrap=100,
+        sample_size=len(df),
+        random_state=123,
+        weights=None,
+        analysis_funcs=[stats_fn]
+    )
+    input_data = BootstrapDataExample(df=df, bootstrap_config=cfg)
+    results = bootstrap.run_bootstrap(input_data)
+        
+    # The coefficients computed across bootstrap samples.
+    col0 = results["coeff_0"].mean()  
+    col1 = results["coeff_1"].mean()
+    threshold_boot = -col0 / col1
+    
+    # Compute the full-sample estimate.
+
+    config_full = log_reg_config
+    X_full = df["col_1"].values.reshape(-1, 1)
+    y_full = df["col_2"].values
+    full_res = fit_logistic(X_full, y_full, config_full)
+    full_coef0, full_coef1 = full_res.coeffs
+    full_threshold = -full_coef0 / full_coef1
+    
+    tol = 0.5  # Tolerance for bootstrap versus full-sample estimates.
+    assert abs(col0 - full_coef0) < tol, f"Intercept estimate {col0} not within {tol} of full-sample {full_coef0}"
+    assert abs(col1 - full_coef1) < tol, f"Coefficient estimate {col1} not within {tol} of full-sample {full_coef1}"
+    assert abs(threshold_boot - full_threshold) < tol, (
+        f"Bootstrap threshold {threshold_boot} not within {tol} of full-sample threshold {full_threshold}"
+    )
+    
+    # Compare full-sample estimate with true parameters.
+    tol = 1  # Tolerance to account for finite-sample variability.
+    assert abs(col0 - true_beta0) < tol, f"Intercept estimate {col0} not within {tol} of true {true_beta0}"
+    assert abs(col1 - true_beta1) < tol, f"Coefficient estimate {col1} not within {tol} of true {true_beta1}"
+    if np.abs(true_beta1) > 1e-4:
+        true_threshold = -true_beta0 / true_beta1
+        assert abs(threshold_boot - true_threshold) < tol, f"Threshold {threshold_boot} not within {tol} of true {true_threshold}"
+
+
+# -----------------------------------------------------------------------------
+# Example usage
+# -----------------------------------------------------------------------------
+
+# # Simulate a dataset
+# np.random.seed(0)
+# n_samples = 2000
+# X_sim = np.random.normal(0, 1, n_samples)
+# # True logistic model: logit(p) = -0.2 + 1.5 * X_sim
+# logits = -0.2 + 1.5 * X_sim
+# p = 1 / (1 + np.exp(-logits))
+# y_sim = np.random.binomial(1, p, n_samples)
+# df_sim = pd.DataFrame({'X': X_sim, 'y': y_sim})
+
+# # Create configuration objects
+# logreg_config = LogRegConfig(C=1.0, solver='lbfgs', max_iter=1000, random_state=42)
+# boot_config = BootstrapConfig(n_boot=5000, random_state=42)
+
+# # Compute the threshold on the full sample
+# threshold_full = compute_threshold(df_sim['X'].values, df_sim['y'].values, logreg_config)
+# print("Threshold estimate for full sample:", threshold_full)
+
+# # Bootstrap the threshold estimates
+# boot_thresh, conv_flags = bootstrap_threshold(
+#     data=df_sim,
+#     predictor='X',
+#     outcome='y',
+#     boot_config=boot_config,
+#     logreg_config=logreg_config
+# )
+
+# print("First 10 bootstrap threshold estimates:", boot_thresh[:10])
+# valid_flags = conv_flags[~np.isnan(boot_thresh)]
+# print("Fraction of non-converged bootstrap samples:", np.mean(~valid_flags))
+# valid_thresh = boot_thresh[~np.isnan(boot_thresh)]
+# print("Mean bootstrap threshold estimate:", np.mean(valid_thresh))
+# print("Standard error:", np.std(valid_thresh, ddof=1))
+
+# threshold = boot_thresh[~np.isnan(boot_thresh)].mean()
+# true_threshold = -1 * -0.2 / 1.5
+
+# tol = 0.01 # tolerance for the estimates
+# assert abs(threshold - true_threshold) < tol, (
+#     f"Threshold estimate {threshold} not within {tol} of true {true_threshold}"
+# )
 
 
 if __name__ == "__main__":

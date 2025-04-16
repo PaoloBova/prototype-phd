@@ -1,15 +1,72 @@
-import pandas as pd
-import statsmodels.api as sm
-import numpy as np
 import logging
-import prototype_phd.data_utils as data_utils
+import numpy as np
+import pandas as pd
+import prototype_phd.utils as utils
+from pydantic import BaseModel, Field
+from sklearn.exceptions import ConvergenceWarning
+from sklearn.linear_model import LogisticRegression
+from sklearn.preprocessing import StandardScaler
+from sklearn.utils import resample
+import statsmodels.api as sm
 import statsmodels.genmod.families.links as sm_links
 import statsmodels.genmod.generalized_linear_model
+from statsmodels.genmod.generalized_linear_model import GLMResultsWrapper
+from typing import Tuple, Optional, List
+import warnings
 
 statsmodels.genmod.generalized_linear_model.SET_USE_BIC_LLF(True)
 
-def robust_logistic_fit(x, y, freq_weights=None, regularize=False, alpha=1.0,
-                        L1_wt=0.0, link=sm_links.Logit()):
+class LogRegConfig(BaseModel):
+    engine: str = Field("statsmodels", description="Engine: 'statsmodels' or 'scikit-learn'.")
+    C: float = Field(1.0, description="Inverse of regularization strength (for scikit-learn).")
+    solver: str = Field("saga", description="Solver to use (scikit-learn).")
+    max_iter: int = Field(1000, description="Maximum iterations for convergence (scikit-learn).")
+    random_state: int = Field(42, description="Random seed (scikit-learn).")
+    sample_weights: Optional[np.ndarray] = Field(None, description="Sample weights (scikit-learn).")
+    freq_weights: Optional[np.ndarray] = Field(
+        None,
+        description="Frequency weights indicating the number of trials behind each observation. For example:"
+        "- If each y is an average over a constant n, pass a scalar or an array of n."
+        "- If trial counts vary, pass the specific counts."
+        " (statsmodels)"
+        )
+    regularize: bool = Field(
+        False,
+        description="Whether to use regularization (statsmodels). If True, uses \
+            fit_regularized() to apply a penalty (L1, L2, or elastic net) to the \
+            coefficients. Standard errors are not available for regularized fits.")
+    alpha: float=Field(1.0, description="Regularization strength, larger values impose more shrinkage (statsmodels).")
+    L1_wt: float=Field(0.0, description="Weight on the L1 penalty (1.0 for pure L1, 0.0 for pure L2, intermediate for elastic net). (statsmodels).")
+    link: sm_links.Link=Field(
+        sm_links.Logit(),
+        description="The link function for the model. Alternatives include: \
+          - Probit() for models assuming a normally distributed latent variable. \
+          - CLogLog() for extreme value modeling. (statsmodels)."
+        )
+    
+    class Config:
+        arbitrary_types_allowed = True
+    
+
+
+class LogRegResult(BaseModel):
+    coeffs: np.ndarray = Field(..., description="Estimated coefficients of the model.")
+    convergence: bool = Field(True, description="Whether the model fitting converged.")
+    warning: Optional[str] = Field(None, description="Warning message if fitting did not converge.")
+    glm_result: Optional[GLMResultsWrapper] = Field(None, description="Fitted GLM result (statsmodels).")
+    scaler: Optional[StandardScaler] = Field(None, description="Scaler used for standardization (scikit-learn).")
+    sk_result: Optional[LogisticRegression] = Field(None, description="Fitted logistic regression model (scikit-learn).")
+
+    class Config:
+        arbitrary_types_allowed = True
+    
+
+@utils.multi
+def fit_logistic(_x:np.ndarray, _y:np.ndarray, config:LogRegConfig) -> str:
+    return config.engine
+
+@utils.method(fit_logistic, "statsmodels")
+def fit_logistic(x, y, config:LogRegConfig=LogRegConfig()) ->LogRegResult:
     """
     Fit a logistic regression model using the GLM framework (Binomial family).
     
@@ -26,23 +83,8 @@ def robust_logistic_fit(x, y, freq_weights=None, regularize=False, alpha=1.0,
         Outcome variable. For binary data, y should be 0 or 1. For proportion data,
         y is expected to lie in (0,1) unless frequency weights are provided. If no
         frequency weights are given and y is not binary, a warning is logged.
-    freq_weights : array-like, optional
-        Weights indicating the number of trials behind each observation. For example:
-          - If each y is an average over a constant n, pass a scalar or an array of n.
-          - If trial counts vary, pass the specific counts.
-    regularize : bool, default False
-        If True, uses fit_regularized() to apply a penalty (L1, L2, or elastic net) to
-        the coefficients. Standard errors are not available for regularized fits.
-    alpha : float, default 1.0
-        Regularization strength; larger values impose more shrinkage.
-    L1_wt : float, default 0.0
-        Weight on the L1 penalty (1.0 for pure L1, 0.0 for pure L2, intermediate for
-        elastic net).
-    link : statsmodels link function, default Logit()
-        The link function for the model. Alternatives include:
-          - Probit() for models assuming a normally distributed latent
-            variable.
-          - CLogLog() for extreme value modeling.
+    config : LogRegConfig
+        Configuration parameters for the logistic regression model.
     
     Data and Model Considerations
     ------------------------------
@@ -60,9 +102,14 @@ def robust_logistic_fit(x, y, freq_weights=None, regularize=False, alpha=1.0,
     
     Returns
     -------
-    result : GLMResults (or similar)
+    LogRegResult
         The fitted model. Unregularized fits include standard errors and diagnostic stats.
     """
+    regularize = config.regularize
+    alpha = config.alpha
+    L1_wt = config.L1_wt
+    link = config.link
+    freq_weights = config.freq_weights
     # Input validation
     x = np.asarray(x) if not isinstance(x, (pd.DataFrame, pd.Series)) else x
     y = np.asarray(y) if not isinstance(y, (pd.Series, pd.DataFrame)) else y
@@ -80,6 +127,26 @@ def robust_logistic_fit(x, y, freq_weights=None, regularize=False, alpha=1.0,
     # Convert x to DataFrame if not already.
     if not isinstance(x, pd.DataFrame):
         x = pd.DataFrame(x, columns=[x.name] if hasattr(x, 'name') else ['x'])
+
+    # Convert y to Series if not already.
+    if not isinstance(y, pd.Series):
+        y = pd.Series(y, name=y.name if hasattr(y, 'name') else 'y')
+
+    # Handle cases where y is constant (all 0s or all 1s)
+    if len(unique_y) == 1:
+        outcome = y.iloc[0]
+        metadata = {"converged": True, "warning": "all_success" if outcome == 1 else "all_failure"}
+        # Set intercept to -1
+        params = np.zeros(x.shape[1] + 1)
+        params[0] = -1
+        for j, col in enumerate(x.columns, start=1):
+            default_threshold_j = x[col].max() if outcome == 1 else x[col].min()
+            # Set coefficients such that -1 * intercept / coefficient = default_threshold_j
+            params[j] = 1 / default_threshold_j
+        return LogRegResult(coeffs=params, **metadata)
+
+    # Typically, other issues (e.g. (quasi-)perfect separation, 
+    # insufficient variation) are handled using regularization.
     
     # Add constant term.
     X_with_const = sm.add_constant(x)
@@ -90,15 +157,111 @@ def robust_logistic_fit(x, y, freq_weights=None, regularize=False, alpha=1.0,
                        freq_weights=freq_weights)
     
     # Fit the model.
-    if regularize:
-        result = glm_model.fit_regularized(alpha=alpha, L1_wt=L1_wt)
-    else:
-        result = glm_model.fit()
+    try:
+        if regularize:
+            result = glm_model.fit_regularized(alpha=alpha, L1_wt=L1_wt,
+                                               maxiter=100, cnvrg_tol=1e-6)
+        else:
+            result = glm_model.fit()
+        logging.info("Model fitting complete using link: %s", link.__class__.__name__)
+        metadata = {"converged": True, "warning": ""}
+    except Exception as e:
+        result = None
+        logging.error("Model fitting failed: %s", e)
+        metadata = {"converged": False, "warning": str(e)}
     
-    logging.info("Model fitting complete using link: %s", link.__class__.__name__)
-    return result
+    coeffs = result.params if result else np.full(x.shape[1] + 1, np.nan)
+    coeffs = np.array(coeffs)
+    return LogRegResult(
+        coeffs=coeffs,
+        **metadata,
+        glm_result=result
+    )
 
-def run_diagnostics(result):
+@utils.method(fit_logistic, "scikit-learn")
+def fit_logistic(
+    X: np.ndarray,
+    y: np.ndarray,
+    config: LogRegConfig
+) -> LogRegResult:
+    """
+    Fit a logistic regression model on a single predictor with standardization.
+    
+    Parameters
+    ----------
+    X : np.ndarray
+        Predictor array with shape (n_samples,) or (n_samples, 1).
+    y : np.ndarray
+        Binary outcome array.
+    config : LogRegConfig
+        Configuration parameters for logistic regression.
+    
+    Returns
+    -------
+    LogRegResult
+        Includes the fitted logistic regression model and the scaler used.
+    """
+    if X.ndim == 1:
+        X = X.reshape(-1, 1)
+
+    if X.shape[0] != len(y):
+        logging.error("Length mismatch: x and y must have the same number of observations.")
+        raise ValueError("x and y must have the same number of observations.")
+    
+    # Warn if y is non-binary
+    unique_y = np.unique(y)
+    if not np.all(np.isin(unique_y, [0, 1])):
+        logging.warning("y appears to be proportion data. Scikit-learn's LogisticRegression"
+                        "does not support proportion data. Provide as sample_weights for an array"
+                        "of 0s and 1s instead.")
+
+    # Handle cases where y is constant (all 0s or all 1s)
+    if len(unique_y) == 1:
+        outcome = y[0]
+        metadata = {"converged": True, "warning": "all_success" if outcome == 1 else "all_failure"}
+        # Set intercept to -1
+        params = np.zeros(X.shape[1] + 1)
+        params[0] = -1
+        for j, x in enumerate(X.T, start=1):
+            default_threshold_j = np.max(x) if outcome == 1 else np.min(x)
+            # Set coefficients such that -1 * intercept / coefficient = default_threshold_j
+            params[j] = 1 / default_threshold_j
+        return LogRegResult(coeffs=params, **metadata)
+
+    # Typically, other issues (e.g. (quasi-)perfect separation, 
+    # insufficient variation) are handled using regularization.
+    
+    scaler = StandardScaler()
+    X_scaled = scaler.fit_transform(X)
+    
+    clf = LogisticRegression(
+        C=config.C, 
+        solver=config.solver, 
+        max_iter=config.max_iter, 
+        random_state=config.random_state,
+        sample_weights=config.sample_weights
+    )
+    conv_flag = True
+    warning = ""
+    with warnings.catch_warnings(record=True) as w:
+        warnings.simplefilter("always", ConvergenceWarning)
+        clf.fit(X_scaled, y)
+        for warn in w:
+            if issubclass(warn.category, ConvergenceWarning):
+                conv_flag = False
+                logging.warning("Convergence warning in logistic regression fit.")
+                warning += f"Convergence warning: {warn.message}"
+    return LogRegResult(coeffs=clf.coef_[0],
+                        scaler=scaler,
+                        sk_result=clf,
+                        convergence=conv_flag,
+                        warning=warning)
+
+@utils.method(fit_logistic)
+def fit_logistic(_x: np.ndarray, _y: np.ndarray, config: LogRegConfig) -> None:
+    raise ValueError(f"Unsupported engine: {config.engine}")
+
+def run_diagnostics(result:GLMResultsWrapper) -> dict:
     """
     Run a suite of diagnostic tests on a fitted GLM logistic regression model.
     
@@ -109,14 +272,19 @@ def run_diagnostics(result):
     
     Parameters
     ----------
-    result : GLMResults or similar
+    result : GLMResultsWrapper or similar
         The fitted logistic regression model.
     
     Returns
     -------
     diagnostics : dict
         A dictionary containing diagnostic metrics.
+        
+    Notes
+    -----
+    - Only suppports statsmodels GLMResultsWrapper objects.
     """
+    result = result.glm_result
     diagnostics = {}
     diagnostics['AIC'] = result.aic
     diagnostics['BIC'] = result.bic
@@ -167,8 +335,7 @@ def run_diagnostics(result):
     logging.info("Diagnostics complete.")
     return diagnostics
 
-def compare_link_functions(x, y, freq_weights=None, regularize=False, alpha=1.0,
-                           L1_wt=0.0):
+def compare_link_functions(x, y, config:LogRegConfig=LogRegConfig()) -> Tuple[dict, str]:
     """
     Compare different link functions (logit, probit, cloglog) by fitting models and
     reporting AIC and BIC. Lower values indicate a better fit.
@@ -183,14 +350,8 @@ def compare_link_functions(x, y, freq_weights=None, regularize=False, alpha=1.0,
         Predictor variable(s).
     y : array-like or pd.Series
         Outcome variable.
-    freq_weights : array-like, optional
-        Frequency weights for each observation.
-    regularize : bool, default False
-        Whether to use regularization.
-    alpha : float, default 1.0
-        Regularization strength.
-    L1_wt : float, default 0.0
-        Weight for the L1 penalty.
+    config : LogRegConfig
+        Configuration parameters for the logistic regression model.
     
     Returns
     -------
@@ -200,6 +361,7 @@ def compare_link_functions(x, y, freq_weights=None, regularize=False, alpha=1.0,
     best_link : str
         The link function with the lowest AIC.
     """
+    assert config.engine.lower() == "statsmodels", "Only statsmodels engine is supported for link comparison."
     links = {
         'logit': sm_links.Logit(),
         'probit': sm_links.Probit(),
@@ -209,39 +371,66 @@ def compare_link_functions(x, y, freq_weights=None, regularize=False, alpha=1.0,
     metrics = {}
     for name, link in links.items():
         logging.info("Fitting model using %s link.", name)
-        result = robust_logistic_fit(x, y, freq_weights=freq_weights,
-                                     regularize=regularize, alpha=alpha,
-                                     L1_wt=L1_wt, link=link)
-        metrics[name] = (result.aic, result.bic)
+        config_args = {**config.model_dump(), 'link': link}
+        result = fit_logistic(x, y, config=LogRegConfig(**config_args))
+        glm_result = result.glm_result
+        metrics[name] = (glm_result.aic, glm_result.bic)
         logging.info("%s link: AIC = %.3f, BIC = %.3f",
-                     name, result.aic, result.bic)
+                     name, glm_result.aic, glm_result.bic)
     
     # Choose the best link based on AIC.
     best_link = min(metrics, key=lambda k: metrics[k][0])
     logging.info("Best link based on AIC: %s", best_link)
     return metrics, best_link
 
-def compute_threshold(result):
+def compute_threshold_from_result(result:LogRegResult, p:float=0.5) -> Optional[float]:
     """
-    Compute the 50% probability threshold for a logistic model with one predictor.
+    Extract the 100*p% probability threshold from a fitted logistic regression model.
     
     For a model of the form:
-        log(p/(1-p)) = beta0 + beta1 * x,
-    the 50% threshold is given by:
-        x = -beta0 / beta1
+        log(p/(1-p)) = β₀ + β₁ x,
+    the threshold (where p = 0.5) is given by x* = -β₀ / β₁,
+    or in the general case x* = (log(p/(1-p)) - β₀) / β₁
+    
+    If a scaler is provied, transform threshold back to the original scale.
     
     Parameters
     ----------
-    result : GLMResults or similar
-        The fitted model with parameter estimates.
-    
+    result : LogRegResult
+        The fitted logistic regression model.
+    p : float, default 0.5
+        The probability threshold to compute the threshold for.
+
     Returns
     -------
-    threshold : float or None
-        The 50% threshold if one predictor exists; otherwise, None.
+    Optional[float]
+        The threshold on the original scale, or None if beta1 is near zero.
     """
-    if len(result.params) == 2:
-        intercept, slope = result.params.iloc[0], result.params.iloc[1]
-        return -intercept / slope if slope != 0 else np.nan
+    beta0, beta1 = result.coeffs
+    scaler = result.scaler
+    if np.abs(beta1) < 1e-8:
+        logging.error("Coefficient too close to zero. Cannot compute threshold.")
+        return np.nan
+    log_odds = np.log(p / (1 - p))
+    threshold_std = (log_odds - beta0) / beta1
+    if scaler:
+        original_threshold = threshold_std * scaler.scale_[0] + scaler.mean_[0]
     else:
-        return None
+        original_threshold = threshold_std
+    return original_threshold
+
+def compute_threshold(
+    X: np.ndarray,
+    y: np.ndarray,
+    config: LogRegConfig,
+    p: float = 0.5
+) -> Optional[float]:
+    """
+    Convenience function: fit logistic regression on X and return the threshold.
+    Returns
+    -------
+    Optional[float]
+        The computed threshold value, or None if computation fails.
+    """
+    model_fit = fit_logistic(X, y, config)
+    return compute_threshold_from_result(model_fit, p=p)
