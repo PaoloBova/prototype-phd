@@ -38,6 +38,7 @@ dependencies = [
     "hypothesis (>=6.130.8,<7.0.0)",
     "seaborn (>=0.13.2,<0.14.0)",
     "lark (>=1.2.2,<2.0.0)",
+    "scikit-learn (>=1.6.1,<2.0.0)",
 ]
 
 [project.urls]
