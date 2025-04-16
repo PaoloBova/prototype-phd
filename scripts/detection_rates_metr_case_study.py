@@ -105,7 +105,6 @@ plt.legend(loc='center left', bbox_to_anchor=(1, 0.5))
 plt.xlabel("Task source")
 plt.ylabel("Average success rate")
 plt.title("Average Success Rates with Clustered Standard Errors")
-plt.show()
 
 # Plot the average success of the different models for only the hcast task source
 # Filter the data for the specific task source
@@ -165,8 +164,6 @@ ax.legend()
 
 # Show the plot
 plt.tight_layout()
-plt.show()
-
 
 # Plot the average success rates of each model as we vary task time baselines.
 fig, ax = plt.subplots(figsize=(10, 6))
@@ -204,8 +201,16 @@ df["log_bin_mid"] = df["log_bin"].apply(lambda x: np.mean([x.left, x.right]))
 # Now you can group by the new log_bin_mid column instead of human_seconds,
 # then calculate the average success rate in each bin.
 gdfs = df.groupby(["log_bin_mid", "alias"])
-results = gdfs["score_binarized"].mean().unstack()
+# Note that to replicate the figure it is important to use inverse square
+# weights to compute the average success rates.
+weighting_fn = lambda x: np.average(x["score_binarized"], weights=x["invsqrt_task_weight"])
+# weighting_fn = lambda x: (x["score_binarized"] * x["invsqrt_task_weight"] / x["invsqrt_task_weight"]).sum()
+results = gdfs.apply(weighting_fn).unstack()
 
+# While inverse square weights were used to compute the logistic regressions,
+# this may be an inappropriate application of the weighting scheme.
+# TODO: Investigate whether it would be appropriate to adopt such a weighting
+# scheme.
 gdfs2 = df.groupby(["human_seconds", "alias"])
 results2 = gdfs2["score_binarized"].mean().unstack()
 trials_grouped = gdfs2["score_binarized"].count().unstack()

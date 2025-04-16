@@ -88,25 +88,56 @@ df_weights = mcdev.compute_allocations(scenarios)
 # Create logistic regression wrapper
 x_cols = ["log_human_seconds"]
 y_col = "score_binarized"
-stats_fn = lambda a,b: bootstrap.analysis_logistic_regression(a,b, x_cols=x_cols, y_col=y_col)
-# Modify your bootstrap analysis with these safeguards
+
 def stats_fn_with_safeguards(a, b, x_cols=x_cols, y_col=y_col):
-    # Check for minimum counts of each outcome class
-    if (b[y_col].sum() < 3) or (len(b) - b[y_col].sum() < 3):
-        # Not enough samples in one class - return null result or flag
-        return {"converged": False, "warning": "insufficient_variation"}
+    # a: 2D array of bootstrap indices (each row is one bootstrap sample)
+    # b: the original DataFrame
+    out_rows = []
+    n_bootstrap = a.shape[0]
+    num_coeff = len(x_cols) + 1  # coeff_0 for intercept, coeff_1... for predictors
+    default_coeffs = {f"coeff_{i}": np.nan for i in range(num_coeff)}
     
-    # Check for perfect separation before running regression
-    # (Simple check: see if any value of x perfectly predicts y)
-    for col in x_cols:
-        for val in b[col].unique():
-            y_subset = b[b[col] == val][y_col]
-            if (len(y_subset) > 0) and ((y_subset.mean() == 0.0) or (y_subset.mean() == 1.0)):
-                # Perfect separation detected
-                return {"converged": False, "warning": "perfect_separation"}
-    
-    # If we passed the checks, proceed with the regression
-    return bootstrap.analysis_logistic_regression(a, b, x_cols=x_cols, y_col=y_col)
+    for i in range(n_bootstrap):
+        sample_indices = a[i]
+        sample_df = b.iloc[sample_indices]
+        
+        if (sample_df[y_col].sum() < 3) or (len(sample_df) - sample_df[y_col].sum() < 3):
+            row = {"converged": False, "warning": "insufficient_variation", **default_coeffs}
+        elif sample_df[y_col].nunique() == 1:
+            outcome = sample_df[y_col].iloc[0]
+            # For constant outcomes, set intercept to NaN and predictors to max (if 1) or min (if 0)
+            row = {"converged": True, "warning": "all_success" if outcome == 1 else "all_failure"}
+            # Set intercept to -1
+            row["coeff_0"] = -1
+            for j, col in enumerate(x_cols, start=1):
+                default_threshold_j = sample_df[col].max() if outcome == 1 else sample_df[col].min()
+                # Set coefficients such that -1 * intercept / coefficient = default_threshold_i
+                row[f"coeff_{j}"] = 1 / default_threshold_j
+        else:
+            # TODO: Is this the correct way to handle cases with perfect separation?
+            perfect_sep = False
+            for col in x_cols:
+                for val in sample_df[col].unique():
+                    y_subset = sample_df[sample_df[col] == val][y_col]
+                    if len(y_subset) > 0 and (y_subset.mean() == 0.0 or y_subset.mean() == 1.0):
+                        perfect_sep = True
+                        break
+                if perfect_sep:
+                    break
+            if perfect_sep:
+                row = {"converged": False, "warning": "perfect_separation", **default_coeffs}
+            else:
+                try:
+                    # TODO: Fix. Utility expects all of the sample_indices at once traditionally.
+                    res = bootstrap.analysis_logistic_regression(np.atleast_2d(sample_indices), b)
+                    coeffs = res.iloc[0].to_dict()  # expected keys: coeff_0, coeff_1, etc.
+                    row = {"converged": True, "warning": ""}
+                    row.update(coeffs)
+                except Exception as e:
+                    row = {"converged": False, "warning": str(e), **default_coeffs}
+        out_rows.append(row)
+    return pd.DataFrame(out_rows)
+
 # Run the bootstrap analysis
 bootstrap_results = []
 group_vars = ["model"]
@@ -134,7 +165,7 @@ for group, gdf in gdfs:
         weights = weights / weights_sum
         bootstrap_config = bootstrap.BootstrapConfig(
             n_bootstrap=10000,
-            analysis_funcs=[stats_fn],
+            analysis_funcs=[stats_fn_with_safeguards],
             sample_size=int(total_demand),
             weights=weights,
             random_state = 1,
@@ -169,4 +200,12 @@ df_bootstrap = pd.concat(bootstrap_results)
 # this may happen organically, in which case we will want to skip logistic
 # regression and set the estimator to be the max value tested for (if all
 # successful) or the min value (if all unsuccessful).
+# TODO: Make sure to run an analysis which estimates each bins success rate
+# so that we can compute test senstitivity rates that way too
+# TODO: Consider test sensitivities which look at the basic unit of task runs
+# and thinks about how grouping them leads to thinking about how any particular
+# task run might have a chance of misrepresenting what you think in general
+# about task success rates in that bin.
 # TODO: Create plots for the bootstrap results
+# TODO: Consider using hierarchical bootstrap sampling by task_family and task_id
+# At the moment, I'm sampling by task_run_id (for each alias)
