@@ -4,10 +4,13 @@ import pandas as pd
 import prototype_phd.data_utils as data_utils
 import prototype_phd.methods.bootstrap as bootstrap
 import prototype_phd.methods.mcdev as mcdev
+import prototype_phd.stats as stats
 import prototype_phd.utils as utils
 
 
-setup_args = {"log_path": "logs/detection_rates.log"}
+setup_args = {"log_path": "logs/detection_rates_case_study.log",
+              "data_dir_root": "data/detection_rates_case_study",
+              "plots_dir_root": "plots/detection_rates_case_study",}
 sim_id, commit, data_dir, plots_dir = data_utils.setup_project(**setup_args)
 
 logging.info(f"Simulation ID: {sim_id}")
@@ -36,6 +39,19 @@ logging.info(f"External data columns: {df.columns}")
 # also set the number of draws within each booststrap sample to be equal to the
 # total demand.
 
+# Compute K, p_base, and B_max
+
+# We split the times into powers of 2 for binning. We ignore the first 5 bins
+# from our choice model since they only correspond to tasks from the SWAA task
+# source, which isn't a good fit for our choice model.
+# The longest task is in bin 17. So, we set K = 17 - 5 = 12.
+# 12 bins isn't a lot, we we later consider a more finegrained choice model
+# with K = 24 where each bin is in powers of sqrt(2).
+# Since we start from the sixth bin, we set p_base as the average price (or
+# generation cost) for a given model to complete tasks in the sixth bin.
+# Finally, to compute B_max, we take the total generation cost of all tasks
+# for that model (it doesn't matter if we exclude SWAA since the expenditure
+# on these tasks is next to 0).
 
 def build_scenarios(p_base=1.0, B_max=1000, K=15):
     # We need prices to increase exponentially with k.
@@ -69,83 +85,58 @@ def process_data(df: pd.DataFrame) -> pd.DataFrame:
     df["log_human_seconds"] = np.log2(df["human_seconds"])
     # Bin the human_seconds into log2 bins.
     max_val = df["human_seconds"].max()
-    n_bins = np.log2(max_val).round().astype(int)
-    bins = np.logspace(0, np.log2(max_val), n_bins, True, 2)
+    max_val_po2 = int(np.ceil(np.log2(max_val)))
+    bins = (2**np.array(range(max_val_po2+1))).astype(int)
+    print("Bins:", bins)
+    print("max_val:", max_val)
     # Optionally, label the bins with human-friendly labels.
     # For example, using the bin edges directly (or you can provide custom labels)
     df["log_bin"] = pd.cut(df["human_seconds"], bins=bins, include_lowest=True)
     # Get midpoints of the log_bin values
     df["log_bin_mid"] = df["log_bin"].apply(lambda x: np.mean([x.left, x.right]))
-    
-    # TODO: Improve processing so we match original data analysis
-    
+    # Get the nearest power of 2 (rounding down) for each log_bin
+    df["log_bin_po2"] = df["log_bin"].apply(lambda x: int(np.floor(np.log2(x.left))))
     return df
 
 df_case_study = process_data(df)
 
-scenarios = build_scenarios()
+used_bins = np.sort(df_case_study["log_bin_po2"].unique())
+# K should be per model but we can use all data for now
+K = len(used_bins)
+# TODO: p_base should be per model, but we can use the average for now
+p_base = df_case_study[df_case_study["log_bin_po2"] == used_bins[0]]["generation_cost"].mean()
+# TODO: B_max should be per model, but we can use the average for now
+B_max = df_case_study["generation_cost"].sum() / len(df_case_study["model"].unique())
+
+logging.info(f"Used bins: {used_bins}")
+logging.info(f"B_max:  {B_max}, p_base: {p_base}")
+
+scenarios = build_scenarios(K=K, p_base=p_base, B_max=B_max)
 df_weights = mcdev.compute_allocations(scenarios)
 # Create logistic regression wrapper
 x_cols = ["log_human_seconds"]
 y_col = "score_binarized"
-
-def stats_fn_with_safeguards(a, b, x_cols=x_cols, y_col=y_col):
-    # a: 2D array of bootstrap indices (each row is one bootstrap sample)
-    # b: the original DataFrame
-    out_rows = []
-    n_bootstrap = a.shape[0]
-    num_coeff = len(x_cols) + 1  # coeff_0 for intercept, coeff_1... for predictors
-    default_coeffs = {f"coeff_{i}": np.nan for i in range(num_coeff)}
-    
-    for i in range(n_bootstrap):
-        sample_indices = a[i]
-        sample_df = b.iloc[sample_indices]
-        
-        if (sample_df[y_col].sum() < 3) or (len(sample_df) - sample_df[y_col].sum() < 3):
-            row = {"converged": False, "warning": "insufficient_variation", **default_coeffs}
-        elif sample_df[y_col].nunique() == 1:
-            outcome = sample_df[y_col].iloc[0]
-            # For constant outcomes, set intercept to NaN and predictors to max (if 1) or min (if 0)
-            row = {"converged": True, "warning": "all_success" if outcome == 1 else "all_failure"}
-            # Set intercept to -1
-            row["coeff_0"] = -1
-            for j, col in enumerate(x_cols, start=1):
-                default_threshold_j = sample_df[col].max() if outcome == 1 else sample_df[col].min()
-                # Set coefficients such that -1 * intercept / coefficient = default_threshold_i
-                row[f"coeff_{j}"] = 1 / default_threshold_j
-        else:
-            # TODO: Is this the correct way to handle cases with perfect separation?
-            perfect_sep = False
-            for col in x_cols:
-                for val in sample_df[col].unique():
-                    y_subset = sample_df[sample_df[col] == val][y_col]
-                    if len(y_subset) > 0 and (y_subset.mean() == 0.0 or y_subset.mean() == 1.0):
-                        perfect_sep = True
-                        break
-                if perfect_sep:
-                    break
-            if perfect_sep:
-                row = {"converged": False, "warning": "perfect_separation", **default_coeffs}
-            else:
-                try:
-                    # TODO: Fix. Utility expects all of the sample_indices at once traditionally.
-                    res = bootstrap.analysis_logistic_regression(np.atleast_2d(sample_indices), b)
-                    coeffs = res.iloc[0].to_dict()  # expected keys: coeff_0, coeff_1, etc.
-                    row = {"converged": True, "warning": ""}
-                    row.update(coeffs)
-                except Exception as e:
-                    row = {"converged": False, "warning": str(e), **default_coeffs}
-        out_rows.append(row)
-    return pd.DataFrame(out_rows)
-
+logreg_config = stats.LogRegConfig(
+    engine="scikit-learn",
+    solver="lbfgs",
+    C=1,
+    max_iter=1000,
+)
+stats_fn = lambda idxs, df: bootstrap.analysis_logistic_regression(idxs,
+                                                                    df,
+                                                                    logreg_config,
+                                                                    x_cols=x_cols,
+                                                                    y_col=y_col)
 # Run the bootstrap analysis
 bootstrap_results = []
 group_vars = ["model"]
 gdfs = df_case_study.groupby(group_vars)
 group_vars_weights = ["Budget"]
 gdfs_weights = df_weights.groupby(group_vars_weights)
-for group, gdf in gdfs:
-    for group_weights, gdf_weights in gdfs_weights:
+
+import tqdm as tqdm
+for group, gdf in tqdm.tqdm(gdfs):
+    for group_weights, gdf_weights in tqdm.tqdm(gdfs_weights):
         total_demand = gdf_weights["Demand"].sum()
         if total_demand == 0:
             # We don't need data when Budget is or near zero
@@ -165,8 +156,9 @@ for group, gdf in gdfs:
         weights = weights / weights_sum
         bootstrap_config = bootstrap.BootstrapConfig(
             n_bootstrap=10000,
-            analysis_funcs=[stats_fn_with_safeguards],
-            sample_size=int(total_demand),
+            analysis_funcs=[stats_fn],
+            # sample_size=int(total_demand),
+            sample_size=100,
             weights=weights,
             random_state = 1,
         )
@@ -181,31 +173,62 @@ for group, gdf in gdfs:
             if len(group_vars_weights) > 1:
                 df_temp[col] = group_weights[i]
             else:
-                df_temp[col] = group_weights
+                df_temp[col] = group_weights[i]
         for i, col in enumerate(group_vars):
             if len(group_vars) > 1:
                 df_temp[col] = group[i]
             else:
-                df_temp[col] = group
+                df_temp[col] = group[i]
         bootstrap_results.append(df_temp)
         
-        break
+        # TODO: Remove break
+        # break
+    break
 
 df_bootstrap = pd.concat(bootstrap_results)
 
-# TODO: Investigate edge cases with getting bootstrap samples for the case
-# study data, e.g. when all sampled task runs are successful/unsuccessful.
-# Suggestion, make sure parameters are set so that at full budget we sample
-# as mant task runs as in original dataset for each model. When budget is low
-# this may happen organically, in which case we will want to skip logistic
-# regression and set the estimator to be the max value tested for (if all
-# successful) or the min value (if all unsuccessful).
+data_to_save = {"df_bootstrap": df_bootstrap}
+data_utils.save_data(data_to_save, data_dir=data_dir)
+
+# Visualize the bootstrap distributions for each model and budget value
+# plots = {}
+# plot_group_vars = ["model", "Budget"]
+# import matplotlib.pyplot as plt
+# subplots, axs = plt.subplots(len(df_bootstrap[plot_group_vars]), 1, figsize=(10, 6))
+# for group, gdf in df_bootstrap.groupby(plot_group_vars):
+#     for col in gdf.columns:
+#         if col in plot_group_vars:
+#             continue
+#         # Create a histogram of the bootstrap results
+#         plt.figure(figsize=(10, 6))
+#         plt.hist(gdf[col], bins=30, alpha=0.7, color='blue', edgecolor='black')
+#         plt.title(f"Bootstrap Distribution for {group}")
+#         plt.xlabel("Success Rate")
+#         plt.ylabel("Frequency")
+#         plt.grid()
+#         plot_key = f"{group[0]}_{group[1]}_{col}"
+#         plots[plot_key] = plt
+
+# data_utils.save_plots(plots, plots_dir=f"{plots_dir}/case_study_plots")
+
 # TODO: Make sure to run an analysis which estimates each bins success rate
 # so that we can compute test senstitivity rates that way too
 # TODO: Consider test sensitivities which look at the basic unit of task runs
 # and thinks about how grouping them leads to thinking about how any particular
 # task run might have a chance of misrepresenting what you think in general
 # about task success rates in that bin.
-# TODO: Create plots for the bootstrap results
 # TODO: Consider using hierarchical bootstrap sampling by task_family and task_id
 # At the moment, I'm sampling by task_run_id (for each alias)
+# TODO: Consider whether the choice model using the budget estimated from the
+# data may be ill-suited for recovering the original allocation. If so, then
+# it's plausible that the allocations for tighter budget constraints doesn't
+# exactly capture what might have been chosen. Also consider whether budget
+# constraints should be in log space rather than percentile.
+# TODO: Consider calibrating total demand for high budget against the total
+# number of task runs for that model. This would help us to be more precise.
+# Note: We appear to be off by a factor of 10. Increasing the sample size
+# this much should help reduce spread of estimates but will take significantly
+# longer to run.
+# TODO: Refactor double loop into a single loop and compute the weights
+# each time using model-specific data.
+# TODO: Double check that log_human_seconds is computed properly
