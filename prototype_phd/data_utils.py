@@ -617,7 +617,11 @@ def get_graph_data(args):
 def get_llm_network_data(args):
     return {**get_chat_data(args), **get_graph_data(args)}
 
-def setup_project(save_tracker=True, log_path='logs/default_logs.log'):
+def setup_project(save_tracker=True,
+                  data_dir_root='data',
+                  plots_dir_root='plots',
+                  simulation_id=None,
+                  log_path='logs/default_logs.log'):
     """Set up the project by creating ids and directories.
     
     Returns:
@@ -637,20 +641,35 @@ def setup_project(save_tracker=True, log_path='logs/default_logs.log'):
     The simulation_id and current_commit can be used to uniquely identify the
     simulation and the version of the code used."""
     # Simulation metadata
-    simulation_id = create_id()
+    if simulation_id is None:
+        simulation_id = create_id()
     current_commit = get_current_git_commit()
 
     # Directories
-    data_dir = f"data/{simulation_id}"
-    plots_dir = f"plots/{simulation_id}"
+    data_dir = f"{data_dir_root}/{simulation_id}"
+    plots_dir = f"{plots_dir_root}/{simulation_id}"
 
     # Save sim to tracker
     if save_tracker:
-        save_sim_to_tracker("data", simulation_id)
+        save_sim_to_tracker(data_dir_root, simulation_id)
 
     # Setup logging
     setup_logging(log_path=log_path)
     return simulation_id, current_commit, data_dir, plots_dir
+
+def get_latest_sim_id(file_path):
+    """
+    Get the latest simulation ID from the sim_tracker file.
+    """
+    df = pd.read_csv(file_path)
+    if df.empty:
+        return ValueError(f"File {file_path} is empty.")
+    if 'sim_id' not in df.columns:
+        raise ValueError(f"Column 'sim_id' not found in {file_path}")
+    # Take the most recent row as per the timestamp column and return the simulation ID.
+    latest_time = df['timestamp'].max()
+    latest_sim_id = df.loc[df['timestamp'] == latest_time, 'sim_id'].values[-1]
+    return latest_sim_id
 
 def collect_stats_default(model, parameters): 
     for agent in model.agents:
