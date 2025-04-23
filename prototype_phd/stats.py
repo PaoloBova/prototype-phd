@@ -16,13 +16,149 @@ import warnings
 
 statsmodels.genmod.generalized_linear_model.SET_USE_BIC_LLF(True)
 
+def bin_proportion_data(
+    df: pd.DataFrame,
+    x_col: str,
+    y_col: str,
+    n_bins: int
+) -> pd.DataFrame:
+    """
+    Aggregate raw (x, y) trials into n_bins bins and compute per‐bin proportions.
+
+    Parameters
+    ----------
+    df : DataFrame
+        Must contain columns x_col (numeric predictor) and y_col (binary 0/1 outcome).
+    x_col : str
+        Name of predictor column.
+    y_col : str
+        Name of binary outcome column.
+    n_bins : int
+        Number of equal‐width bins over x.
+
+    Returns
+    -------
+    binned_df : DataFrame
+        Columns:
+          - x: bin center (mean x in bin)
+          - y: proportion of successes (sum(y)/count)
+          - freq_weights: count of trials in bin
+    """
+    edges = np.linspace(df[x_col].min(), df[x_col].max(), n_bins + 1)
+    # assign each row to a bin
+    df2 = df[[x_col, y_col]].copy()
+    df2['bin'] = pd.cut(df2[x_col], edges, include_lowest=True)
+    
+    records = []
+    for _interval, grp in df2.groupby('bin'):
+        if grp.empty:
+            continue
+        x_mean = grp[x_col].mean()
+        total = len(grp)
+        successes = grp[y_col].sum()
+        records.append({
+            'x': x_mean,
+            'y': successes / total,
+            'freq_weights': total
+        })
+    
+    df_avg =  pd.DataFrame.from_records(records)
+    x_binned = df_avg['x'].values
+    y_binned = df_avg['y'].values
+    
+    idx = np.digitize(x_binned, edges) - 1
+
+    x_rows, y_rows, w = [], [], []
+    for i in range(n_bins):
+        mask = idx == i
+        if not mask.any():
+            continue
+        x_c = x_binned[mask].mean()
+        succ = y_binned[mask].sum()
+        total = mask.sum()
+        # one row for successes, one for failures
+        x_rows += [x_c, x_c]
+        y_rows += [1, 0]
+        w += [succ, total - succ]
+
+    X = np.array(x_rows).reshape(-1, 1)
+    y = np.array(y_rows)
+    sw = np.array(w)
+    # Convert to DataFrame
+    
+    return pd.DataFrame({
+        'x': X.flatten(),
+        'y': y,
+        'freq_weights': sw
+    })
+
+def bin_continuous_data(
+    df: pd.DataFrame, x_col: str, y_col: str, n_bins: int
+) -> pd.DataFrame:
+    """
+    Bin raw (x, y={0,1}) into n_bins equal-width groups.
+    Returns one row per bin with columns:
+      - x       : mean x in bin
+      - y       : proportion successes
+      - freq_weights: number of trials in bin
+    """
+    edges = np.linspace(df[x_col].min(), df[x_col].max(), n_bins + 1)
+    df2 = df[[x_col, y_col]].copy()
+    df2['bin'] = pd.cut(df2[x_col], edges, include_lowest=True)
+    records = []
+    for _, grp in df2.groupby('bin'):
+        if grp.empty: continue
+        x_mean = grp[x_col].mean()
+        total = len(grp)
+        succ = grp[y_col].sum()
+        records.append({'x': x_mean, 'y': succ/total, 'freq_weights': total})
+    return pd.DataFrame.from_records(records)
+
+def expand_binned_proportions(
+    df_binned: pd.DataFrame,
+    x_col: str = 'x',
+    y_col: str = 'y',
+    weight_col: str = 'freq_weights'
+) -> pd.DataFrame:
+    """
+    Expand each proportion row into two binary rows (y=1 and y=0)
+    with sample_weight = [#successes, #failures].
+    """
+    x_arr = df_binned[x_col].values
+    y_arr = df_binned[y_col].values
+    freq = df_binned[weight_col].astype(int).values
+    succ = np.round(y_arr * freq).astype(int)
+    fail = freq - succ
+    X_list, y_list, sw_list = [], [], []
+    for xi, s, f in zip(x_arr, succ, fail):
+        X_list += [xi, xi]
+        y_list += [1, 0]
+        sw_list += [s, f]
+    return pd.DataFrame({'x': X_list, 'y': y_list, 'sample_weight': sw_list})
+
+def prepare_binned_data(
+    df: pd.DataFrame, x_col: str, y_col: str, n_bins: int
+) -> pd.DataFrame:
+    """
+    Combine bin_continuous_data + expand_binned_proportions into one step.
+    """
+    df_b = bin_continuous_data(df, x_col, y_col, n_bins)
+    return expand_binned_proportions(df_b, x_col='x', y_col='y', weight_col='freq_weights')
+
 class LogRegConfig(BaseModel):
     engine: str = Field("statsmodels", description="Engine: 'statsmodels' or 'scikit-learn'.")
     C: float = Field(1.0, description="Inverse of regularization strength (for scikit-learn).")
-    solver: str = Field("saga", description="Solver to use (scikit-learn).")
+    solver: str = Field("lbfgs", description="Solver to use (scikit-learn).")
     max_iter: int = Field(1000, description="Maximum iterations for convergence (scikit-learn).")
     random_state: int = Field(42, description="Random seed (scikit-learn).")
-    sample_weights: Optional[np.ndarray] = Field(None, description="Sample weights (scikit-learn).")
+    sample_weight: Optional[np.ndarray] = Field(None, description="Sample weights (scikit-learn).")
+    standardize_data: bool = Field(
+        False,
+        description="Whether to standardize the data before fitting. \
+            Standardization is done using StandardScaler from scikit-learn. \
+            If True, the data is standardized before fitting the model. \
+            If False, the data is used as is. \
+            Note: Standardization is not applied when using statsmodels.")
     freq_weights: Optional[np.ndarray] = Field(
         None,
         description="Frequency weights indicating the number of trials behind each observation. For example:"
@@ -159,8 +295,8 @@ def fit_logistic(x, y, config:LogRegConfig=LogRegConfig()) ->LogRegResult:
     # Fit the model.
     try:
         if regularize:
-            result = glm_model.fit_regularized(alpha=alpha, L1_wt=L1_wt,
-                                               maxiter=100, cnvrg_tol=1e-6)
+            raise ValueError("""Regularization with statsmodels GLM is disabled because
+                             it fails to behave as expected. Use scikit-learn instead.""")
         else:
             result = glm_model.fit()
         logging.info("Model fitting complete using link: %s", link.__class__.__name__)
@@ -212,8 +348,7 @@ def fit_logistic(
     unique_y = np.unique(y)
     if not np.all(np.isin(unique_y, [0, 1])):
         logging.warning("y appears to be proportion data. Scikit-learn's LogisticRegression"
-                        "does not support proportion data. Provide as sample_weights for an array"
-                        "of 0s and 1s instead.")
+                        "does not support proportion data. Expand y into binary rows with sample weights.")
 
     # Handle cases where y is constant (all 0s or all 1s)
     if len(unique_y) == 1:
@@ -230,28 +365,40 @@ def fit_logistic(
 
     # Typically, other issues (e.g. (quasi-)perfect separation, 
     # insufficient variation) are handled using regularization.
-    
-    scaler = StandardScaler()
-    X_scaled = scaler.fit_transform(X)
+    sample_weight = config.sample_weight
+    if config.standardize_data:
+        logging.warning("Standardizing data before fitting.")
+        logging.warning("Some algorithms appear to perform poorly with standardized data."
+                        "It is not known if this is due to theoretical reasons or due to our implementation."
+                        "I advise against standardizing data unless you have a good reason to do so."
+                        "The Saga algorithm appears to work poorly with standardized data."
+                        "LBFGS appears to work fine with standardized data.")
+        scaler = StandardScaler()
+        # Fit scaler using sample_weight if available to avoid bias from uneven bin counts
+        scaler.fit(X, sample_weight=sample_weight)
+        X_scaled = scaler.transform(X)
+    else:
+        scaler = None
+        X_scaled = X
     
     clf = LogisticRegression(
         C=config.C, 
         solver=config.solver, 
         max_iter=config.max_iter, 
         random_state=config.random_state,
-        sample_weights=config.sample_weights
     )
     conv_flag = True
     warning = ""
     with warnings.catch_warnings(record=True) as w:
         warnings.simplefilter("always", ConvergenceWarning)
-        clf.fit(X_scaled, y)
+        clf.fit(X_scaled, y, sample_weight=sample_weight)
+        coeffs = np.concatenate(([clf.intercept_[0]], *clf.coef_))
         for warn in w:
             if issubclass(warn.category, ConvergenceWarning):
                 conv_flag = False
                 logging.warning("Convergence warning in logistic regression fit.")
                 warning += f"Convergence warning: {warn.message}"
-    return LogRegResult(coeffs=clf.coef_[0],
+    return LogRegResult(coeffs=coeffs,
                         scaler=scaler,
                         sk_result=clf,
                         convergence=conv_flag,
@@ -414,7 +561,14 @@ def compute_threshold_from_result(result:LogRegResult, p:float=0.5) -> Optional[
     log_odds = np.log(p / (1 - p))
     threshold_std = (log_odds - beta0) / beta1
     if scaler:
-        original_threshold = threshold_std * scaler.scale_[0] + scaler.mean_[0]
+        # Retrieve the scaler parameters
+        mu = scaler.mean_[0]    # mean of x
+        sigma = scaler.scale_[0]  # standard deviation of x
+        intercept_unscaled = beta0 - (beta1/ sigma) * mu
+        coef_unscaled = beta1 / sigma
+        original_threshold = -intercept_unscaled / coef_unscaled
+        # Or more simply:
+        # original_threshold = threshold_std * scaler.scale_[0] + scaler.mean_[0]
     else:
         original_threshold = threshold_std
     return original_threshold

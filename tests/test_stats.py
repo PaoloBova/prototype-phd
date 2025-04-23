@@ -6,11 +6,13 @@ import statsmodels.genmod.generalized_linear_model
 
 statsmodels.genmod.generalized_linear_model.SET_USE_BIC_LLF(True)
 
+import prototype_phd.stats as stats
 from prototype_phd.stats import (
     fit_logistic,
     compute_threshold_from_result,
     run_diagnostics,
     compare_link_functions,
+    prepare_binned_data,
     LogRegConfig
 )
 
@@ -126,6 +128,70 @@ def test_all_zeros():
     model_result = fit_logistic(x, y, config)
     assert model_result.warning == "all_failure"
     assert model_result.coeffs[0] == -1
+
+def test_scikit_learn_binned_data():
+    """
+    Bin continuous logistic data into proportions, expand into
+    (x, y=1) and (x, y=0) rows with sample_weight = [#success, #failure].
+    Then fit with scikit‑learn engine and check threshold ≈ -beta0/beta1.
+    """
+    # simulate raw data
+    np.random.seed(0)
+    n_raw = 10000
+    beta0, beta1 = -2.0, 0.5
+    # beta0, beta1 = 0, -3.0
+    x_raw = np.random.uniform(-10, 20, size=n_raw)
+    # x_raw = np.linspace(-5, 10, num=n_raw)
+    logits = beta0 + beta1 * x_raw
+    p_raw = 1 / (1 + np.exp(-logits))
+    y_raw = np.random.binomial(1, p_raw)
+    raw_df = pd.DataFrame({'X': x_raw, 'Y': y_raw})
+
+    # prepare binned data (use more bins for tighter fit)
+    df_exp = prepare_binned_data(raw_df, 'X', 'Y', n_bins=100)
+    X = df_exp['x'].values
+    y = df_exp['y'].values
+    sw = df_exp['sample_weight'].values
+
+    config = LogRegConfig(engine="scikit-learn",
+                          solver="lbfgs",
+                          C=1,
+                          sample_weight=sw)
+    # config = LogRegConfig(engine="statsmodels", freq_weights=sw)
+    result = fit_logistic(X, y, config)
+    threshold = compute_threshold_from_result(result)
+    expected = -beta0 / beta1
+
+    # Plot the binned data
+    import matplotlib.pyplot as plt
+    totals_by_x = df_exp.groupby('x')['sample_weight'].sum()
+    rates = df_exp[df_exp["y"] == 1]["sample_weight"].values / totals_by_x
+    xs = df_exp[df_exp["y"] == 1]["x"].values
+    plt.scatter(xs, rates, label='Binned Data')
+    plt.xlabel('X')
+    plt.ylabel('Frequency')
+    plt.title('Binned Data for Logistic Regression')
+    # Plot fitted logistic curve accounting for scaler
+    X_plot = np.linspace(X.min(), X.max(), 100)
+    coeffs = result.coeffs
+    if result.scaler is not None:
+        z = result.scaler.transform(X_plot.reshape(-1, 1)).flatten()
+    else:
+        z = X_plot
+    logits_plot = coeffs[0] + coeffs[1] * z
+    p_plot = 1 / (1 + np.exp(-logits_plot))
+    plt.plot(X_plot, p_plot, 'r-', label='Fitted Logistic Curve')
+    # Plot threshold line
+    plt.axvline(threshold, color='g', linestyle='--', label='Threshold')
+    # Plot expected threshold line
+    plt.axvline(expected, color='b', linestyle=':', label='Expected Threshold')
+    
+    plt.legend()
+    plt.show()
+    
+    # with 100 bins, should converge within 0.2
+    assert result.convergence
+    assert abs(threshold - expected) < 0.2
 
 if __name__ == "__main__":
     pytest.main([__file__])

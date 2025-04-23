@@ -251,12 +251,15 @@ def analysis_logistic_regression(indices: np.ndarray,
     n_samples = X.shape[0]
     coefficients = np.zeros((n_samples, X.shape[-1] + 1))
     result_objs = []
+    thresholds = []
     for i in range(n_samples):
         result_obj = stats.fit_logistic(X[i, ...], y[i, :, 0], config)
         result_objs.append(result_obj)
         coefficients[i, :] = result_obj.coeffs
+        thresholds.append(stats.compute_threshold_from_result(result_obj))
     results_dict = dict(zip([f"coeff_{i}" for i in range(coefficients.shape[1])],
                             coefficients.T))
+    results_dict["threshold"] = np.array(thresholds)
     results_dict["convergence"] = np.array([result.convergence for result in result_objs])
     results_dict["warning"] = np.array([result.warning for result in result_objs])
     return pd.DataFrame(results_dict)

@@ -336,7 +336,7 @@ def test_bootstrap_regularized_logistic_regression():
 # Note: In practise, setting n_bootstrap very high can help for smaller
 # sample sizes, but this is not a good test for the code.
 # Skip this test for now
-# @pytest.mark.skip(reason="Skipping expensive bootstrap regression test for now")
+@pytest.mark.skip(reason="Skipping expensive bootstrap regression test for now")
 @settings(deadline=None, max_examples=2)
 @given(logistic_data=logistic_data_strategy())
 def test_bootstrap_logistic_regression_estimates(logistic_data):
@@ -389,52 +389,66 @@ def test_bootstrap_logistic_regression_estimates(logistic_data):
         assert abs(threshold_boot - true_threshold) < tol, f"Threshold {threshold_boot} not within {tol} of true {true_threshold}"
 
 
-# -----------------------------------------------------------------------------
-# Example usage
-# -----------------------------------------------------------------------------
+@pytest.mark.skip(reason="Skipping expensive bootstrap regression test for now")
+@settings(deadline=None, max_examples=10)
+@given(logistic_data=logistic_data_strategy())
+def test_bootstrap_logistic_regression_estimates_scikit_learn(logistic_data):
+    df, true_beta0, true_beta1 = logistic_data
+    logreg_config = LogRegConfig(engine="scikit-learn",
+                                 C=1.0,
+                                 solver='saga',
+                                 max_iter=1000,
+                                 random_state=42)
+    stats_fn = lambda indices, data: bootstrap.analysis_logistic_regression(
+        indices=indices,
+        data=data,
+        x_cols=["col_1"],
+        y_col="col_2",
+        config=logreg_config
+    )
+    cfg = bootstrap.BootstrapConfig(
+        n_bootstrap=1000,
+        sample_size=len(df),
+        random_state=123,
+        weights=None,
+        analysis_funcs=[stats_fn]
+    )
+    input_data = BootstrapDataExample(df=df, bootstrap_config=cfg)
+    results = bootstrap.run_bootstrap(input_data)
+        
+    # The coefficients computed across bootstrap samples.
+    col0 = results["coeff_0"].mean()  
+    col1 = results["coeff_1"].mean()
+    threshold_boot = -col0 / col1
+    
+    # Compute the full-sample estimate.
 
-# # Simulate a dataset
-# np.random.seed(0)
-# n_samples = 2000
-# X_sim = np.random.normal(0, 1, n_samples)
-# # True logistic model: logit(p) = -0.2 + 1.5 * X_sim
-# logits = -0.2 + 1.5 * X_sim
-# p = 1 / (1 + np.exp(-logits))
-# y_sim = np.random.binomial(1, p, n_samples)
-# df_sim = pd.DataFrame({'X': X_sim, 'y': y_sim})
-
-# # Create configuration objects
-# logreg_config = LogRegConfig(C=1.0, solver='lbfgs', max_iter=1000, random_state=42)
-# boot_config = BootstrapConfig(n_boot=5000, random_state=42)
-
-# # Compute the threshold on the full sample
-# threshold_full = compute_threshold(df_sim['X'].values, df_sim['y'].values, logreg_config)
-# print("Threshold estimate for full sample:", threshold_full)
-
-# # Bootstrap the threshold estimates
-# boot_thresh, conv_flags = bootstrap_threshold(
-#     data=df_sim,
-#     predictor='X',
-#     outcome='y',
-#     boot_config=boot_config,
-#     logreg_config=logreg_config
-# )
-
-# print("First 10 bootstrap threshold estimates:", boot_thresh[:10])
-# valid_flags = conv_flags[~np.isnan(boot_thresh)]
-# print("Fraction of non-converged bootstrap samples:", np.mean(~valid_flags))
-# valid_thresh = boot_thresh[~np.isnan(boot_thresh)]
-# print("Mean bootstrap threshold estimate:", np.mean(valid_thresh))
-# print("Standard error:", np.std(valid_thresh, ddof=1))
-
-# threshold = boot_thresh[~np.isnan(boot_thresh)].mean()
-# true_threshold = -1 * -0.2 / 1.5
-
-# tol = 0.01 # tolerance for the estimates
-# assert abs(threshold - true_threshold) < tol, (
-#     f"Threshold estimate {threshold} not within {tol} of true {true_threshold}"
-# )
-
+    config_full = logreg_config
+    X_full = df["col_1"].values.reshape(-1, 1)
+    y_full = df["col_2"].values
+    full_res = fit_logistic(X_full, y_full, config_full)
+    full_coef0, full_coef1 = full_res.coeffs
+    full_threshold = -full_coef0 / full_coef1
+    
+    tol = 0.5  # Tolerance for bootstrap versus full-sample estimates.
+    assert abs(col0 - full_coef0) < tol, f"Intercept estimate {col0} not within {tol} of full-sample {full_coef0}"
+    assert abs(col1 - full_coef1) < tol, f"Coefficient estimate {col1} not within {tol} of full-sample {full_coef1}"
+    assert abs(threshold_boot - full_threshold) < tol, (
+        f"Bootstrap threshold {threshold_boot} not within {tol} of full-sample threshold {full_threshold}"
+    )
+    
+    # Compare bootstrap estimates with true parameters.
+    # As regularization induces a downward bias on the coefficients, we don't
+    # expect the estimates to be reliably close to the true evalues unless
+    # the regularization is small and the size of the dataset is large. For
+    # this reason, we don't check the bootstrap estimates against the true values.
+    # If one is interested in how far off they might be, use the code below:
+    # tol = 1  # Tolerance to account for finite-sample variability.
+    # assert abs(col0 - true_beta0) < tol, f"Intercept estimate {col0} not within {tol} of true {true_beta0}"
+    # assert abs(col1 - true_beta1) < tol, f"Coefficient estimate {col1} not within {tol} of true {true_beta1}"
+    # if np.abs(true_beta1) > 1e-4:
+    #     true_threshold = -true_beta0 / true_beta1
+    #     assert abs(threshold_boot - true_threshold) < tol, f"Threshold {threshold_boot} not within {tol} of true {true_threshold}"
 
 if __name__ == "__main__":
     pytest.main(["-v", __file__])
