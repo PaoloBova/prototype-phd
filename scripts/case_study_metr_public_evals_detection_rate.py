@@ -6,7 +6,7 @@ import prototype_phd.methods.bootstrap as bootstrap
 import prototype_phd.methods.mcdev as mcdev
 import prototype_phd.stats as stats
 import prototype_phd.utils as utils
-
+import tqdm as tqdm
 
 setup_args = {"log_path": "logs/detection_rates_case_study.log",
               "data_dir_root": "data/detection_rates_case_study",
@@ -77,6 +77,66 @@ def build_scenarios(p_base=1.0, B_max=1000, K=15):
                for d in utils.dict_list(variable_parameters)]
     return configs
 
+def compute_allocations_helper(df: pd.DataFrame) -> pd.DataFrame:
+    """Compute the allocations for the given DataFrame.
+    
+    Notes:
+        - The DataFrame should contain the following columns:
+            - log_bin_po2: The log2 bin for the task run times.
+            - generation_cost: The generation cost for the task run.
+            - model: The model name.
+    """
+    # TODO: How much does the number of used bins matter? What if a middle bin
+    # goes unused? Does it make more sense to only exclude trailing empty bins?
+    used_bins = np.sort(df["log_bin_po2"].unique())
+    K = len(used_bins)
+    p_base = df[df["log_bin_po2"] == used_bins[0]]["generation_cost"].mean()
+    B_max = df["generation_cost"].sum() / len(df["model"].unique())
+    logging.info(f"Used bins: {used_bins}")
+    logging.info(f"K: {K}, p_base: {p_base}, B_max:  {B_max}")
+    scenarios = build_scenarios(K=K, p_base=p_base, B_max=B_max)
+    df_weights = mcdev.compute_allocations(scenarios)
+    bin_item_mapping = {i: j for i, j in zip(range(1, K+1), used_bins)}
+    # By construction we can always invert the item mapping.
+    df_weights["Item_bin"] = df_weights["Item"].apply(lambda x: bin_item_mapping[x])
+    return df_weights
+
+def assign_mcdev_weights(df:pd.DataFrame,
+                         df_weights:pd.DataFrame,
+                         item_bin_col:str="log_bin_po2") -> np.ndarray:
+    """Assign weights to items in `df` based on demand for item in `df_weights`.
+    
+    Notes:
+    - The `df` DataFrame should contain the following columns:
+        - item_index: The item index for row.
+    - The `df_weights` DataFrame should contain the following columns:
+        - Item: The item index.
+        - Item_bin: The bin for the item .
+        - Demand: The demand for the item.
+    - The Item column in `df_weights` should not have any duplicates.
+    - The `item_bin_col` parameter should be the name of the column in `df`
+    that is used to identify the item of that row.
+    - Returns None if the total demand or weights would effectively be 0.
+    """
+    total_demand = df_weights["Demand"].sum()
+    if total_demand == 0:
+        # We don't need data when Budget is or near zero
+        return None
+    assert total_demand > 0
+    # The item column should not have any duplicates.
+    assert df_weights["Item"].is_unique
+    allocations = df_weights["Demand"] / total_demand
+    item_bins = df_weights["Item_bin"]
+    allocations_by_item_bin = dict(zip(item_bins.values, allocations.values))
+    weights = df[item_bin_col].map(lambda x: allocations_by_item_bin.get(x, 0)).values
+    weights_sum = weights.sum()
+    if weights_sum == 0:
+        # We can ignore this group if no tasks are relevant
+        return None
+    assert weights_sum > 0
+    weights = weights / weights_sum
+    return weights
+
 def process_data(df: pd.DataFrame) -> pd.DataFrame:
     # Filter out SWAA task source
     df = df.copy()
@@ -87,11 +147,14 @@ def process_data(df: pd.DataFrame) -> pd.DataFrame:
     max_val = df["human_seconds"].max()
     max_val_po2 = int(np.ceil(np.log2(max_val)))
     bins = (2**np.array(range(max_val_po2+1))).astype(int)
-    print("Bins:", bins)
-    print("max_val:", max_val)
+    logging.info(f"Bins: {bins}")
+    logging.info(f"max_val: {max_val}")
     # Optionally, label the bins with human-friendly labels.
     # For example, using the bin edges directly (or you can provide custom labels)
     df["log_bin"] = pd.cut(df["human_seconds"], bins=bins, include_lowest=True)
+    # Get lower and upper bounds of the bins
+    df["log_bin_left"] = df["log_bin"].apply(lambda x: x.left)
+    df["log_bin_right"] = df["log_bin"].apply(lambda x: x.right)
     # Get midpoints of the log_bin values
     df["log_bin_mid"] = df["log_bin"].apply(lambda x: np.mean([x.left, x.right]))
     # Get the nearest power of 2 (rounding down) for each log_bin
@@ -100,19 +163,6 @@ def process_data(df: pd.DataFrame) -> pd.DataFrame:
 
 df_case_study = process_data(df)
 
-used_bins = np.sort(df_case_study["log_bin_po2"].unique())
-# K should be per model but we can use all data for now
-K = len(used_bins)
-# TODO: p_base should be per model, but we can use the average for now
-p_base = df_case_study[df_case_study["log_bin_po2"] == used_bins[0]]["generation_cost"].mean()
-# TODO: B_max should be per model, but we can use the average for now
-B_max = df_case_study["generation_cost"].sum() / len(df_case_study["model"].unique())
-
-logging.info(f"Used bins: {used_bins}")
-logging.info(f"B_max:  {B_max}, p_base: {p_base}")
-
-scenarios = build_scenarios(K=K, p_base=p_base, B_max=B_max)
-df_weights = mcdev.compute_allocations(scenarios)
 # Create logistic regression wrapper
 x_cols = ["log_human_seconds"]
 y_col = "score_binarized"
@@ -131,85 +181,38 @@ stats_fn = lambda idxs, df: bootstrap.analysis_logistic_regression(idxs,
 bootstrap_results = []
 group_vars = ["model"]
 gdfs = df_case_study.groupby(group_vars)
-group_vars_weights = ["Budget"]
-gdfs_weights = df_weights.groupby(group_vars_weights)
+case_vars = ["Budget"]
+bootstrap_config_default = {"n_bootstrap": 1000,
+                           "analysis_funcs": [stats_fn],
+                           "sample_size": 100,
+                           "random_state": 1,
+                           }
 
-import tqdm as tqdm
 for group, gdf in tqdm.tqdm(gdfs):
-    for group_weights, gdf_weights in tqdm.tqdm(gdfs_weights):
-        total_demand = gdf_weights["Demand"].sum()
-        if total_demand == 0:
-            # We don't need data when Budget is or near zero
+    df_weights = compute_allocations_helper(gdf)
+    gdfs_weights = df_weights.groupby(case_vars)
+    for case, gdf_weights in tqdm.tqdm(gdfs_weights):
+        weights = assign_mcdev_weights(gdf, gdf_weights)
+        if weights is None:
+            # If weights is None, we can ignore this group
             continue
-        assert total_demand > 0
-        allocations = gdf_weights["Demand"] / total_demand
-        item_index = gdf_weights["Item"]
-        # Extract the values for allocations and item_index which are pandas series groupby objects
-        allocations_by_item_index = dict(zip(item_index.values, allocations.values))
-        gdf["item_index"] = gdf["log_human_seconds"].astype(int)
-        weights = gdf["item_index"].map(lambda x: allocations_by_item_index.get(x, 0)).values
-        weights_sum = weights.sum()
-        if weights_sum == 0:
-            # We can ignore this group if no tasks are relevant
-            continue
-        assert weights_sum > 0
-        weights = weights / weights_sum
         bootstrap_config = bootstrap.BootstrapConfig(
-            n_bootstrap=10000,
-            analysis_funcs=[stats_fn],
-            # sample_size=int(total_demand),
-            sample_size=100,
-            weights=weights,
-            random_state = 1,
-        )
-        # Run the bootstrap analysis
-        bootstrap_input = bootstrap.BootstrapDataInput(
-            df=gdf,
-            bootstrap_config=bootstrap_config,
-        )
-        df_temp = bootstrap.run_bootstrap(bootstrap_input)
+            **bootstrap_config_default,
+            # sample_size=int(gdf_weights["Demand"].sum()),
+            weights=weights)
+        args = bootstrap.BootstrapDataInput(df=gdf, bootstrap_config=bootstrap_config)
+        df_temp = bootstrap.run_bootstrap(args)
         # Add group variables to the results
-        for i, col in enumerate(group_vars_weights):
-            if len(group_vars_weights) > 1:
-                df_temp[col] = group_weights[i]
-            else:
-                df_temp[col] = group_weights[i]
+        for i, col in enumerate(case_vars):
+            df_temp[col] = case[i]
         for i, col in enumerate(group_vars):
-            if len(group_vars) > 1:
-                df_temp[col] = group[i]
-            else:
-                df_temp[col] = group[i]
+            df_temp[col] = group[i]
         bootstrap_results.append(df_temp)
-        
-        # TODO: Remove break
-        # break
-    break
 
 df_bootstrap = pd.concat(bootstrap_results)
 
 data_to_save = {"df_bootstrap": df_bootstrap}
 data_utils.save_data(data_to_save, data_dir=data_dir)
-
-# Visualize the bootstrap distributions for each model and budget value
-# plots = {}
-# plot_group_vars = ["model", "Budget"]
-# import matplotlib.pyplot as plt
-# subplots, axs = plt.subplots(len(df_bootstrap[plot_group_vars]), 1, figsize=(10, 6))
-# for group, gdf in df_bootstrap.groupby(plot_group_vars):
-#     for col in gdf.columns:
-#         if col in plot_group_vars:
-#             continue
-#         # Create a histogram of the bootstrap results
-#         plt.figure(figsize=(10, 6))
-#         plt.hist(gdf[col], bins=30, alpha=0.7, color='blue', edgecolor='black')
-#         plt.title(f"Bootstrap Distribution for {group}")
-#         plt.xlabel("Success Rate")
-#         plt.ylabel("Frequency")
-#         plt.grid()
-#         plot_key = f"{group[0]}_{group[1]}_{col}"
-#         plots[plot_key] = plt
-
-# data_utils.save_plots(plots, plots_dir=f"{plots_dir}/case_study_plots")
 
 # TODO: Make sure to run an analysis which estimates each bins success rate
 # so that we can compute test senstitivity rates that way too
@@ -229,6 +232,4 @@ data_utils.save_data(data_to_save, data_dir=data_dir)
 # Note: We appear to be off by a factor of 10. Increasing the sample size
 # this much should help reduce spread of estimates but will take significantly
 # longer to run.
-# TODO: Refactor double loop into a single loop and compute the weights
-# each time using model-specific data.
 # TODO: Double check that log_human_seconds is computed properly
