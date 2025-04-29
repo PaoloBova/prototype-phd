@@ -263,8 +263,12 @@ for group, gdf in tqdm.tqdm(gdfs):
         success_rates =  gdf_weights["Item_bin"].apply(lambda x: df_success_rates[x])
         item_bin = gdf_weights["Item_bin"].values
         item1 = gdf_weights["Item_bin"].values[0]
+        logging.info(f"cutoffs: {cutoffs}")
+        logging.info(f"num_draws: {num_draws}")
+        logging.info(f"success_rates: {success_rates}")
         gdf_weights["sensitivity_rate"] = [scipy.stats.binom.sf(c - 1, n, p)
                                             for c,n,p in zip(cutoffs, num_draws, success_rates)]
+        logging.info(f"sensitivity_rates: {gdf_weights['sensitivity_rate']}")
         gdf_weights["success_rate"] = success_rates
         gdf_weights["num_draws"] = num_draws
         gdf_weights["cutoff"] = cutoffs
