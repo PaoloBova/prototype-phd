@@ -6,6 +6,7 @@ import prototype_phd.methods.bootstrap as bootstrap
 import prototype_phd.methods.mcdev as mcdev
 import prototype_phd.stats as stats
 import prototype_phd.utils as utils
+import scipy as scipy
 import tqdm as tqdm
 
 setup_args = {"log_path": "logs/detection_rates_case_study.log",
@@ -63,7 +64,8 @@ def build_scenarios(p_base=1.0, B_max=1000, K=15):
     p = scenario_config.scenario_func(k_vec, p_base, 1)
     gamma = 5 / (1 + np.exp(-0.5 * (np.arange(K) - K/2)))
     psi = mcdev.scenario_exponential(np.arange(K), 1, 0.5)
-    B_values = B_max * np.linspace(0, 1, 10)
+    n = 10
+    B_values = B_max * np.linspace(0 + 1/n, 1, n)
     alpha = 0.0
     variable_parameters = {
         "B": B_values.tolist(),
@@ -91,7 +93,23 @@ def compute_allocations_helper(df: pd.DataFrame) -> pd.DataFrame:
     used_bins = np.sort(df["log_bin_po2"].unique())
     K = len(used_bins)
     p_base = df[df["log_bin_po2"] == used_bins[0]]["generation_cost"].mean()
-    B_max = df["generation_cost"].sum() / len(df["model"].unique())
+    # If p_base is nan return 0
+    if np.isnan(p_base):
+        p_base = 1
+    # Note: For some models, the generation cost is effectively 0. This implies
+    # that budget constraints will never be binding. We could drop such models
+    # from the analysis, but so that we can keep them in for now, we set
+    # a minimum value for p_base and B_max.
+    # TODO: Consider whether to use the largest B_max among models for all
+    # models. Be aware that this could amplify bias in selection of longer tasks
+    # for models where less budget was spent.
+    # Note: Prices will always have to be model-specific.
+    p_base = max(p_base, 1e-3)
+    # Assume models can't have less than 1e-2 cost
+    B_max = max(df["generation_cost"].sum(), 1e-1)
+    if df['model'].unique()[0] == "gpt2":
+        logging.info(f"costs: {df['generation_cost']}")
+    logging.info(f"Model: {df['model'].unique()[0]}")
     logging.info(f"Used bins: {used_bins}")
     logging.info(f"K: {K}, p_base: {p_base}, B_max:  {B_max}")
     scenarios = build_scenarios(K=K, p_base=p_base, B_max=B_max)
@@ -210,12 +228,60 @@ for group, gdf in tqdm.tqdm(gdfs):
         bootstrap_results.append(df_temp)
 
 df_bootstrap = pd.concat(bootstrap_results)
-
 data_to_save = {"df_bootstrap": df_bootstrap}
 data_utils.save_data(data_to_save, data_dir=data_dir)
 
-# TODO: Make sure to run an analysis which estimates each bins success rate
-# so that we can compute test senstitivity rates that way too
+# Alternative approach
+# Use the success rate of task runs per bin in the original dataframe.
+# Then for each MCDEV scenario, we can compute the test sensitivity rates
+# for each bin analytically.
+# The test sensitivity rates are the probability of choosing at least a threshold
+# number of successful task runs in that bin given the budget allocations and
+# given that the model has a success rate above that threshold.
+x_pct = 0.5
+
+analytical_results = []
+success_rates_results = []
+group_vars = ["model"]
+gdfs = df_case_study.groupby(group_vars)
+case_vars = ["Budget"]
+for group, gdf in tqdm.tqdm(gdfs):
+    df_weights = compute_allocations_helper(gdf)
+    gdfs_weights = df_weights.groupby(case_vars)
+    df_success_rates = gdf.groupby("log_bin_po2", observed=True)["score_binarized"].mean()
+    success_rates_results.append(df_success_rates.reset_index())
+    for case, gdf_weights in tqdm.tqdm(gdfs_weights):
+        # Skip if budget is 0
+        if case[0] == 0:
+            continue
+        # If total demand is 0, we can ignore this group (happens when Budget is close to 0)
+        if gdf_weights["Demand"].sum() == 0:
+            continue
+        demands = gdf_weights["Demand"].values
+        num_draws = demands
+        cutoffs = np.ceil(num_draws * x_pct).astype(int)
+        success_rates =  gdf_weights["Item_bin"].apply(lambda x: df_success_rates[x])
+        item_bin = gdf_weights["Item_bin"].values
+        item1 = gdf_weights["Item_bin"].values[0]
+        gdf_weights["sensitivity_rate"] = [scipy.stats.binom.sf(c - 1, n, p)
+                                            for c,n,p in zip(cutoffs, num_draws, success_rates)]
+        gdf_weights["success_rate"] = success_rates
+        gdf_weights["num_draws"] = num_draws
+        gdf_weights["cutoff"] = cutoffs
+        gdf_weights["success_threshold"] = x_pct
+        # Add group variables to the results
+        for i, col in enumerate(case_vars):
+            gdf_weights[col] = case[i]
+        for i, col in enumerate(group_vars):
+            gdf_weights[col] = group[i]
+        analytical_results.append(gdf_weights)
+
+df_analytical = pd.concat(analytical_results)
+df_success_rates = pd.concat(success_rates_results)
+data_to_save = {"df_analytical": df_analytical,
+                "df_success_rates": df_success_rates}
+data_utils.save_data(data_to_save, data_dir=data_dir)
+
 # TODO: Consider test sensitivities which look at the basic unit of task runs
 # and thinks about how grouping them leads to thinking about how any particular
 # task run might have a chance of misrepresenting what you think in general
