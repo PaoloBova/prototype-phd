@@ -90,9 +90,12 @@ def compute_allocations_helper(df: pd.DataFrame) -> pd.DataFrame:
     """
     # TODO: How much does the number of used bins matter? What if a middle bin
     # goes unused? Does it make more sense to only exclude trailing empty bins?
+    # Assume we always have a contiguous set of used bins.
     used_bins = np.sort(df["log_bin_po2"].unique())
     K = len(used_bins)
     p_base = df[df["log_bin_po2"] == used_bins[0]]["generation_cost"].mean()
+    prices = [df[df["log_bin_po2"] == used_bin]["generation_cost"].mean()
+              for used_bin in used_bins]
     # If p_base is nan return 0
     if np.isnan(p_base):
         p_base = 1
@@ -107,8 +110,19 @@ def compute_allocations_helper(df: pd.DataFrame) -> pd.DataFrame:
     p_base = max(p_base, 1e-3)
     # Assume models can't have less than 1e-2 cost
     B_max = max(df["generation_cost"].sum(), 1e-1)
-    if df['model'].unique()[0] == "gpt2":
-        logging.info(f"costs: {df['generation_cost']}")
+    # Note: We want to calibrate our budget and prices such that at full budget
+    # each model samples ~100 observations for each bin.
+    # We can achieve this by setting a max_budget for each model equal to
+    # the top price of that model times B_max (most expensive model) / p_top (most expensive model).
+    # This would ensure that every model can buy B_max / p_top of the most expensive
+    # task runs when at full budget.
+    # We want B_max / p_top to be around 50.
+    p_top = prices[-1]
+    p_max = np.max(prices)
+    logging.info(f"p_top: {p_top}")
+    logging.info(f"p_max: {p_max}")
+    logging.info(f"costs: {df['generation_cost']}")
+    logging.info(f"empirical_prices: {prices}")
     logging.info(f"Model: {df['model'].unique()[0]}")
     logging.info(f"Used bins: {used_bins}")
     logging.info(f"K: {K}, p_base: {p_base}, B_max:  {B_max}")
