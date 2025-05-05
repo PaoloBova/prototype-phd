@@ -29,36 +29,32 @@ file_path = f"{external_data_dir}/df_analytical.csv"
 df_analytical = pd.read_csv(file_path)
 logging.info(f"External data columns: {df_analytical.columns}")
 
-# Visualize the bootstrap distributions for each model and budget value
+# Visualize the test sensitivities for each model and budget value
 plots = {}
 plot_group_vars = ["model"]
 for group, gdf in tqdm.tqdm(df_analytical.groupby(plot_group_vars)):
     # select numeric metric columns (exclude grouping vars and Budget)
-    metric_cols = [
-        c for c in gdf.select_dtypes(include=[np.number]).columns
-        if c not in plot_group_vars + ["Budget", "warning"]
-    ]
-    print("Metric columns:", metric_cols)
+    metric_cols = ["sensitivity_rate"]
     for col in tqdm.tqdm(metric_cols):
-        # faceted histogram by Budget
-        g = sns.displot(
+        # faceted bar chart of sensitivity_rate against item_bin by Budget
+        g = sns.catplot(
             data=gdf,
-            x=col,
+            x="Item_bin",
+            y=col,
             col="Budget",
             col_wrap=4,
             height=3,
             aspect=1.5,
-            bins=30,
-            facet_kws={"sharey": False},
+            kind="bar",
+            # facet_kws={"sharey": False},
         )
-        g.set_axis_labels(col, "Count")
         # build a safe group string
         group_string = " ".join(
             f"{var}={val}".replace(" ", "_")
             for var, val in zip(plot_group_vars, group)
         )
         g.set_titles("Budget = {col_name}")
-        g.figure.suptitle(f"Bootstrap distribution for {col}, group: {group_string}", y=1.02)
+        g.figure.suptitle(f"Sensitivity rates for {col}, group: {group_string}", y=1.02)
         plt.tight_layout()
         plot_key = f"{'_'.join(map(str, group))}_{col}"
         plots[plot_key] = g.figure
