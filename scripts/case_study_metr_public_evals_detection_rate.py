@@ -293,6 +293,43 @@ for group, gdf in tqdm.tqdm(gdfs):
         for i, col in enumerate(group_vars):
             gdf_weights[col] = group[i]
         analytical_results.append(gdf_weights)
+# Plot average prices for each model and task bin
+
+# TODO: Get the allocations right!
+# TODO: Plot allocations for a representative model given prices and budget averages
+# TODO: Plot allocations for actual models given average prices per bin and budgets (given marginal value assumptions)
+
+
+# TODO: Assume that counterfactual allocations will be based on a choice model
+# with parameters given by an assumed scaling law for the inference cost of tasks
+# of different length and the time+money cost of creating the tasks.
+# TODO: Another way of doing this is to assume that you take away enough budget
+# to eliminate using tasks from the last bin. Keep in mind that under a MCDEV
+# choice model, this wouldn't actually be low enough to usually eliminate the
+# last bin as fewer earlier tasks would be used instead.
+# TODO: Assume naively that allocations are predetermined under some scaling law
+# model without using any generation cost data for the tasks. Which scaling law
+# model? How about our simple exp2 model where the cost of a task is 2^k? We
+# also calculate the main budget as the sum of the anticipated costs of the
+# demanded task runs in each bin. This will not match the actual generation cost
+# data at all, but it will be a good starting point for the analysis. When I
+# do want to use the actual data, I should start with anticipated costs based
+# on a linear fit to the generation cost and human cost data. Again, the assumed
+# budget will be the sum of the anticipated costs rather than the actual costs.
+# If computing number of draws, calculate the allocation-weighted price across
+# bins and divide the assumed budget by this price. Or just use the total
+# demand implied by the allocations directly (that would be easier).
+# TODO: What does the need to abstract away from the actual data mean for
+# the theory? It suggests that the budget constraints are not as easy to predict
+# as might be needed for applying the theory to forecasting. Specifically, how
+# bad a gap in evaluation budgets might be is unclear. It might be that the
+# most valuable tests are not the most expensive ones.
+# TODO: We need to create an adversarial model of company behaviour when there
+# are conditional risk thresholds in place. What type of testing will they
+# choose to do prior to release (how does this respond to safety buffers)?
+# How could they report more favourable results than they should? What could
+# they do if they don't have direct control over the evaluations but there is
+# asymmetric information?
 
 df_analytical = pd.concat(analytical_results)
 df_success_rates = pd.concat(success_rates_results)
