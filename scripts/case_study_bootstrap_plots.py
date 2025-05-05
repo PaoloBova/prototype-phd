@@ -10,7 +10,8 @@ import tqdm as tqdm
 # from a previous simulation. This is useful for iterating on plotting code
 # without having to re-run the entire simulation.
 # TODO: In future, consider DVC instead for versioning data and plots.
-sim_id = "administering_stalwart_chat_498d60cb"
+# sim_id = "administering_stalwart_chat_498d60cb"
+sim_id = None
 if sim_id is None:
     sim_id = data_utils.get_latest_sim_id("data/detection_rates_case_study/sim_tracker.csv")
     print(f"Latest simulation ID: {sim_id}")
@@ -69,7 +70,7 @@ for group, gdf in tqdm.tqdm(df_bootstrap.groupby(plot_group_vars)):
         plot_key = f"{'_'.join(map(str, group))}_{col}"
         plots[plot_key] = g.figure
 
-plt.show()
+
 data_utils.save_plots(plots, plots_dir=f"{plots_dir}/case_study_plots")
 
 # TODO: Investigate why coeff_1 can be both positive and negative
@@ -111,7 +112,6 @@ for group, gdf in tqdm.tqdm(df_thresh.groupby(plot_group_vars, observed=True)):
     plt.ylabel("Threshold")
     plt.legend()
     plt.tight_layout()
-    plt.show()
 
     # build a safe group string
     group_string = " ".join(
@@ -143,8 +143,6 @@ df_prob = pd.merge(
 )
 
 # Plot prob_over_crit vs. Budget, with reported_threshold on a second axis
-import matplotlib.pyplot as plt
-plots = {}
 plot_group_vars = ["model"]
 for group, gdf in tqdm.tqdm(df_prob.groupby(plot_group_vars, observed=True)):
     fig, ax1 = plt.subplots()
@@ -171,7 +169,6 @@ for group, gdf in tqdm.tqdm(df_prob.groupby(plot_group_vars, observed=True)):
     
     plt.title(f"Model: {group} — Probability(Threshold > {critical_threshold}) vs. Reported Threshold")
     fig.tight_layout()
-    plt.show()
 
     # Optionally save the figure in plots dict
     plot_key = f"{group}_prob_thresh"
