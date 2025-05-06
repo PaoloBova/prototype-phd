@@ -178,8 +178,14 @@ def compute_demands_by_budget(df: pd.DataFrame,
     )
     k_vec = np.arange(1, K + 1)
     p = scenario_config.scenario_func(k_vec, p_base, 1)
+    # Currently, I need to hardcode the gamma values to get a shape which
+    # matches the data more closely. Later, we'll do a maximum likelihood
+    # estimation to get the gamma values (and the psi values) given the prices
+    # and demands from the data.
+    # I find that multipling a logistic function by a linear function gives
+    # a good approximation of the data under the choice model.
     gamma = 10 * 5 / (1 + np.exp(-0.5 * (np.arange(K) - K/2)))
-    gamma = np.linspace(0.25, 4.75, K)
+    gamma = np.linspace(0.25, 4.75, K) * gamma
     # gamma = np.ones(K)
     psi = mcdev.scenario_exponential(np.arange(K), 1, 0.5)
     # psi = 0.5 * np.log(np.arange(1, K + 1))
@@ -468,9 +474,141 @@ for group, gdf in tqdm.tqdm(gdfs):
 
 # Plot average prices for each model and task bin
 
+def plot_avg_prices(df: pd.DataFrame,
+                    bin_col: str = "log_bin_po2",
+                    cost_col: str = "generation_cost",
+                    model_col: str = "model"):
+    """
+    Plot average prices for each bin in df for each model, showing
+    only dots for each data point and a best-fit regression line per model.
+
+    Parameters
+    ----------
+    df : pd.DataFrame
+        Dataset, containing columns for model, bin, and cost.
+    bin_col : str, optional
+        Bin column (default: "log_bin_po2").
+    cost_col : str, optional
+        Cost column (default: "generation_cost").
+    model_col : str, optional
+        Model column (default: "model").
+    """
+    # Compute mean cost per model/bin
+    grouped = df.groupby([model_col, bin_col])[cost_col].mean().reset_index()
+
+    fig, ax = plt.subplots(figsize=(8, 5))
+
+    for model, subdf in grouped.groupby(model_col):
+        # Plot scatter points
+        ax.scatter(subdf[bin_col], subdf[cost_col], label=f"{model}", alpha=0.6)
+
+        # Fit a simple linear model if enough points exist
+        x_vals = subdf[bin_col].astype(float).values
+        y_vals = subdf[cost_col].values
+        # Remove NaN values
+        mask = ~np.isnan(x_vals) & ~np.isnan(y_vals)
+        x_vals = x_vals[mask]
+        y_vals = y_vals[mask]
+        # Fit a line if there are enough points
+        if len(x_vals) > 1:
+            slope, intercept = np.polyfit(x_vals, y_vals, deg=1)
+            x_range = np.linspace(x_vals.min(), x_vals.max(), 100)
+            y_fit = slope * x_range + intercept
+            print(f"Model: {model}, Slope: {slope}, Intercept: {intercept}")
+            ax.plot(x_range, y_fit, linestyle='-', label=f"{model} fit")
+
+    ax.set_xlabel("Bin")
+    ax.set_ylabel("Average Price")
+    ax.set_title("Average Prices by Bin (Scatter + Line Fit)")
+    ax.legend()
+    return fig
+
+def plot_avg_prices_by_model_subplots(df: pd.DataFrame,
+                                      bin_col: str = "log_bin_po2",
+                                      cost_col: str = "generation_cost",
+                                      model_col: str = "model"):
+    """
+    Create one subplot per model to show (bin, average price) scatter points
+    and a fitted line if enough points remain after removing NaNs.
+    Up to four subplots per row are used; extra subplots remain blank if
+    there aren't enough models to fill them.
+    """
+    grouped = df.groupby([model_col, bin_col])[cost_col].mean().reset_index()
+    models = grouped[model_col].unique()
+    n_models = len(models)
+
+    import math
+    ncols = 4
+    nrows = math.ceil(n_models / ncols)
+    fig, axes = plt.subplots(nrows, ncols,
+                             figsize=(5*ncols, 4*nrows),
+                             sharex=False, sharey=False,
+                             constrained_layout=True)
+
+    # If only a single subplot is created, wrap it in a list for consistency
+    if nrows == 1 and ncols == 1:
+        axes = [axes]
+    else:
+        axes = axes.flatten()
+
+    for i, model in enumerate(models):
+        ax = axes[i]
+        subdf = grouped[grouped[model_col] == model]
+
+        x_vals = subdf[bin_col].astype(float).values
+        y_vals = subdf[cost_col].values
+        mask = ~np.isnan(x_vals) & ~np.isnan(y_vals) & np.isfinite(x_vals) & np.isfinite(y_vals)
+        x_vals = x_vals[mask]
+        y_vals = y_vals[mask]
+
+        ax.scatter(x_vals, y_vals, alpha=0.6, label=f"{model}")
+
+        # Fit a line if enough valid points remain
+        if len(x_vals) > 1 and x_vals.min() != x_vals.max():
+            slope, intercept = np.polyfit(x_vals, y_vals, deg=1)
+            x_range = np.linspace(x_vals.min(), x_vals.max(), 100)
+            y_fit = slope * x_range + intercept
+            ax.plot(x_range, y_fit, linestyle='-', label=f"{model} fit")
+
+            # Compute R^2 manually
+            y_pred = slope * x_vals + intercept
+            y_mean = y_vals.mean()
+            ss_total = np.sum((y_vals - y_mean) ** 2)
+            ss_res = np.sum((y_vals - y_pred) ** 2)
+            r2 = 1 - (ss_res / ss_total) if ss_total != 0 else 0
+
+            # Annotate with R^2
+            ax.text(0.04, 0.9,
+                    f"R² = {r2:.3f}",
+                    transform=ax.transAxes,
+                    ha="left", va="center",
+                    fontsize=9)
+
+        # Add extra padding for clarity
+        ax.set_title(f"Model: {model}", pad=15)
+        ax.set_xlabel("Bin")
+        ax.set_ylabel("Average Price")
+        ax.legend()
+
+    # Hide any remaining axes (if fewer models than subplots)
+    for ax in axes[len(models):]:
+        ax.set_visible(False)
+
+    plt.tight_layout()
+    fig.subplots_adjust(hspace=0.4, wspace=0.3)
+    return fig
+
+fig = plot_avg_prices(df_case_study)
+figs = plot_avg_prices_by_model_subplots(df_case_study)
+df_case_study["log_prices"] = np.log2(df_case_study["generation_cost"])
+figs2 = plot_avg_prices_by_model_subplots(df_case_study,
+                                          cost_col="log_prices")
+plt.show()
+
 # THE LONG LIST OF TODOS
 # ------------------------------------------------------
 
+# TODO: Drop the human and GPT2 models from the analysis due to lack of comparable data
 # TODO: Get the allocations right!
 # TODO: Plot allocations for a representative model given prices and budget averages
 # TODO: Plot allocations for actual models given average prices per bin and budgets (given marginal value assumptions)
