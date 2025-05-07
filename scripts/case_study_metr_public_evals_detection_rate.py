@@ -692,7 +692,6 @@ def plot_avg_prices_by_model_subplots(df: pd.DataFrame,
         ax.set_visible(False)
 
     plt.tight_layout()
-    fig.subplots_adjust(hspace=0.4, wspace=0.3)
     return fig
 
 def plot_method_comparison_allocations(config: mcdev.PlotConfig,
@@ -780,7 +779,6 @@ run_debug_plots(df_case_study)
 # ------------------------------------------------------
 
 # TODO: Consider estimating mcdev model parameters from data
-# TODO: Find a faster way to show the comparison plots for all models.
 
 # TODO: Assume that counterfactual allocations will be based on a choice model
 # with parameters given by an assumed scaling law for the inference cost of tasks
