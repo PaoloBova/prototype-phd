@@ -620,55 +620,6 @@ def run_analytic_helper(df: pd.DataFrame) -> pd.DataFrame:
                     "df_success_rates": df_success_rates}
     data_utils.save_data(data_to_save, data_dir=data_dir)
 
-def plot_avg_prices(df: pd.DataFrame,
-                    bin_col: str = "bin_power",
-                    cost_col: str = "generation_cost",
-                    model_col: str = "model"):
-    """
-    Plot average prices for each bin in df for each model, showing
-    only dots for each data point and a best-fit regression line per model.
-
-    Parameters
-    ----------
-    df : pd.DataFrame
-        Dataset, containing columns for model, bin, and cost.
-    bin_col : str, optional
-        Bin column (default: "bin_power").
-    cost_col : str, optional
-        Cost column (default: "generation_cost").
-    model_col : str, optional
-        Model column (default: "model").
-    """
-    # Compute mean cost per model/bin
-    grouped = df.groupby([model_col, bin_col])[cost_col].mean().reset_index()
-
-    fig, ax = plt.subplots(figsize=(8, 5))
-
-    for model, subdf in grouped.groupby(model_col):
-        # Plot scatter points
-        ax.scatter(subdf[bin_col], subdf[cost_col], label=f"{model}", alpha=0.6)
-
-        # Fit a simple linear model if enough points exist
-        x_vals = subdf[bin_col].astype(float).values
-        y_vals = subdf[cost_col].values
-        # Remove NaN values
-        mask = ~np.isnan(x_vals) & ~np.isnan(y_vals)
-        x_vals = x_vals[mask]
-        y_vals = y_vals[mask]
-        # Fit a line if there are enough points
-        if len(x_vals) > 1:
-            slope, intercept = np.polyfit(x_vals, y_vals, deg=1)
-            x_range = np.linspace(x_vals.min(), x_vals.max(), 100)
-            y_fit = slope * x_range + intercept
-            print(f"Model: {model}, Slope: {slope}, Intercept: {intercept}")
-            ax.plot(x_range, y_fit, linestyle='-', label=f"{model} fit")
-
-    ax.set_xlabel("Bin")
-    ax.set_ylabel("Average Price")
-    ax.set_title("Average Prices by Bin (Scatter + Line Fit)")
-    ax.legend()
-    return fig
-
 def plot_avg_prices_by_model_subplots(df: pd.DataFrame,
                                       bin_col: str = "bin_power",
                                       cost_col: str = "generation_cost",
