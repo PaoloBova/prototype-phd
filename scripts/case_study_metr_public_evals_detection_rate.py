@@ -51,31 +51,6 @@ data = data_utils.read_ndjson(file_path)
 df = pd.DataFrame(data)
 logging.info(f"External data columns: {df.columns}")
 
-def build_scenarios(p_base=1.0, B_max=1000, K=15):
-    # We need prices to increase exponentially with k.
-    scenario_config = mcdev.ScenarioConfig(
-            scenario_name="Exponential Increase",
-            scenario_func=mcdev.scenario_exponential,
-            K=K)
-    k_vec = np.arange(1, K + 1)
-    p = scenario_config.scenario_func(k_vec, p_base, 1)
-    gamma = 5 / (1 + np.exp(-0.5 * (np.arange(K) - K/2)))
-    psi = mcdev.scenario_exponential(np.arange(K), 1, 0.5)
-    n = 10
-    B_values = B_max * np.linspace(0 + 1/n, 1, n)
-    alpha = 0.0
-    variable_parameters = {
-        "B": B_values.tolist(),
-        "p": [p],
-        "psi": [psi],
-        "gamma": [gamma],
-        "alpha": [alpha],
-        "scenario_config": [scenario_config],
-    }
-    configs = [mcdev.DemandConfig(**d)
-               for d in utils.dict_list(variable_parameters)]
-    return configs
-
 @utils.multi
 def compute_demands_by_budget(df: pd.DataFrame,
                               mode: str = "simple",
@@ -125,22 +100,26 @@ def compute_demands_by_budget(df: pd.DataFrame,
     many times each item is bought.
     4. Collect these counts in a final DataFrame for analysis of aggregate
     demand per bin at varying budgets."""
-    used_bins = np.sort(df[bin_col].unique())
-    K = len(used_bins)
+    # Exclude trailing empty bins; keep all bins between the first and last bin.
+    bin_sup = df[bin_col].max(skipna=True)
+    bin_inf = df[bin_col].min(skipna=True)
+    # Assume bins are integers
+    bins_consecutive = np.array(range(bin_inf, bin_sup + 1)).astype(int)
+    K = len(bins_consecutive)
     full_budget = df[cost_col].sum()
     n = 10
     B_values = full_budget * np.linspace(0 + 1/n, 1, n)
 
     df_ordered = df.sort_values([bin_col, cost_col]).copy()
     df_ordered["cumulative_cost"] = df_ordered[cost_col].cumsum()
-    df_ordered[bin_col] = pd.Categorical(df_ordered[bin_col], categories=used_bins)
+    df_ordered[bin_col] = pd.Categorical(df_ordered[bin_col], categories=bins_consecutive)
 
     records = []
     for budget in B_values:
         df_constrained = df_ordered[df_ordered["cumulative_cost"] <= budget]
         demands = df_constrained.groupby(bin_col, observed=False)[cost_col].count()
         col_names = ["Item", "Item_bin", "Budget", "Demand"]
-        obs = zip(np.arange(1, K + 1), used_bins, [budget] * K, demands.values)
+        obs = zip(np.arange(1, K + 1), bins_consecutive, [budget] * K, demands.values)
         records.extend({c: v for c, v in zip(col_names, row)} for row in obs)
 
     return pd.DataFrame(records)
@@ -216,9 +195,9 @@ def compute_demands_by_budget(df: pd.DataFrame,
 
     return df_weights
 
-@utils.method(compute_demands_by_budget, "mcdev_calibrated")
+@utils.method(compute_demands_by_budget, "mcdev_calibrated_v1")
 def compute_demands_by_budget(df: pd.DataFrame,
-                              mode: str = "mcdev_calibrated",
+                              mode: str = "mcdev_calibrated_v1",
                               bin_col: str = "bin_power",
                               cost_col: str = "generation_cost") -> pd.DataFrame:
     """
@@ -272,11 +251,207 @@ def compute_demands_by_budget(df: pd.DataFrame,
     # We want B_max / p_top to be around 50.
     p_top = prices[-1]
     p_max = np.max(prices)
-    scenarios = build_scenarios(K=K, p_base=p_base, B_max=B_max)
-    df_weights = mcdev.compute_allocations(scenarios)
+
+    # We need prices to increase exponentially with k.
+    scenario_config = mcdev.ScenarioConfig(
+            scenario_name="Exponential Increase",
+            scenario_func=mcdev.scenario_exponential,
+            K=K)
+    k_vec = np.arange(1, K + 1)
+    p = scenario_config.scenario_func(k_vec, p_base, 1)
+    gamma = 5 / (1 + np.exp(-0.5 * (np.arange(K) - K/2)))
+    psi = mcdev.scenario_exponential(np.arange(K), 1, 0.5)
+    n = 10
+    B_values = B_max * np.linspace(0 + 1/n, 1, n)
+    alpha = 0.0
+    variable_parameters = {
+        "B": B_values.tolist(),
+        "p": [p],
+        "psi": [psi],
+        "gamma": [gamma],
+        "alpha": [alpha],
+        "scenario_config": [scenario_config],
+    }
+    configs = [mcdev.DemandConfig(**d)
+               for d in utils.dict_list(variable_parameters)]
+    df_weights = mcdev.compute_allocations(configs)
     bin_item_mapping = {i: j for i, j in zip(range(1, K+1), used_bins)}
     # By construction we can always invert the item mapping.
     df_weights["Item_bin"] = df_weights["Item"].apply(lambda x: bin_item_mapping[x])
+    return df_weights
+
+@utils.method(compute_demands_by_budget, "mcdev_calibrated_v2")
+def compute_demands_by_budget(df: pd.DataFrame,
+                              mode: str = "mcdev_calibrated_v2",
+                              bin_col: str = "bin_power",
+                              cost_col: str = "generation_cost") -> pd.DataFrame:
+    """
+    MCDEV-based approach for deriving demands by budget.
+    This uses scenario configs, exponential scaling, etc.
+    We calibrate the scenario parameters based on some of the data in df
+    """
+    
+    # Compute K, p_base, and B_max
+
+    # We split the times into powers of 2 for binning. We ignore the first 5 bins
+    # from our choice model since they only correspond to tasks from the SWAA task
+    # source, which isn't a good fit for our choice model.
+    # The longest task is in bin 17. So, we set K = 17 - 5 = 12.
+    # 12 bins isn't a lot, we we later consider a more finegrained choice model
+    # with K = 24 where each bin is in powers of sqrt(2).
+    # Since we start from the sixth bin, we set p_base as the average price (or
+    # generation cost) for a given model to complete tasks in the sixth bin.
+    # Finally, to compute B_max, we take the total generation cost of all tasks
+    # for that model (it doesn't matter if we exclude SWAA since the expenditure
+    # on these tasks is next to 0).
+    
+    # Exclude trailing empty bins; keep all bins between the first and last bin.
+    bin_sup = df["bin_power"].max(skipna=True)
+    bin_inf = df["bin_power"].min(skipna=True)
+    # Assume bins are integers
+    bins_consecutive = np.array(range(bin_inf, bin_sup + 1)).astype(int)
+    K = len(bins_consecutive)
+
+    # To compute prices: Use average costs for each bin
+    prices = [df[df["bin_power"] == bin]["generation_cost"].mean()
+              for bin in bins_consecutive]
+    prices = np.array(prices)
+    # Note: Unfortunately, the actual costs lead to optimal choices where all
+    # expenditure goes to the longest tasks (no matter the budget). This fits
+    # the data very poorly. The current hypothesis is that this is because
+    # the team anticipates that the costs will follow a predictable trend (as
+    # they cannot know the costs before choosing which tasks to run).
+    # Caveat: Might be able to tell based on costs for previous models.
+
+    B_max = df["generation_cost"].sum()
+    n_constraints = 10
+    B_values = B_max * np.linspace(0 + 1/n_constraints, 1, n_constraints)
+
+    # Choice of gamma and psi is handcrafted for now. Future approaches will
+    # attempt to estimate them from data.
+    gamma = 10 * 5 / (1 + np.exp(-0.5 * (np.arange(K) - K/2)))
+    gamma = np.linspace(0.25, 4.75, K) * gamma
+    psi = mcdev.scenario_exponential(np.arange(K), 1, 0.5)
+    # We set alpha = 0 for simplicity.
+    alpha = 0.0
+    # Specify legacy scenario config that we don't use anymore.
+    scenario_config = mcdev.ScenarioConfig(
+            scenario_name="Exponential Increase",
+            scenario_func=mcdev.scenario_exponential,
+            K=K)
+
+    variable_parameters = {
+        "B": B_values.tolist(),
+        "p": [prices],
+        "psi": [psi],
+        "gamma": [gamma],
+        "alpha": [alpha],
+        "scenario_config": [scenario_config],
+    }
+    configs = [mcdev.DemandConfig(**d)
+               for d in utils.dict_list(variable_parameters)]
+    df_weights = mcdev.compute_allocations(configs)
+    bin_item_mapping = {i: j for i, j in zip(range(1, K+1), bins_consecutive)}
+    # By construction we can always invert the item mapping.
+    df_weights["Item_bin"] = df_weights["Item"].apply(lambda x: bin_item_mapping[x])
+    return df_weights
+
+@utils.method(compute_demands_by_budget, "mcdev_calibrated_v3")
+def compute_demands_by_budget(df: pd.DataFrame,
+                              mode: str = "mcdev_calibrated_v3",
+                              bin_col: str = "bin_power",
+                              cost_col: str = "generation_cost") -> pd.DataFrame:
+    """
+    MCDEV-based approach for deriving demands by budget.
+    This uses scenario configs, exponential scaling, etc.
+    We calibrate the scenario parameters based on some of the data in df
+    """
+    
+    # Compute K, p_base, and B_max
+
+    # We split the times into powers of 2 for binning. We ignore the first 5 bins
+    # from our choice model since they only correspond to tasks from the SWAA task
+    # source, which isn't a good fit for our choice model.
+    # The longest task is in bin 17. So, we set K = 17 - 5 = 12.
+    # 12 bins isn't a lot, we we later consider a more finegrained choice model
+    # with K = 24 where each bin is in powers of sqrt(2).
+    # Since we start from the sixth bin, we set p_base as the average price (or
+    # generation cost) for a given model to complete tasks in the sixth bin.
+    # Finally, to compute B_max, we take the total generation cost of all tasks
+    # for that model (it doesn't matter if we exclude SWAA since the expenditure
+    # on these tasks is next to 0).
+    
+    # Exclude trailing empty bins; keep all bins between the first and last bin.
+    bin_sup = df[bin_col].max(skipna=True)
+    bin_inf = df[bin_col].min(skipna=True)
+    # Assume bins are integers
+    bins_consecutive = np.array(range(bin_inf, bin_sup + 1)).astype(int)
+    K = len(bins_consecutive)
+
+    # To compute prices: Fit an OLS regression to the cost data. Use
+    # predicted costs for each bin. We have previously found that an exponential
+    # fit has better goodness of fit than a linear fit. So, run OLS regression
+    # on log2(cost) vs bin. Then, use the predicted values to compute prices.
+    gdf = df.groupby(bin_col)[cost_col].mean().reset_index()
+    gdf["log_cost"] = np.log2(gdf[cost_col])
+    # Fit OLS regression
+    x = gdf[bin_col].values
+    y = gdf["log_cost"].values
+    # Remove NaN values
+    mask = ~np.isnan(x) & ~np.isnan(y)
+    x = x[mask]
+    y = y[mask]
+    # Fit a line if there are enough points
+    if len(x) > 1:
+        slope, intercept = np.polyfit(x, y, deg=1)
+    else:
+        # If not enough points, use the average cost for the first bin
+        slope = 0
+        intercept = np.log2(df[df[bin_col] == bins_consecutive[0]][cost_col].mean())
+    # Compute the predicted costs
+    prices = 2**(intercept + slope * bins_consecutive)
+    # Set psi to be correlated with the predicted costs (handcrafted)
+    psi = 2 **((intercept + slope * bins_consecutive) / 2)
+
+    B_max = df[cost_col].sum()
+    n_constraints = 10
+    B_values = B_max * np.linspace(0 + 1/n_constraints, 1, n_constraints)
+
+    # Choice of gamma is handcrafted for now. Future approaches will
+    # attempt to estimate them from data.
+    gamma = np.ones(K)
+    gamma = 10 * 5 / (1 + np.exp(-0.5 * (np.arange(K) - K/4)))
+    gamma = np.linspace(0.25, 4.75, K) * gamma
+    # We set alpha = 0 for simplicity.
+    alpha = 0.0
+    # Specify legacy scenario config that we don't use anymore.
+    scenario_config = mcdev.ScenarioConfig(
+            scenario_name="Exponential Increase",
+            scenario_func=mcdev.scenario_exponential,
+            K=K)
+
+    variable_parameters = {
+        "B": B_values.tolist(),
+        "p": [prices],
+        "psi": [psi],
+        "gamma": [gamma],
+        "alpha": [alpha],
+        "scenario_config": [scenario_config],
+    }
+    configs = [mcdev.DemandConfig(**d)
+               for d in utils.dict_list(variable_parameters)]
+    df_weights = mcdev.compute_allocations(configs)
+    bin_item_mapping = {i: j for i, j in zip(range(1, K+1), bins_consecutive)}
+    # By construction we can always invert the item mapping.
+    df_weights["Item_bin"] = df_weights["Item"].apply(lambda x: bin_item_mapping[x])
+    
+    # Sanity check that expenditures sum to B_values
+    y = df_weights.groupby("Budget")["Expenditure"].sum().reset_index()["Expenditure"].values
+    x = B_values
+    logging.info(f"Expenditures: {y}")
+    logging.info(f"Budgets: {x}")
+    # Check that the expenditures are close to the budgets
+    assert np.allclose(x, y, rtol=0.1, atol=0.1)
     return df_weights
 
 def assign_mcdev_weights(df:pd.DataFrame,
