@@ -128,7 +128,8 @@ def compute_demands_by_budget(df: pd.DataFrame,
     used_bins = np.sort(df[bin_col].unique())
     K = len(used_bins)
     full_budget = df[cost_col].sum()
-    B_values = np.linspace(0, full_budget, 10)
+    n = 10
+    B_values = full_budget * np.linspace(0 + 1/n, 1, n)
 
     df_ordered = df.sort_values([bin_col, cost_col]).copy()
     df_ordered["cumulative_cost"] = df_ordered[cost_col].cumsum()
