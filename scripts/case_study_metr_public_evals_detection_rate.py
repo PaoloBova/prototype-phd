@@ -769,11 +769,8 @@ plt.show()
 # THE LONG LIST OF TODOS
 # ------------------------------------------------------
 
-# TODO: Drop the human and gpt2 models from the analysis due to lack of comparable data
-# TODO: Get the allocations right!
-# TODO: Plot allocations for a representative model given prices and budget averages
-# TODO: Plot allocations for actual models given average prices per bin and budgets (given marginal value assumptions)
-
+# TODO: Consider estimating mcdev model parameters from data
+# TODO: Find a faster way to show the comparison plots for all models.
 
 # TODO: Assume that counterfactual allocations will be based on a choice model
 # with parameters given by an assumed scaling law for the inference cost of tasks
