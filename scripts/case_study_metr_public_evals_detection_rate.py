@@ -34,6 +34,7 @@ import prototype_phd.methods.mcdev as mcdev
 import prototype_phd.stats as stats
 import prototype_phd.utils as utils
 import scipy as scipy
+import seaborn as sns
 import tqdm as tqdm
 
 setup_args = {"log_path": "logs/detection_rates_case_study.log",
@@ -743,6 +744,46 @@ def plot_avg_prices_by_model_subplots(df: pd.DataFrame,
     fig.subplots_adjust(hspace=0.4, wspace=0.3)
     return fig
 
+def plot_method_comparison_allocations(config: mcdev.PlotConfig,
+                                       method_col="Method") -> object:
+    """
+    Compare demand allocations for different methodologies in a single plot.
+
+    We assume config.df contains columns:
+      - Item (int) : item index
+      - Demand (float) : computed allocations/demands
+      - Budget (float) : the budget for that scenario
+      - <method_col> (str) : the methodology/scenario name (e.g. "simple", "mcdev")
+
+    Plots a grouped bar (Item on x-axis, Demand on y-axis, hue by method),
+    with columns faceted by Budget. 
+    """
+    df = config.df.copy()
+    y_var = config.y_var
+
+    # Create a grouped bar chart, faceting by budget.
+    # Each facet shows a comparison of demands across “Method”.
+    g = sns.catplot(
+        data=df,
+        x="Item",
+        y=y_var,
+        hue=method_col,
+        col="Budget",
+        kind="bar",
+        height=3,
+        aspect=1.2,
+        col_wrap=4,
+        sharey=False,
+        palette="coolwarm"
+    )
+    g.set_axis_labels("Item", y_var)
+    g.set_titles("Budget = {col_name}")
+    plot_title = f"{y_var} Comparison by Method & Budget: {config.plot_group}"
+    g.figure.suptitle(plot_title, y=1.04)
+
+    # Tighten the layout
+    plt.tight_layout()
+    return g.figure
 
 df_case_study = process_data(df)
 
