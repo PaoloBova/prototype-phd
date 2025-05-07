@@ -591,8 +591,10 @@ def run_analytic_helper(df: pd.DataFrame,
         # Assume bins are integers
         bins_consecutive = np.array(range(bin_inf, bin_sup + 1)).astype(int)
         gdf[bin_col] = pd.Categorical(gdf[bin_col], categories=bins_consecutive)
-        df_success_rates = gdf.groupby(bin_col, observed=False)["score_binarized"].mean()
-        success_rates_results.append(df_success_rates.reset_index())
+        success_rates_mapping = gdf.groupby(bin_col, observed=False)["score_binarized"].mean()
+        df_success_rates = success_rates_mapping.reset_index()
+        df_success_rates["model"] = group[0]
+        success_rates_results.append(df_success_rates)
         for case, gdf_weights in tqdm.tqdm(gdfs_weights):
             # Skip if budget is 0
             if case[0] == 0:
@@ -603,7 +605,7 @@ def run_analytic_helper(df: pd.DataFrame,
             demands = gdf_weights["Demand"].values
             num_draws = np.floor(demands).astype(int)
             cutoffs = np.ceil(num_draws * x_pct).astype(int)
-            success_rates =  gdf_weights["Item_bin"].apply(lambda x: df_success_rates[x])
+            success_rates =  gdf_weights["Item_bin"].apply(lambda x: success_rates_mapping[x])
             logging.info(f"cutoffs: {cutoffs}")
             logging.info(f"num_draws: {num_draws}")
             logging.info(f"success_rates: {success_rates}")
@@ -626,6 +628,7 @@ def run_analytic_helper(df: pd.DataFrame,
     data_to_save = {"df_analytical": df_analytical,
                     "df_success_rates": df_success_rates}
     data_utils.save_data(data_to_save, data_dir=data_dir)
+    return data_to_save
 
 def plot_avg_prices_by_model_subplots(df: pd.DataFrame,
                                       bin_col: str = "bin_power",
@@ -777,12 +780,54 @@ def run_debug_plots(df: pd.DataFrame) -> dict:
     figs["log_price_trends"] = fig
     data_utils.save_plots(figs, plots_dir=plots_dir)
 
+def plot_sensitivity_rates_by_model(df_analytical: pd.DataFrame) -> None:
+    """
+    For each model, create a bar plot showing the sensitivity rates per Item_bin,
+    with separate columns for each Budget.
+    """
+
+    for model, gdf_model in df_analytical.groupby("model"):
+        # Create a FacetGrid with columns = distinct Budget values
+        g = sns.catplot(
+            data=gdf_model,
+            x="Item_bin",
+            y="sensitivity_rate",
+            col="Budget",
+            kind="bar",
+            col_wrap=4,
+            height=4,
+            sharey=False,
+            palette="coolwarm"
+        )
+        g.set_axis_labels("Item Bin", "Sensitivity Rate")
+        g.set_titles(f"Model: {model} | Budget = {{col_name}}")
+        g.figure.suptitle(f"Sensitivity Rates for Model: {model}", y=1.05)
+        plt.tight_layout()
+        plt.show()
+
+def plot_success_rates_by_model(df_success_rates: pd.DataFrame) -> None:
+    """
+    For each model, create a bar plot showing the success rates per bin,
+    """
+    for group, gdf in df_success_rates.groupby("model"):
+        fig, ax = plt.subplots(figsize=(8, 6))
+        # Convert to bar plot
+        ax.bar(gdf["bin_power"], gdf["score_binarized"], label=group, alpha=0.7)
+        ax.set_title(f"Success Rates for {group}")
+        ax.set_xlabel("Bin Power")
+        ax.set_ylabel("Success Rate")
+        plt.legend()
+        plt.show()
+
 df_case_study = process_data(df)
 
-run_debug_plots(df_case_study)
+# run_debug_plots(df_case_study)
 
-run_analytic_helper(df_case_study)
+data = run_analytic_helper(df_case_study)
 
+plot_success_rates_by_model(data["df_success_rates"])
+
+plot_sensitivity_rates_by_model(data["df_analytical"])
 
 # THE LONG LIST OF TODOS
 # ------------------------------------------------------
