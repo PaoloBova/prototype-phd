@@ -720,6 +720,58 @@ def generate_qmc_samples(param_limits: Dict[str, Tuple[float, float]], n_samples
         sample_scaled[key] = qmc.scale(sample[:, [i]], low, high)[:, 0]
     return sample_scaled
 
+def bin_data_by_power(df: pd.DataFrame,
+                      col: str,
+                      base: float=2.0) -> pd.DataFrame:
+    """
+    Bin values in `col` in df by powers of `base`.
+    
+    
+    Key points:
+      1. Negative values go into a (-∞, 0) bin with no exponent.
+      2. Positive values are binned into intervals of powers of `base`.
+         - Always include exponents from 0 up to ceil(log_base(max_pos)).
+         - If the smallest positive value is < 1, include negative exponents 
+           down to floor(log_base(min_pos)).
+      4. We append -∞ and +∞ to ensure all values fit into a bin, so bin_mid or
+      bin_power can become ±∞ or NaN for negative/zero rows.
+
+    Returns:
+      A DataFrame copy with new columns:
+        - bin (Interval)
+        - bin_left, bin_right, bin_mid
+        - bin_power (Int or NaN)
+    """
+    assert col in df.columns
+    assert base > 1
+    # Step 1: determine upper and lower bounds of bin edges for positive values
+    max_val = df[col].max(skipna=True)
+    # Note: log_b(y) = log_k(y) / log_k(b)
+    # Letting k be 2, b be base, and y be max_val, we compute log_b(y) as:
+    max_val_power = int(np.ceil(np.log2(max_val) / np.log2(base)))
+    # Note: we use the integer ceiling power because we want to include the
+    # maximum value in the bins.
+    min_val = df[col].min(skipna=True)
+    min_val_power = int(np.floor(np.log2(min_val) / np.log2(base)))
+    min_val_power = min(min_val_power, 0)
+    bin_edges = base**np.array(range(min_val_power, max_val_power+1))
+    # Step 2: we add in -∞ and +∞ to ensure all values fit into a bin.
+    bin_edges = np.concatenate(([-np.inf], bin_edges, [np.inf]))
+    # Step 3: bin the values in the column
+    df["bin"] = pd.cut(df[col], bins=bin_edges, include_lowest=True)
+    # Step 4: Compute bin_left, bin_right, bin_mid, and bin_power
+    # Get lower and upper bounds of the bins
+    df["bin_left"] = df["bin"].apply(lambda x: x if np.isnan(x) else x.left)
+    df["bin_right"] = df["bin"].apply(lambda x: x if np.isnan(x) else x.right)
+    # Get midpoints of the bin values
+    df["bin_mid"] = df["bin"].apply(lambda x: np.mean([x.left, x.right]))
+    # A convention we adopt is to use the left edge of the bin as the
+    # reference bin value. Consistent with that convention, when we report the
+    # power of each bin, we use the integer floor of the power of the left edge.
+    df["bin_power"] = df["bin_left"].apply(lambda x: np.floor(np.log2(x) / np.log2(base)))
+    df["bin_power"] = df["bin_power"].apply(lambda x: x if np.isnan(x) else int(x))
+    return df
+
 dropped_items_warning=f"""Several items in `results` are not suitable for conversion to
 a dataframe. This may be because they are not numpy arrays or because they
 are not the same size as the other items. 
