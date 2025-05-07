@@ -761,14 +761,15 @@ def bin_data_by_power(df: pd.DataFrame,
     df["bin"] = pd.cut(df[col], bins=bin_edges, include_lowest=True)
     # Step 4: Compute bin_left, bin_right, bin_mid, and bin_power
     # Get lower and upper bounds of the bins
-    df["bin_left"] = df["bin"].apply(lambda x: x if np.isnan(x) else x.left)
-    df["bin_right"] = df["bin"].apply(lambda x: x if np.isnan(x) else x.right)
+    df["bin_left"] = df["bin"].apply(lambda x: x if x is np.nan else x.left)
+    df["bin_right"] = df["bin"].apply(lambda x: x if x is np.nan else x.right)
     # Get midpoints of the bin values
     df["bin_mid"] = df["bin"].apply(lambda x: np.mean([x.left, x.right]))
     # A convention we adopt is to use the left edge of the bin as the
     # reference bin value. Consistent with that convention, when we report the
     # power of each bin, we use the integer floor of the power of the left edge.
-    df["bin_power"] = df["bin_left"].apply(lambda x: np.floor(np.log2(x) / np.log2(base)))
+    df["bin_power"] = df["bin_left"].apply(lambda x: np.floor(np.log2(x) / np.log2(base))
+                                           if np.isfinite(x) and x > 0 else np.nan)
     df["bin_power"] = df["bin_power"].apply(lambda x: x if np.isnan(x) else int(x))
     return df
 
