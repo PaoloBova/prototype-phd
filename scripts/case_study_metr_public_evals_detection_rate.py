@@ -791,30 +791,34 @@ df_case_study = process_data(df)
 group_vars = ["model"]
 gdfs = df_case_study.groupby(group_vars)
 for group, gdf in tqdm.tqdm(gdfs):
-    df_weights = compute_demands_by_budget(gdf, mode="mcdev_hardcoded")
+    df_weights = compute_demands_by_budget(gdf, mode="mcdev_calibrated_v3")
+    
+    df_simple = compute_demands_by_budget(gdf, mode="simple")
+    df_simple["Method"] = "simple"
+    df_mcdev = compute_demands_by_budget(gdf, mode="mcdev_calibrated_v3")
+    df_mcdev["Method"] = "mcdev_calibrated"
+    df_combined = pd.concat([df_simple, df_mcdev], ignore_index=True)
     plot_group =  dict(zip(group_vars, group))
     y_var = "Demand"
     pc = mcdev.PlotConfig(
             plot_group=plot_group,
-            df=df_weights,
+            df=df_combined,
             y_var=y_var,
         )
-    fig = mcdev.plot_allocations(pc)
+    fig = plot_method_comparison_allocations(pc)
+    gdf["log_prices"] = np.log2(gdf["generation_cost"])
+    figs = plot_avg_prices_by_model_subplots(gdf, cost_col="log_prices")
     plt.show()
 
 # Plot average prices for each model and task bin
-
-fig = plot_avg_prices(df_case_study)
-figs = plot_avg_prices_by_model_subplots(df_case_study)
 df_case_study["log_prices"] = np.log2(df_case_study["generation_cost"])
-figs2 = plot_avg_prices_by_model_subplots(df_case_study,
-                                          cost_col="log_prices")
+figs = plot_avg_prices_by_model_subplots(df_case_study, cost_col="log_prices")
 plt.show()
 
 # THE LONG LIST OF TODOS
 # ------------------------------------------------------
 
-# TODO: Drop the human and GPT2 models from the analysis due to lack of comparable data
+# TODO: Drop the human and gpt2 models from the analysis due to lack of comparable data
 # TODO: Get the allocations right!
 # TODO: Plot allocations for a representative model given prices and budget averages
 # TODO: Plot allocations for actual models given average prices per bin and budgets (given marginal value assumptions)
@@ -870,4 +874,3 @@ plt.show()
 # Note: We appear to be off by a factor of 10. Increasing the sample size
 # this much should help reduce spread of estimates but will take significantly
 # longer to run.
-# TODO: Double check that log_human_seconds is computed properly
