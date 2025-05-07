@@ -832,8 +832,9 @@ plot_sensitivity_rates_by_model(data["df_analytical"])
 # THE LONG LIST OF TODOS
 # ------------------------------------------------------
 
-# TODO: Consider estimating mcdev model parameters from data
+# TODO: Use bootstrap method for analytical results too (analytical code seems brittle at the moment)
 
+# TODO: Consider estimating mcdev model parameters from data
 # TODO: Assume that counterfactual allocations will be based on a choice model
 # with parameters given by an assumed scaling law for the inference cost of tasks
 # of different length and the time+money cost of creating the tasks.
