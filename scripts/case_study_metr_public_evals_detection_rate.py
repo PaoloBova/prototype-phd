@@ -79,7 +79,7 @@ def build_scenarios(p_base=1.0, B_max=1000, K=15):
 @utils.multi
 def compute_demands_by_budget(df: pd.DataFrame,
                               mode: str = "simple",
-                              bin_col: str = "bin_po2",
+                              bin_col: str = "bin_power",
                               cost_col: str = "generation_cost") -> pd.DataFrame:
     """
     Multimethod for deriving demands by budget.
@@ -110,7 +110,7 @@ def compute_demands_by_budget(df: pd.DataFrame,
 @utils.method(compute_demands_by_budget, "simple")
 def compute_demands_by_budget(df: pd.DataFrame,
                               mode: str = "simple",
-                              bin_col: str = "bin_po2",
+                              bin_col: str = "bin_power",
                               cost_col: str = "generation_cost") -> pd.DataFrame:
     """
     Approach
@@ -147,7 +147,7 @@ def compute_demands_by_budget(df: pd.DataFrame,
 @utils.method(compute_demands_by_budget, "mcdev_hardcoded")
 def compute_demands_by_budget(df: pd.DataFrame,
                               mode: str = "mcdev_hardcoded",
-                              bin_col: str = "bin_po2",
+                              bin_col: str = "bin_power",
                               cost_col: str = "generation_cost") -> pd.DataFrame:
     """
     MCDEV-based approach for deriving demands by budget. 
@@ -167,7 +167,7 @@ def compute_demands_by_budget(df: pd.DataFrame,
     p_base = 1
     # Assume demands are the same for all bins.
     avg_demand = 40
-    avg_demand2 = np.mean(df.groupby("bin_po2")["generation_cost"].count())
+    avg_demand2 = np.mean(df.groupby("bin_power")["generation_cost"].count())
     B_max = avg_demand * np.sum(prices)
 
     # Build MCDEV scenarios, then compute allocations:
@@ -218,7 +218,7 @@ def compute_demands_by_budget(df: pd.DataFrame,
 @utils.method(compute_demands_by_budget, "mcdev_calibrated")
 def compute_demands_by_budget(df: pd.DataFrame,
                               mode: str = "mcdev_calibrated",
-                              bin_col: str = "bin_po2",
+                              bin_col: str = "bin_power",
                               cost_col: str = "generation_cost") -> pd.DataFrame:
     """
     MCDEV-based approach for deriving demands by budget.
@@ -243,10 +243,10 @@ def compute_demands_by_budget(df: pd.DataFrame,
     # TODO: How much does the number of used bins matter? What if a middle bin
     # goes unused? Does it make more sense to only exclude trailing empty bins?
     # Assume we always have a contiguous set of used bins.
-    used_bins = np.sort(df["bin_po2"].unique())
+    used_bins = np.sort(df["bin_power"].unique())
     K = len(used_bins)
-    p_base = df[df["bin_po2"] == used_bins[0]]["generation_cost"].mean()
-    prices = [df[df["bin_po2"] == used_bin]["generation_cost"].mean()
+    p_base = df[df["bin_power"] == used_bins[0]]["generation_cost"].mean()
+    prices = [df[df["bin_power"] == used_bin]["generation_cost"].mean()
               for used_bin in used_bins]
     # If p_base is nan return 0
     if np.isnan(p_base):
@@ -280,7 +280,7 @@ def compute_demands_by_budget(df: pd.DataFrame,
 
 def assign_mcdev_weights(df:pd.DataFrame,
                          df_weights:pd.DataFrame,
-                         item_bin_col:str="bin_po2") -> np.ndarray:
+                         item_bin_col:str="bin_power") -> np.ndarray:
     """Assign weights to items in `df` based on demand for item in `df_weights`.
     
     Notes:
@@ -336,7 +336,7 @@ def process_data(df: pd.DataFrame) -> pd.DataFrame:
     # Get midpoints of the bin values
     df["bin_mid"] = df["bin"].apply(lambda x: np.mean([x.left, x.right]))
     # Get the nearest power of 2 (rounding down) for each bin
-    df["bin_po2"] = df["bin"].apply(lambda x: int(np.floor(np.log2(x.left))))
+    df["bin_power"] = df["bin"].apply(lambda x: int(np.floor(np.log2(x.left))))
     return df
 
 def run_boostrap_helper(df: pd.DataFrame) -> pd.DataFrame:
@@ -420,7 +420,7 @@ def run_analytic_helper(df: pd.DataFrame) -> pd.DataFrame:
         choice_method = "mcdev_calibrated"
         df_weights = compute_demands_by_budget(gdf, mode=choice_method)
         gdfs_weights = df_weights.groupby(case_vars)
-        df_success_rates = gdf.groupby("bin_po2", observed=True)["score_binarized"].mean()
+        df_success_rates = gdf.groupby("bin_power", observed=True)["score_binarized"].mean()
         success_rates_results.append(df_success_rates.reset_index())
         for case, gdf_weights in tqdm.tqdm(gdfs_weights):
             # Skip if budget is 0
@@ -457,7 +457,7 @@ def run_analytic_helper(df: pd.DataFrame) -> pd.DataFrame:
     data_utils.save_data(data_to_save, data_dir=data_dir)
 
 def plot_avg_prices(df: pd.DataFrame,
-                    bin_col: str = "bin_po2",
+                    bin_col: str = "bin_power",
                     cost_col: str = "generation_cost",
                     model_col: str = "model"):
     """
@@ -469,7 +469,7 @@ def plot_avg_prices(df: pd.DataFrame,
     df : pd.DataFrame
         Dataset, containing columns for model, bin, and cost.
     bin_col : str, optional
-        Bin column (default: "bin_po2").
+        Bin column (default: "bin_power").
     cost_col : str, optional
         Cost column (default: "generation_cost").
     model_col : str, optional
@@ -506,7 +506,7 @@ def plot_avg_prices(df: pd.DataFrame,
     return fig
 
 def plot_avg_prices_by_model_subplots(df: pd.DataFrame,
-                                      bin_col: str = "bin_po2",
+                                      bin_col: str = "bin_power",
                                       cost_col: str = "generation_cost",
                                       model_col: str = "model"):
     """
