@@ -456,25 +456,6 @@ def run_analytic_helper(df: pd.DataFrame) -> pd.DataFrame:
                     "df_success_rates": df_success_rates}
     data_utils.save_data(data_to_save, data_dir=data_dir)
 
-df_case_study = process_data(df)
-
-# Plotting code to help debug the code and calibrate the choice model
-group_vars = ["model"]
-gdfs = df_case_study.groupby(group_vars)
-for group, gdf in tqdm.tqdm(gdfs):
-    df_weights = compute_demands_by_budget(gdf, mode="mcdev_hardcoded")
-    plot_group =  dict(zip(group_vars, group))
-    y_var = "Demand"
-    pc = mcdev.PlotConfig(
-            plot_group=plot_group,
-            df=df_weights,
-            y_var=y_var,
-        )
-    fig = mcdev.plot_allocations(pc)
-    plt.show()
-
-# Plot average prices for each model and task bin
-
 def plot_avg_prices(df: pd.DataFrame,
                     bin_col: str = "log_bin_po2",
                     cost_col: str = "generation_cost",
@@ -598,6 +579,26 @@ def plot_avg_prices_by_model_subplots(df: pd.DataFrame,
     plt.tight_layout()
     fig.subplots_adjust(hspace=0.4, wspace=0.3)
     return fig
+
+
+df_case_study = process_data(df)
+
+# Plotting code to help debug the code and calibrate the choice model
+group_vars = ["model"]
+gdfs = df_case_study.groupby(group_vars)
+for group, gdf in tqdm.tqdm(gdfs):
+    df_weights = compute_demands_by_budget(gdf, mode="mcdev_hardcoded")
+    plot_group =  dict(zip(group_vars, group))
+    y_var = "Demand"
+    pc = mcdev.PlotConfig(
+            plot_group=plot_group,
+            df=df_weights,
+            y_var=y_var,
+        )
+    fig = mcdev.plot_allocations(pc)
+    plt.show()
+
+# Plot average prices for each model and task bin
 
 fig = plot_avg_prices(df_case_study)
 figs = plot_avg_prices_by_model_subplots(df_case_study)
