@@ -323,20 +323,7 @@ def process_data(df: pd.DataFrame) -> pd.DataFrame:
     df = df[df["model"] != "GPT2"]
     df["human_seconds"] = df["human_minutes"] * 60
     df["log_human_seconds"] = np.log2(df["human_seconds"])
-    # Bin the human_seconds into log2 bins.
-    max_val = df["human_seconds"].max()
-    max_val_po2 = int(np.ceil(np.log2(max_val)))
-    bins = (2**np.array(range(max_val_po2+1))).astype(int)
-    # Optionally, label the bins with human-friendly labels.
-    # For example, using the bin edges directly (or you can provide custom labels)
-    df["bin"] = pd.cut(df["human_seconds"], bins=bins, include_lowest=True)
-    # Get lower and upper bounds of the bins
-    df["bin_left"] = df["bin"].apply(lambda x: x.left)
-    df["bin_right"] = df["bin"].apply(lambda x: x.right)
-    # Get midpoints of the bin values
-    df["bin_mid"] = df["bin"].apply(lambda x: np.mean([x.left, x.right]))
-    # Get the nearest power of 2 (rounding down) for each bin
-    df["bin_power"] = df["bin"].apply(lambda x: int(np.floor(np.log2(x.left))))
+    df = data_utils.bin_data_by_power(df, "human_seconds", base=2.0)
     return df
 
 def run_boostrap_helper(df: pd.DataFrame) -> pd.DataFrame:
