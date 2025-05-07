@@ -494,12 +494,12 @@ def process_data(df: pd.DataFrame) -> pd.DataFrame:
     # Filter out SWAA task source
     df = df.copy()
     df = df[df["task_source"] != "SWAA"]
-    # Filter out human and GPT2 models (cost data is not comparable to others)
+    # Filter out human and gpt2 models (cost data is not comparable to others)
     df = df[df["model"] != "human"]
-    df = df[df["model"] != "GPT2"]
+    df = df[df["model"] != "gpt2"]
     df["human_seconds"] = df["human_minutes"] * 60
     df["log_human_seconds"] = np.log2(df["human_seconds"])
-    df = data_utils.bin_data_by_power(df, "human_seconds", base=2.0)
+    df = data_utils.bin_data_by_power(df, "human_seconds", base=2**0.5)
     return df
 
 def run_boostrap_helper(df: pd.DataFrame) -> pd.DataFrame:
