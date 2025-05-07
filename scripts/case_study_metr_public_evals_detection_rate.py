@@ -736,35 +736,45 @@ def plot_method_comparison_allocations(config: mcdev.PlotConfig,
     plt.tight_layout()
     return g.figure
 
+def run_debug_plots(df: pd.DataFrame) -> dict:
+    """
+    Run debug plots to help calibrate the case study.
+    """
+    # Plotting code to help debug the code and calibrate the choice model
+    group_vars = ["model"]
+    gdfs = df.groupby(group_vars)
+    figs = {}
+    for group, gdf in tqdm.tqdm(gdfs):
+        df_weights = compute_demands_by_budget(gdf, mode="mcdev_calibrated_v3")
+        
+        df_simple = compute_demands_by_budget(gdf, mode="simple")
+        df_simple["Method"] = "simple"
+        df_mcdev = compute_demands_by_budget(gdf, mode="mcdev_calibrated_v3")
+        df_mcdev["Method"] = "mcdev_calibrated"
+        df_combined = pd.concat([df_simple, df_mcdev], ignore_index=True)
+        plot_group =  dict(zip(group_vars, group))
+        y_var = "Demand"
+        pc = mcdev.PlotConfig(
+                plot_group=plot_group,
+                df=df_combined,
+                y_var=y_var,
+            )
+        fig1 = plot_method_comparison_allocations(pc)
+        gdf["log_prices"] = np.log2(gdf["generation_cost"])
+        fig2 = plot_avg_prices_by_model_subplots(gdf, cost_col="log_prices")
+        figs[f"group_{group}_method_comparison"] = fig1
+        figs[f"group_{group}_avg_prices"] = fig2
+
+    # Plot average prices for each model and task bin
+    df["log_prices"] = np.log2(df["generation_cost"])
+    fig = plot_avg_prices_by_model_subplots(df, cost_col="log_prices")
+    figs["log_price_trends"] = fig
+    data_utils.save_plots(figs, plots_dir=plots_dir)
+
 df_case_study = process_data(df)
 
-# Plotting code to help debug the code and calibrate the choice model
-group_vars = ["model"]
-gdfs = df_case_study.groupby(group_vars)
-for group, gdf in tqdm.tqdm(gdfs):
-    df_weights = compute_demands_by_budget(gdf, mode="mcdev_calibrated_v3")
-    
-    df_simple = compute_demands_by_budget(gdf, mode="simple")
-    df_simple["Method"] = "simple"
-    df_mcdev = compute_demands_by_budget(gdf, mode="mcdev_calibrated_v3")
-    df_mcdev["Method"] = "mcdev_calibrated"
-    df_combined = pd.concat([df_simple, df_mcdev], ignore_index=True)
-    plot_group =  dict(zip(group_vars, group))
-    y_var = "Demand"
-    pc = mcdev.PlotConfig(
-            plot_group=plot_group,
-            df=df_combined,
-            y_var=y_var,
-        )
-    fig = plot_method_comparison_allocations(pc)
-    gdf["log_prices"] = np.log2(gdf["generation_cost"])
-    figs = plot_avg_prices_by_model_subplots(gdf, cost_col="log_prices")
-    plt.show()
+run_debug_plots(df_case_study)
 
-# Plot average prices for each model and task bin
-df_case_study["log_prices"] = np.log2(df_case_study["generation_cost"])
-figs = plot_avg_prices_by_model_subplots(df_case_study, cost_col="log_prices")
-plt.show()
 
 # THE LONG LIST OF TODOS
 # ------------------------------------------------------
