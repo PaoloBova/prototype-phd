@@ -561,7 +561,9 @@ def run_boostrap_helper(df: pd.DataFrame) -> pd.DataFrame:
 
     return df_temp
 
-def run_analytic_helper(df: pd.DataFrame) -> pd.DataFrame:
+def run_analytic_helper(df: pd.DataFrame,
+                        x_pct:float=0.5,
+                        choice_method:str="mcdev_calibrated_v3") -> pd.DataFrame:
     """
     Run the analytical helper.
 
@@ -573,18 +575,23 @@ def run_analytic_helper(df: pd.DataFrame) -> pd.DataFrame:
     given that the model has a success rate above that threshold.
     """
 
-    x_pct = 0.5
-
     analytical_results = []
     success_rates_results = []
     group_vars = ["model"]
     gdfs = df.groupby(group_vars)
     case_vars = ["Budget"]
+    bin_col = "bin_power"
     for group, gdf in tqdm.tqdm(gdfs):
-        choice_method = "mcdev_calibrated"
         df_weights = compute_demands_by_budget(gdf, mode=choice_method)
         gdfs_weights = df_weights.groupby(case_vars)
-        df_success_rates = gdf.groupby("bin_power", observed=True)["score_binarized"].mean()
+        # Turn bin_power into a categorical variable
+        # Exclude trailing empty bins; keep all bins between the first and last bin.
+        bin_sup = df[bin_col].max(skipna=True)
+        bin_inf = df[bin_col].min(skipna=True)
+        # Assume bins are integers
+        bins_consecutive = np.array(range(bin_inf, bin_sup + 1)).astype(int)
+        gdf[bin_col] = pd.Categorical(gdf[bin_col], categories=bins_consecutive)
+        df_success_rates = gdf.groupby(bin_col, observed=False)["score_binarized"].mean()
         success_rates_results.append(df_success_rates.reset_index())
         for case, gdf_weights in tqdm.tqdm(gdfs_weights):
             # Skip if budget is 0
@@ -773,6 +780,8 @@ def run_debug_plots(df: pd.DataFrame) -> dict:
 df_case_study = process_data(df)
 
 run_debug_plots(df_case_study)
+
+run_analytic_helper(df_case_study)
 
 
 # THE LONG LIST OF TODOS
