@@ -270,6 +270,31 @@ def analysis_logistic_regression(indices: np.ndarray,
 # In principle, we could write our own logistic regression implementation to
 # allow for numpy broadcasting for multiple regressions.
 
+def analysis_y_reliability(indices, df, x_col, y_col):
+    """A bootstrap helper that for each value of x_col computes the
+    y_pct reliability of the model where y_col is the binarized score."""
+      # X is an array with shape (n_samples, n_observations)
+    X = df[x_col].to_numpy()[indices]
+    # y is an array with shape (n_samples, n_observations)
+    Y = df[y_col].to_numpy()[indices]
+    n_samples = indices.shape[0]
+    all_x_set = np.unique(df[x_col].values)
+    n_x_set = len(all_x_set)
+    x_mapping = {x: i for i, x in enumerate(all_x_set)}
+    estimates = np.zeros((n_samples, n_x_set))
+    for i in range(n_samples):
+        x_values, y_values = X[i, :], Y[i, :]
+        
+        # Compute the y_pct reliability for each value of x_col
+        # This will be a new column in the DataFrame
+        x_set = np.unique(x_values)
+        for x in x_set:
+            # Get the data for the current x value
+            success_rate = np.mean(y_values[x_values == x])
+            estimates[i, x_mapping[x]] = success_rate
+    results_dict = dict(zip([f"estimate_{x}" for x in all_x_set], estimates.T))
+    return pd.DataFrame(results_dict)
+
 # -----------------------------------------------------------------------------
 # Below: Additional utility functions for analyzing bootstrap results.
 # -----------------------------------------------------------------------------

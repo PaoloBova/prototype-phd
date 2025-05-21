@@ -108,8 +108,14 @@ def compute_demands_by_budget(df: pd.DataFrame,
     bins_consecutive = np.array(range(bin_inf, bin_sup + 1)).astype(int)
     K = len(bins_consecutive)
     full_budget = df[cost_col].sum()
-    n = 10
-    B_values = full_budget * np.linspace(0 + 1/n, 1, n)
+    B_max = full_budget
+    n_constraints = 10
+    B_values_part1 = B_max * np.linspace(0 + 1/n_constraints, 1, n_constraints)
+    # Append a set of logarithmically spaced values to the end of B_values
+    # B_values_part2 = np.logspace(0, np.log2(B_max), num=n_constraints, endpoint=True, base=2)    
+    B_values_part2 = B_max * np.array([2**c for c in range(0, -8, -1)])
+    B_values = np.concatenate((B_values_part1, B_values_part2))
+    B_values = np.sort(np.unique(B_values))
 
     df_ordered = df.sort_values([bin_col, cost_col]).copy()
     df_ordered["cumulative_cost"] = df_ordered[cost_col].cumsum()
@@ -174,7 +180,7 @@ def compute_demands_by_budget(df: pd.DataFrame,
     # B_max = avg_demand * np.sum(prices)
     p = np.array(prices)
     n = 10
-    # Create a range of points exponentially spaced between 0 and B_max
+    # Create a range of points exponentially spaced between 1 and B_max
     B_values = np.logspace(0, np.log2(B_max), num=n, endpoint=True, base=2)    
     # B_values = B_max * np.linspace(0 + 1/n, 1, n)
     alpha = 0
@@ -416,8 +422,13 @@ def compute_demands_by_budget(df: pd.DataFrame,
 
     B_max = df[cost_col].sum()
     n_constraints = 10
-    B_values = B_max * np.linspace(0 + 1/n_constraints, 1, n_constraints)
-
+    B_values_part1 = B_max * np.linspace(0 + 1/n_constraints, 1, n_constraints)
+    # Append a set of logarithmically spaced values to the end of B_values
+    # B_values_part2 = np.logspace(0, np.log2(B_max), num=n_constraints, endpoint=True, base=2)    
+    B_values_part2 = B_max * np.array([2**c for c in range(0, -8, -1)])
+    B_values = np.concatenate((B_values_part1, B_values_part2))
+    B_values = np.sort(np.unique(B_values))
+    
     # Choice of gamma is handcrafted for now. Future approaches will
     # attempt to estimate them from data.
     gamma = np.ones(K)
@@ -500,10 +511,11 @@ def process_data(df: pd.DataFrame) -> pd.DataFrame:
     df = df[df["model"] != "gpt2"]
     df["human_seconds"] = df["human_minutes"] * 60
     df["log_human_seconds"] = np.log2(df["human_seconds"])
-    df = data_utils.bin_data_by_power(df, "human_seconds", base=2**0.5)
+    df = data_utils.bin_data_by_power(df, "human_seconds", base=2 #**0.5
+                                      )
     return df
 
-def run_boostrap_helper(df: pd.DataFrame) -> pd.DataFrame:
+def run_bootstrap_helper(df: pd.DataFrame) -> pd.DataFrame:
     """
     Run bootstrap analysis.
     """
@@ -527,16 +539,18 @@ def run_boostrap_helper(df: pd.DataFrame) -> pd.DataFrame:
     group_vars = ["model"]
     gdfs = df.groupby(group_vars)
     case_vars = ["Budget"]
-    bootstrap_config_default = {"n_bootstrap": 1000,
+    bootstrap_config_default = {"n_bootstrap": 100,
                             "analysis_funcs": [stats_fn],
                             "sample_size": 100,
                             "random_state": 1,
                             }
-    choice_method = "mcdev_calibrated"
+    choice_method = "simple"
+    # choice_method = "mcdev_calibrated_v3"
 
     for group, gdf in tqdm.tqdm(gdfs):
-        df_weights = compute_demands_by_budget(gdf, choice_method)
+        df_weights = compute_demands_by_budget(gdf, mode=choice_method)
         gdfs_weights = df_weights.groupby(case_vars)
+        max_budget = df_weights["Budget"].max()
         for case, gdf_weights in tqdm.tqdm(gdfs_weights):
             weights = assign_mcdev_weights(gdf, gdf_weights)
             if weights is None:
@@ -553,13 +567,69 @@ def run_boostrap_helper(df: pd.DataFrame) -> pd.DataFrame:
                 df_temp[col] = case[i]
             for i, col in enumerate(group_vars):
                 df_temp[col] = group[i]
+            df_temp["max_budget"] = max_budget
+            df_temp["Budget_fraction"] = df_temp["Budget"] / max_budget
             bootstrap_results.append(df_temp)
 
     df_bootstrap = pd.concat(bootstrap_results)
     data_to_save = {"df_bootstrap": df_bootstrap}
     data_utils.save_data(data_to_save, data_dir=data_dir)
 
-    return df_temp
+    return data_to_save
+
+def run_bootstrap_helper2(df: pd.DataFrame) -> pd.DataFrame:
+    """
+    Run bootstrap analysis.
+    """
+
+    x_col = "bin_power"
+    y_col = "score_binarized"
+    stats_fn = lambda idxs, df: bootstrap.analysis_y_reliability(idxs,
+                                                                 df,
+                                                                 x_col=x_col,
+                                                                 y_col=y_col)
+    # Run the bootstrap analysis
+    bootstrap_results = []
+    group_vars = ["model"]
+    gdfs = df.groupby(group_vars)
+    case_vars = ["Budget"]
+    bootstrap_config_default = {"n_bootstrap": 1000,
+                            "analysis_funcs": [stats_fn],
+                            # "sample_size": 1000,
+                            "random_state": 1,
+                            }
+    choice_method = "simple"
+    choice_method = "mcdev_calibrated_v3"
+
+    for group, gdf in tqdm.tqdm(gdfs):
+        df_weights = compute_demands_by_budget(gdf, mode=choice_method)
+        gdfs_weights = df_weights.groupby(case_vars)
+        max_budget = df_weights["Budget"].max()
+        for case, gdf_weights in tqdm.tqdm(gdfs_weights):
+            weights = assign_mcdev_weights(gdf, gdf_weights)
+            if weights is None:
+                # If weights is None, we can ignore this group
+                continue
+            bootstrap_config = bootstrap.BootstrapConfig(
+                **bootstrap_config_default,
+                sample_size=int(gdf_weights["Demand"].sum()),
+                weights=weights)
+            args = bootstrap.BootstrapDataInput(df=gdf, bootstrap_config=bootstrap_config)
+            df_temp = bootstrap.run_bootstrap(args)
+            # Add group variables to the results
+            for i, col in enumerate(case_vars):
+                df_temp[col] = case[i]
+            for i, col in enumerate(group_vars):
+                df_temp[col] = group[i]
+            df_temp["max_budget"] = max_budget
+            df_temp["Budget_fraction"] = df_temp["Budget"] / max_budget
+            bootstrap_results.append(df_temp)
+
+    df_bootstrap = pd.concat(bootstrap_results)
+    data_to_save = {"df_bootstrap": df_bootstrap}
+    data_utils.save_data(data_to_save, data_dir=data_dir)
+
+    return data_to_save
 
 def run_analytic_helper(df: pd.DataFrame,
                         x_pct:float=0.5,
@@ -780,6 +850,49 @@ def run_debug_plots(df: pd.DataFrame) -> dict:
     figs["log_price_trends"] = fig
     data_utils.save_plots(figs, plots_dir=plots_dir)
 
+def plot_distributions(df: pd.DataFrame) -> dict:
+    """
+    Visualize the bootstrap distributions for each model and budget value.
+    """
+    plots = {}
+    plot_group_vars = ["model"]
+    for group, gdf in tqdm.tqdm(df.groupby(plot_group_vars)):
+        # select numeric metric columns (exclude grouping vars and Budget)
+        metric_cols = [
+            c for c in gdf.select_dtypes(include=[np.number]).columns
+            if c not in plot_group_vars + ["Budget", "warning"]
+        ]
+        for col in tqdm.tqdm(metric_cols):
+            # replace sns.displot with manual histograms per Budget
+            import math
+            budgets = sorted(gdf["Budget"].unique())
+            n = len(budgets)
+            ncols = 4
+            nrows = math.ceil(n / ncols)
+            fig, axes = plt.subplots(nrows, ncols,
+                                     figsize=(4*ncols, 3*nrows),
+                                     sharey=False)
+            axes = axes.flatten()
+            for i, bf in enumerate(budgets):
+                ax = axes[i]
+                vals = gdf[gdf["Budget"] == bf][col].dropna()
+                if vals.empty:
+                    ax.set_visible(False)
+                else:
+                    ax.hist(vals, bins=30, color='C0', alpha=0.7)
+                    ax.set_title(f"Budget = {bf}")
+                    ax.set_xlabel(col)
+                    ax.set_ylabel("Count")
+            # hide any extra subplots
+            for ax in axes[len(budgets):]:
+                ax.set_visible(False)
+            plt.tight_layout()
+            # build safe group string for key
+            group_string = "_".join(str(v).replace(" ", "_") for v in group)
+            plot_key = f"{group_string}_{col}"
+            plots[plot_key] = fig
+    return plots
+
 def plot_sensitivity_rates_by_model(df_analytical: pd.DataFrame) -> None:
     """
     For each model, create a bar plot showing the sensitivity rates per Item_bin,
@@ -803,7 +916,6 @@ def plot_sensitivity_rates_by_model(df_analytical: pd.DataFrame) -> None:
         g.set_titles(f"Model: {model} | Budget = {{col_name}}")
         g.figure.suptitle(f"Sensitivity Rates for Model: {model}", y=1.05)
         plt.tight_layout()
-        plt.show()
 
 def plot_success_rates_by_model(df_success_rates: pd.DataFrame) -> None:
     """
@@ -817,22 +929,192 @@ def plot_success_rates_by_model(df_success_rates: pd.DataFrame) -> None:
         ax.set_xlabel("Bin Power")
         ax.set_ylabel("Success Rate")
         plt.legend()
-        plt.show()
+
+def plot_bootstrap_sensitivity_rates(data:pd.DataFrame) -> None:
+    df_bootstrap2 = data["df_bootstrap"]
+    df_long = df_bootstrap2.melt(
+        id_vars=["model", "Budget"],
+        var_name='variable',
+        value_name='estimate',
+        value_vars=[col for col in df_bootstrap2.columns if col.startswith('estimate_')]
+    )
+
+    x_pct = 0.5
+    df_long = df_long.rename(columns={"estimate": "success_rate"})
+    df_long["Item_bin"] = df_long["variable"].apply(lambda x: int(x.split("_")[1]))
+    df_analytical = df_long.groupby(["model", "Budget", "Item_bin"])["success_rate"].apply(
+        lambda x: np.mean(x >= x_pct)
+        ).reset_index()
+    df_analytical["sensitivity_rate"] = df_analytical["success_rate"]
+
+    # Visualize the test sensitivities for each model and budget value
+    plots = {}
+    plot_group_vars = ["model"]
+    for group, gdf in tqdm.tqdm(df_analytical.groupby(plot_group_vars)):
+        # select numeric metric columns (exclude grouping vars and Budget)
+        metric_cols = ["sensitivity_rate"]
+        for col in tqdm.tqdm(metric_cols):
+            # faceted bar chart of sensitivity_rate against item_bin by Budget
+            g = sns.catplot(
+                data=gdf,
+                x="Item_bin",
+                y=col,
+                col="Budget",
+                col_wrap=4,
+                height=3,
+                aspect=1.5,
+                kind="bar",
+                # facet_kws={"sharey": False},
+            )
+            # build a safe group string
+            group_string = " ".join(
+                f"{var}={val}".replace(" ", "_")
+                for var, val in zip(plot_group_vars, group)
+            )
+            g.set_titles("Budget = {col_name}")
+            g.figure.suptitle(f"Sensitivity rates for {col}, group: {group_string}", y=1.02)
+            plt.tight_layout()
+            plot_key = f"{'_'.join(map(str, group))}_{col}"
+            plots[plot_key] = g.figure
+    return plots
+
+def plot_bias_curves(df: pd.DataFrame) -> pd.DataFrame:
+    """
+    Process the bootstrap data to create bias curves.
+    """
+    # Scan the estimator columns to find the ones that start with "estimate_"
+    # and then order the columns by the suffixes.
+    # We assume the estimator columns are named "estimate_1", "estimate_2", etc.
+    # For each row, we want to find the highest suffix for which the value is above 0.5
+    
+    plots = {}
+    
+    df["Budget_fraction"] = np.round(df["Budget_fraction"], 2)
+    est_cols = sorted(
+        [c for c in df.columns if c.startswith("estimate_")],
+        key=lambda x: int(x.split("_")[1])
+    )
+    # Extract numeric suffixes in the same order
+    suffixes = [int(c.split("_")[1]) for c in est_cols]
+    # Build boolean array where True if estimate > 0.5
+    arr = df[est_cols].gt(0.5).values
+    # Multiply by suffixes and take max per row to get threshold
+    df["threshold"] = (arr * suffixes).max(axis=1)
+    df_thresh = df.groupby(
+        ["model", "Budget_fraction"],
+        observed=True, dropna=True
+    )["threshold"] \
+        .mean() \
+        .reset_index(name="mean_threshold")
+
+    # For “reported threshold,” pick the highest Budget per model:
+    reported_thresh = df_thresh.groupby("model", observed=True, dropna=True, as_index=False).apply(
+        lambda g: g.loc[g["Budget_fraction"].idxmax(), ["model", "mean_threshold"]]
+    ).rename(columns={"mean_threshold": "reported_threshold"})
+
+    # Merge this reported_threshold onto df_thresh so you can plot them together:
+    df_thresh = pd.merge(df_thresh, reported_thresh, on="model", how="left")
+
+    import math
+    # matplotlib faceted bar charts by Budget_fraction
+    budgets = sorted(df_thresh["Budget_fraction"].unique())
+    n = len(budgets)
+    ncols = 4
+    nrows = math.ceil(n / ncols)
+    fig2, axes = plt.subplots(nrows, ncols,
+                              figsize=(4*ncols, 3*nrows),
+                              sharex=True, sharey=True)
+    axes = axes.flatten()
+    cmap = plt.cm.viridis
+    for i, bf in enumerate(budgets):
+        ax2 = axes[i]
+        sub = df_thresh[df_thresh["Budget_fraction"] == bf]
+        ax2.bar(sub["reported_threshold"],
+                sub["mean_threshold"],
+                color=cmap(bf))
+        # identity line
+        lims = [
+            min(ax2.get_xlim()[0], ax2.get_ylim()[0]),
+            max(ax2.get_xlim()[1], ax2.get_ylim()[1])
+        ]
+        ax2.plot(lims, lims, "--", color="gray")
+        ax2.set_xlim(lims)
+        ax2.set_ylim(lims)
+        ax2.set_title(f"Budget Fraction = {bf:.2f}")
+        ax2.set_xlabel("Reported Threshold")
+        ax2.set_ylabel("Bootstrap Mean Threshold")
+    # hide unused axes
+    for ax2 in axes[len(budgets):]:
+        ax2.set_visible(False)
+    fig2.suptitle("Reported vs. Bootstrap Mean Threshold\nby Budget Fraction", y=1.02)
+    plt.tight_layout()
+    plots["reported_vs_bootstrap_by_fraction"] = fig2
+
+
+    plot_group_vars = ["model"]
+    for group, gdf in tqdm.tqdm(df_thresh.groupby(plot_group_vars, observed=True)):
+        sub = gdf
+        fig = plt.figure()
+        plt.plot(sub["Budget_fraction"], sub["mean_threshold"], marker='o', label="Bootstrap Mean Threshold")
+        plt.axhline(y=sub["reported_threshold"].iloc[0], color='r', linestyle='--', label="Reported (Highest Budget)")
+        plt.title(f"Threshold vs. Budget (Model: {group})")
+        plt.xlabel("Budget")
+        plt.ylabel("Threshold")
+        plt.legend()
+        plt.tight_layout()
+
+        # build a safe group string
+        group_string = " ".join(
+            f"{var}={val}".replace(" ", "_")
+            for var, val in zip(plot_group_vars, group)
+        )
+        plot_key = f"{group_string}_bias"
+        plots[plot_key] = fig
+    
+    # Debug bootstrap distributions
+    # plots2 = plot_distributions(df)
+    # plots.update(plots2)
+    
+    return plots
 
 df_case_study = process_data(df)
 
 # run_debug_plots(df_case_study)
 
-data = run_analytic_helper(df_case_study)
+# data = run_analytic_helper(df_case_study)
 
-plot_success_rates_by_model(data["df_success_rates"])
+# plot_success_rates_by_model(data["df_success_rates"])
 
-plot_sensitivity_rates_by_model(data["df_analytical"])
+# plot_sensitivity_rates_by_model(data["df_analytical"])
+
+# data = run_bootstrap_helper(df_case_study)
+
+data = run_bootstrap_helper2(df_case_study)
+
+# plots = plot_bootstrap_sensitivity_rates(data)
+
+plots = plot_bias_curves(data["df_bootstrap"])
+
+data_utils.save_plots(plots, plots_dir=f"{plots_dir}/case_study_plots")
+
+data_utils.save_plots(plots, plots_dir=f"{plots_dir}/case_study_plots")
 
 # THE LONG LIST OF TODOS
 # ------------------------------------------------------
 
-# TODO: Use bootstrap method for analytical results too (analytical code seems brittle at the moment)
+# TODO: Make sure to use the supremum estimator for somewhat more consistent plots
+# (hopefully)
+# Step 1: We already have a bootstrap function to get success rates per bin.
+# Step 2: Compute the supremum estimator across bins for each model
+# Step 3: Make sure to choose most reliable parameters for the simulation
+# Note: supremum estimator is likely to remain mostly unchanged
+
+# TODO: Take our existing results and plot model estimates for two different
+# values of the budget. At full budget, we hope to see close to the identity
+# line. At a fraction of the budget, we should see a somewhat pronounced curve.
+
+# TODO: Plot distribution of success rates per bin for one model to get an
+# impression of the distribution of success rates per bin.
 
 # TODO: Consider estimating mcdev model parameters from data
 # TODO: Assume that counterfactual allocations will be based on a choice model
