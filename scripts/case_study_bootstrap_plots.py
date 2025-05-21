@@ -75,130 +75,98 @@ def plot_distributions(df: pd.DataFrame) -> pd.DataFrame:
             plots[plot_key] = g.figure
     return plots
 
-def plot_bias_curves(df: pd.DataFrame) -> pd.DataFrame:
+def plot_bias_curves(df: pd.DataFrame, estimator_var="threshold") -> pd.DataFrame:
     """
     Process the bootstrap data to create bias curves.
     """
+    # Scan the estimator columns to find the ones that start with "estimate_"
+    # and then order the columns by the suffixes.
+    # We assume the estimator columns are named "estimate_1", "estimate_2", etc.
+    # For each row, we want to find the highest suffix for which the value is above 0.5
+    
+    plots = {}
 
-    # We also want to plot the bootstrap mean threshold against the reported threshold
-    # as we vary the budget.
-    # For now, take the bootstrap mean threshold for the highest budget as the reported threshold
-    # Make such a plot for each model
-
-
-    # After loading df_bootstrap and filtering, you can group by (model, Budget) to compute mean threshold:
-    df_thresh = df.groupby(["model", "Budget_fraction"], observed=True, dropna=True)["threshold"].mean().reset_index(name="mean_threshold")
+    df_thresh = df.groupby(
+        ["model", "Budget_fraction"],
+        observed=True, dropna=True
+    )[estimator_var] \
+        .mean() \
+        .reset_index(name=f"mean_{estimator_var}")
 
     # For “reported threshold,” pick the highest Budget per model:
     reported_thresh = df_thresh.groupby("model", observed=True, dropna=True, as_index=False).apply(
-        lambda g: g.loc[g["Budget_fraction"].idxmax(), ["model", "mean_threshold"]]
-    ).rename(columns={"mean_threshold": "reported_threshold"})
+        lambda g: g.loc[g["Budget_fraction"].idxmax(), ["model", f"mean_{estimator_var}"]]
+    ).rename(columns={f"mean_{estimator_var}": f"reported_{estimator_var}"})
 
     # Merge this reported_threshold onto df_thresh so you can plot them together:
     df_thresh = pd.merge(df_thresh, reported_thresh, on="model", how="left")
 
-    # Now, for each model, plot mean_threshold vs. Budget along with the single reported_threshold line:
-    plots = {}
-    # plot_group_vars = ["model"]
-    # for group, gdf in tqdm.tqdm(df_thresh.groupby(plot_group_vars, observed=True)):
-    #     sub = gdf
-    #     fig = plt.figure()
-    #     plt.plot(sub["Budget_fraction"], sub["mean_threshold"], marker='o', label="Bootstrap Mean Threshold")
-    #     plt.axhline(y=sub["reported_threshold"].iloc[0], color='r', linestyle='--', label="Reported (Highest Budget)")
-    #     plt.title(f"Threshold vs. Budget (Model: {group})")
-    #     plt.xlabel("Budget")
-    #     plt.ylabel("Threshold")
-    #     plt.legend()
-    #     plt.tight_layout()
-
-    #     # build a safe group string
-    #     group_string = " ".join(
-    #         f"{var}={val}".replace(" ", "_")
-    #         for var, val in zip(plot_group_vars, group)
-    #     )
-    #     plot_key = f"{group_string}_bias"
-    #     plots[plot_key] = fig
-
-    # Also, plot the bootstrap mean threshold against the reported thresholds
-    # for different budgets on a single figure
-    # Note: we only have one reported threshold per model. The y-axis will be the
-    # bootstrap means, the x-axis will be the reported threshold, so an x-y point
-    # will be a pair of (reported threshold, bootstrap mean threshold) for a model
-    # and budget. We can plot a different color for each budget.
-
-    # For each model, plot the bootstrap mean threshold against the reported threshold
-    # for different budgets on a single figure
-    
     # First exclude outlier threshold values
     # (e.g. any negative values or values greater than 20)
     ub = 20 # upper bound for threshold, not tasks are above 2**20 seconds in our data.
     # Note: this is a bit arbitrary, but we can adjust it later if needed.
     df_thresh = df_thresh[(df_thresh["mean_threshold"] >= 0) & (df_thresh["mean_threshold"] <= ub)]
-    fig, ax = plt.subplots(figsize=(6, 4))
-    # sns.scatterplot(
-    #     data=df_thresh,
-    #     x="reported_threshold",
-    #     y="mean_threshold",
-    #     hue="Budget_fraction",
-    #     palette="viridis",
-    #     ax=ax
-    # )
-    sns.lineplot(
-        data=df_thresh,
-        x="reported_threshold",
-        y="mean_threshold",
-        hue="Budget_fraction",
-        palette="viridis",
-        markers="o",
-        ax=ax
-    )
-    # add identity line
-    lims = [
-        min(ax.get_xlim()[0], ax.get_ylim()[0]),
-        max(ax.get_xlim()[1], ax.get_ylim()[1])
-    ]
-    ax.plot(lims, lims, "--", color="gray")
-    ax.set_xlim(lims)
-    ax.set_ylim(lims)
-    ax.set_xlabel("Reported Threshold")
-    ax.set_ylabel("Bootstrap Mean Threshold")
-    ax.set_title("Reported vs. Bootstrap Mean Threshold by Budget")
-    plt.tight_layout()
-    plots["reported_vs_bootstrap"] = fig
 
-    
-    # For ease of use, let's create the same figure but with only one curve per plot
-    # facet by Budget_fraction so each panel shows a single “budget‐fraction” scatter
-    fig, ax = plt.subplots(figsize=(6, 4))
-    g = sns.catplot(
-        data=df_thresh,
-        x="reported_threshold",
-        y="mean_threshold",
-        col="Budget_fraction",
-        kind="bar",
-        col_wrap=4,
-        height=3,
-        sharex=True,
-        sharey=True,
-        palette="viridis",
-        hue="Budget_fraction",
-    )
-    # add identity line to each facet
-    for ax in g.axes.flatten():
+    import math
+    # matplotlib faceted bar charts by Budget_fraction
+    budgets = sorted(df_thresh["Budget_fraction"].unique())
+    n = len(budgets)
+    ncols = 4
+    nrows = math.ceil(n / ncols)
+    fig2, axes = plt.subplots(nrows, ncols,
+                              figsize=(4*ncols, 3*nrows),
+                              sharex=True, sharey=True)
+    axes = axes.flatten()
+    cmap = plt.cm.viridis
+    for i, bf in enumerate(budgets):
+        ax2 = axes[i]
+        sub = df_thresh[df_thresh["Budget_fraction"] == bf]
+        ax2.bar(sub[f"reported_{estimator_var}"],
+                sub[f"mean_{estimator_var}"],
+                color=cmap(bf))
+        # identity line
         lims = [
-            min(ax.get_xlim()[0], ax.get_ylim()[0]),
-            max(ax.get_xlim()[1], ax.get_ylim()[1])
+            min(ax2.get_xlim()[0], ax2.get_ylim()[0]),
+            max(ax2.get_xlim()[1], ax2.get_ylim()[1])
         ]
-        ax.plot(lims, lims, "--", color="gray")
-        ax.set_xlim(lims)
-        ax.set_ylim(lims)
-
-    g.set_axis_labels("Reported Threshold", "Bootstrap Mean Threshold")
-    g.set_titles("Budget Fraction = {col_name:.2f}")
-    g.figure.suptitle("Reported vs. Bootstrap Mean Threshold\nby Budget Fraction", y=1.02)
+        ax2.plot(lims, lims, "--", color="gray")
+        ax2.set_xlim(lims)
+        ax2.set_ylim(lims)
+        ax2.set_title(f"Budget Fraction = {bf:.2f}")
+        ax2.set_xlabel(f"Reported {estimator_var}")
+        ax2.set_ylabel(f"Bootstrap mean {estimator_var}")
+    # hide unused axes
+    for ax2 in axes[len(budgets):]:
+        ax2.set_visible(False)
+    fig2.suptitle(f"Reported vs. Bootstrap Mean {estimator_var}\nby Budget Fraction", y=1.02)
     plt.tight_layout()
-    plots["reported_vs_bootstrap_by_fraction"] = g.figure
+    plots[f"reported_vs_bootstrap_{estimator_var}_by_fraction"] = fig2
 
+
+    plot_group_vars = ["model"]
+    for group, gdf in tqdm.tqdm(df_thresh.groupby(plot_group_vars, observed=True)):
+        sub = gdf
+        fig = plt.figure()
+        plt.plot(sub["Budget_fraction"], sub[f"mean_{estimator_var}"], marker='o', label=f"Bootstrap mean {estimator_var}")
+        plt.axhline(y=sub[f"reported_{estimator_var}"].iloc[0], color='r', linestyle='--', label=f"Reported {estimator_var} (Highest Budget)")
+        plt.title(f"{estimator_var} vs. budget (model: {group})")
+        plt.xlabel("Budget fraction")
+        plt.ylabel(estimator_var)
+        plt.legend()
+        plt.tight_layout()
+
+        # build a safe group string
+        group_string = " ".join(
+            f"{var}={val}".replace(" ", "_")
+            for var, val in zip(plot_group_vars, group)
+        )
+        plot_key = f"{group_string}_{estimator_var}_bias"
+        plots[plot_key] = fig
+    
+    # Debug bootstrap distributions
+    # plots2 = plot_distributions(df)
+    # plots.update(plots2)
+    
     return plots
 
 def plot_detection_rates(df: pd.DataFrame) -> pd.DataFrame:
@@ -269,6 +237,7 @@ def plot_detection_rates(df: pd.DataFrame) -> pd.DataFrame:
 
 # plots1 = plot_distributions(df_bootstrap)
 
+df_bootstrap["Budget_fraction"] = np.round(df_bootstrap["Budget_fraction"], 2)
 plots2 = plot_bias_curves(df_bootstrap)
 
 # plots3 = plot_detection_rates(df_bootstrap)

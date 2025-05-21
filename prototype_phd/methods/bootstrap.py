@@ -295,6 +295,48 @@ def analysis_y_reliability(indices, df, x_col, y_col):
     results_dict = dict(zip([f"estimate_{x}" for x in all_x_set], estimates.T))
     return pd.DataFrame(results_dict)
 
+def analysis_weighted_sum(indices, df, x_col, y_col, level_weight_fn=None, info_weight_fn=None):
+    """A bootstrap helper that computes a weighted sum
+    of the success rates across x_col as measured by y_col."""
+      # X is an array with shape (n_samples, n_observations)
+    X = df[x_col].to_numpy()[indices]
+    # y is an array with shape (n_samples, n_observations)
+    Y = df[y_col].to_numpy()[indices]
+    n_samples = indices.shape[0]
+    all_x_set = np.unique(df[x_col].values)
+    n_x_set = len(all_x_set)
+    x_mapping = {x: i for i, x in enumerate(all_x_set)}
+    estimates = np.zeros((n_samples, n_x_set))
+    counts = np.zeros((n_samples, n_x_set))
+    for i in range(n_samples):
+        x_values, y_values = X[i, :], Y[i, :]
+        
+        # Compute the y_pct reliability for each value of x_col
+        # This will be a new column in the DataFrame
+        x_set = np.unique(x_values)
+        for x in x_set:
+            # Get the data for the current x value
+            success_rate = np.mean(y_values[x_values == x])
+            count = np.sum(x_values == x)
+            counts[i, x_mapping[x]] = count
+            estimates[i, x_mapping[x]] = success_rate
+    results_dict = dict(zip([f"estimate_{x}" for x in all_x_set], estimates.T))
+    # Compute the weighted sum of success rates across all x values
+    if level_weight_fn is None:
+        level_weight_fn = lambda x: 1.0
+    level_weights = np.array([level_weight_fn(x) for x in all_x_set])
+    if info_weight_fn is None:
+        info_weights = np.ones((n_samples, n_x_set))
+    else:
+        info_weights = np.array([info_weight_fn(all_x_set[i], counts[:, i])
+                                 for i in range(n_x_set)]).T
+    assert info_weights.shape == (n_samples, n_x_set), f"info_weights shape mismatch: {info_weights.shape} != {(n_samples, n_x_set)}"
+    weighted_sum = (info_weights * estimates) @ level_weights
+    assert weighted_sum.shape == (n_samples,), f"weighted_sum shape mismatch: {weighted_sum.shape} != {(n_samples,)}"
+    results_dict["weighted_sum"] = weighted_sum
+    return pd.DataFrame(results_dict)
+
+
 # -----------------------------------------------------------------------------
 # Below: Additional utility functions for analyzing bootstrap results.
 # -----------------------------------------------------------------------------

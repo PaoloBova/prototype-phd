@@ -539,67 +539,13 @@ def run_bootstrap_helper(df: pd.DataFrame) -> pd.DataFrame:
     group_vars = ["model"]
     gdfs = df.groupby(group_vars)
     case_vars = ["Budget"]
-    bootstrap_config_default = {"n_bootstrap": 100,
+    bootstrap_config_default = {"n_bootstrap": 1000,
                             "analysis_funcs": [stats_fn],
-                            "sample_size": 100,
+                            # "sample_size": 100,
                             "random_state": 1,
                             }
     choice_method = "simple"
     # choice_method = "mcdev_calibrated_v3"
-
-    for group, gdf in tqdm.tqdm(gdfs):
-        df_weights = compute_demands_by_budget(gdf, mode=choice_method)
-        gdfs_weights = df_weights.groupby(case_vars)
-        max_budget = df_weights["Budget"].max()
-        for case, gdf_weights in tqdm.tqdm(gdfs_weights):
-            weights = assign_mcdev_weights(gdf, gdf_weights)
-            if weights is None:
-                # If weights is None, we can ignore this group
-                continue
-            bootstrap_config = bootstrap.BootstrapConfig(
-                **bootstrap_config_default,
-                # sample_size=int(gdf_weights["Demand"].sum()),
-                weights=weights)
-            args = bootstrap.BootstrapDataInput(df=gdf, bootstrap_config=bootstrap_config)
-            df_temp = bootstrap.run_bootstrap(args)
-            # Add group variables to the results
-            for i, col in enumerate(case_vars):
-                df_temp[col] = case[i]
-            for i, col in enumerate(group_vars):
-                df_temp[col] = group[i]
-            df_temp["max_budget"] = max_budget
-            df_temp["Budget_fraction"] = df_temp["Budget"] / max_budget
-            bootstrap_results.append(df_temp)
-
-    df_bootstrap = pd.concat(bootstrap_results)
-    data_to_save = {"df_bootstrap": df_bootstrap}
-    data_utils.save_data(data_to_save, data_dir=data_dir)
-
-    return data_to_save
-
-def run_bootstrap_helper2(df: pd.DataFrame) -> pd.DataFrame:
-    """
-    Run bootstrap analysis.
-    """
-
-    x_col = "bin_power"
-    y_col = "score_binarized"
-    stats_fn = lambda idxs, df: bootstrap.analysis_y_reliability(idxs,
-                                                                 df,
-                                                                 x_col=x_col,
-                                                                 y_col=y_col)
-    # Run the bootstrap analysis
-    bootstrap_results = []
-    group_vars = ["model"]
-    gdfs = df.groupby(group_vars)
-    case_vars = ["Budget"]
-    bootstrap_config_default = {"n_bootstrap": 1000,
-                            "analysis_funcs": [stats_fn],
-                            # "sample_size": 1000,
-                            "random_state": 1,
-                            }
-    choice_method = "simple"
-    choice_method = "mcdev_calibrated_v3"
 
     for group, gdf in tqdm.tqdm(gdfs):
         df_weights = compute_demands_by_budget(gdf, mode=choice_method)
@@ -630,6 +576,87 @@ def run_bootstrap_helper2(df: pd.DataFrame) -> pd.DataFrame:
     data_utils.save_data(data_to_save, data_dir=data_dir)
 
     return data_to_save
+
+def run_bootstrap_helper2(df: pd.DataFrame) -> pd.DataFrame:
+    """
+    Run bootstrap analysis.
+    """
+
+    x_col = "bin_power"
+    y_col = "score_binarized"
+    stats_fn = lambda idxs, df: bootstrap.analysis_y_reliability(idxs,
+                                                                 df,
+                                                                 x_col=x_col,
+                                                                 y_col=y_col)
+    g = lambda x: 1 + 0.5 * x
+    h = lambda _x, counts: np.where(counts > 0, counts / (1 + 0.5 * (counts - 1)), 1)
+    h = None
+    stats_fn = lambda idxs, df: bootstrap.analysis_weighted_sum(idxs,
+                                                                df,
+                                                                x_col=x_col,
+                                                                y_col=y_col,
+                                                                level_weight_fn=g,
+                                                                info_weight_fn=h)
+    # Run the bootstrap analysis
+    bootstrap_results = []
+    group_vars = ["model"]
+    gdfs = df.groupby(group_vars)
+    case_vars = ["Budget"]
+    bootstrap_config_default = {"n_bootstrap": 1000,
+                            "analysis_funcs": [stats_fn],
+                            # "sample_size": 1000,
+                            "random_state": 1,
+                            }
+    choice_method = "simple"
+    # choice_method = "mcdev_calibrated_v3"
+
+    for group, gdf in tqdm.tqdm(gdfs):
+        df_weights = compute_demands_by_budget(gdf, mode=choice_method)
+        gdfs_weights = df_weights.groupby(case_vars)
+        max_budget = df_weights["Budget"].max()
+        for case, gdf_weights in tqdm.tqdm(gdfs_weights):
+            weights = assign_mcdev_weights(gdf, gdf_weights)
+            if weights is None:
+                # If weights is None, we can ignore this group
+                continue
+            bootstrap_config = bootstrap.BootstrapConfig(
+                **bootstrap_config_default,
+                sample_size=int(gdf_weights["Demand"].sum()),
+                weights=weights)
+            args = bootstrap.BootstrapDataInput(df=gdf, bootstrap_config=bootstrap_config)
+            df_temp = bootstrap.run_bootstrap(args)
+            # Add group variables to the results
+            for i, col in enumerate(case_vars):
+                df_temp[col] = case[i]
+            for i, col in enumerate(group_vars):
+                df_temp[col] = group[i]
+            df_temp["max_budget"] = max_budget
+            df_temp["Budget_fraction"] = df_temp["Budget"] / max_budget
+            bootstrap_results.append(df_temp)
+
+    df_bootstrap = pd.concat(bootstrap_results)
+    data_to_save = {"df_bootstrap": df_bootstrap}
+    data_utils.save_data(data_to_save, data_dir=data_dir)
+
+    return data_to_save
+
+def process_boostrap_estimates(df: pd.DataFrame) -> pd.DataFrame:
+    """
+    Process the bootstrap estimates.
+    """
+    df["Budget_fraction"] = np.round(df["Budget_fraction"], 2)
+    est_cols = sorted(
+        [c for c in df.columns if c.startswith("estimate_")],
+        key=lambda x: int(x.split("_")[1])
+    )
+    # Extract numeric suffixes in the same order
+    suffixes = [int(c.split("_")[1]) for c in est_cols]
+    # Build boolean array where True if estimate > 0.5
+    arr = df[est_cols].gt(0.5).values
+    # Multiply by suffixes and take max per row to get threshold
+    df["reliability_threshold"] = (arr * suffixes).max(axis=1)
+
+    return df
 
 def run_analytic_helper(df: pd.DataFrame,
                         x_pct:float=0.5,
@@ -978,7 +1005,7 @@ def plot_bootstrap_sensitivity_rates(data:pd.DataFrame) -> None:
             plots[plot_key] = g.figure
     return plots
 
-def plot_bias_curves(df: pd.DataFrame) -> pd.DataFrame:
+def plot_bias_curves(df: pd.DataFrame, estimator_var="threshold") -> pd.DataFrame:
     """
     Process the bootstrap data to create bias curves.
     """
@@ -988,29 +1015,18 @@ def plot_bias_curves(df: pd.DataFrame) -> pd.DataFrame:
     # For each row, we want to find the highest suffix for which the value is above 0.5
     
     plots = {}
-    
-    df["Budget_fraction"] = np.round(df["Budget_fraction"], 2)
-    est_cols = sorted(
-        [c for c in df.columns if c.startswith("estimate_")],
-        key=lambda x: int(x.split("_")[1])
-    )
-    # Extract numeric suffixes in the same order
-    suffixes = [int(c.split("_")[1]) for c in est_cols]
-    # Build boolean array where True if estimate > 0.5
-    arr = df[est_cols].gt(0.5).values
-    # Multiply by suffixes and take max per row to get threshold
-    df["threshold"] = (arr * suffixes).max(axis=1)
+
     df_thresh = df.groupby(
         ["model", "Budget_fraction"],
         observed=True, dropna=True
-    )["threshold"] \
+    )[estimator_var] \
         .mean() \
-        .reset_index(name="mean_threshold")
+        .reset_index(name=f"mean_{estimator_var}")
 
     # For “reported threshold,” pick the highest Budget per model:
     reported_thresh = df_thresh.groupby("model", observed=True, dropna=True, as_index=False).apply(
-        lambda g: g.loc[g["Budget_fraction"].idxmax(), ["model", "mean_threshold"]]
-    ).rename(columns={"mean_threshold": "reported_threshold"})
+        lambda g: g.loc[g["Budget_fraction"].idxmax(), ["model", f"mean_{estimator_var}"]]
+    ).rename(columns={f"mean_{estimator_var}": f"reported_{estimator_var}"})
 
     # Merge this reported_threshold onto df_thresh so you can plot them together:
     df_thresh = pd.merge(df_thresh, reported_thresh, on="model", how="left")
@@ -1029,8 +1045,8 @@ def plot_bias_curves(df: pd.DataFrame) -> pd.DataFrame:
     for i, bf in enumerate(budgets):
         ax2 = axes[i]
         sub = df_thresh[df_thresh["Budget_fraction"] == bf]
-        ax2.bar(sub["reported_threshold"],
-                sub["mean_threshold"],
+        ax2.bar(sub[f"reported_{estimator_var}"],
+                sub[f"mean_{estimator_var}"],
                 color=cmap(bf))
         # identity line
         lims = [
@@ -1041,25 +1057,25 @@ def plot_bias_curves(df: pd.DataFrame) -> pd.DataFrame:
         ax2.set_xlim(lims)
         ax2.set_ylim(lims)
         ax2.set_title(f"Budget Fraction = {bf:.2f}")
-        ax2.set_xlabel("Reported Threshold")
-        ax2.set_ylabel("Bootstrap Mean Threshold")
+        ax2.set_xlabel(f"Reported {estimator_var}")
+        ax2.set_ylabel(f"Bootstrap mean {estimator_var}")
     # hide unused axes
     for ax2 in axes[len(budgets):]:
         ax2.set_visible(False)
-    fig2.suptitle("Reported vs. Bootstrap Mean Threshold\nby Budget Fraction", y=1.02)
+    fig2.suptitle(f"Reported vs. Bootstrap Mean {estimator_var}\nby Budget Fraction", y=1.02)
     plt.tight_layout()
-    plots["reported_vs_bootstrap_by_fraction"] = fig2
+    plots[f"reported_vs_bootstrap_{estimator_var}_by_fraction"] = fig2
 
 
     plot_group_vars = ["model"]
     for group, gdf in tqdm.tqdm(df_thresh.groupby(plot_group_vars, observed=True)):
         sub = gdf
         fig = plt.figure()
-        plt.plot(sub["Budget_fraction"], sub["mean_threshold"], marker='o', label="Bootstrap Mean Threshold")
-        plt.axhline(y=sub["reported_threshold"].iloc[0], color='r', linestyle='--', label="Reported (Highest Budget)")
-        plt.title(f"Threshold vs. Budget (Model: {group})")
-        plt.xlabel("Budget")
-        plt.ylabel("Threshold")
+        plt.plot(sub["Budget_fraction"], sub[f"mean_{estimator_var}"], marker='o', label=f"Bootstrap mean {estimator_var}")
+        plt.axhline(y=sub[f"reported_{estimator_var}"].iloc[0], color='r', linestyle='--', label=f"Reported {estimator_var} (Highest Budget)")
+        plt.title(f"{estimator_var} vs. budget (model: {group})")
+        plt.xlabel("Budget fraction")
+        plt.ylabel(estimator_var)
         plt.legend()
         plt.tight_layout()
 
@@ -1068,7 +1084,7 @@ def plot_bias_curves(df: pd.DataFrame) -> pd.DataFrame:
             f"{var}={val}".replace(" ", "_")
             for var, val in zip(plot_group_vars, group)
         )
-        plot_key = f"{group_string}_bias"
+        plot_key = f"{group_string}_{estimator_var}_bias"
         plots[plot_key] = fig
     
     # Debug bootstrap distributions
@@ -1093,21 +1109,23 @@ data = run_bootstrap_helper2(df_case_study)
 
 # plots = plot_bootstrap_sensitivity_rates(data)
 
-plots = plot_bias_curves(data["df_bootstrap"])
+# plot_data = process_boostrap_estimates(data["df_bootstrap"])
+# plots = plot_bias_curves(plot_data, estimator_var="weighted_sum")
 
-data_utils.save_plots(plots, plots_dir=f"{plots_dir}/case_study_plots")
+# data_utils.save_plots(plots, plots_dir=f"{plots_dir}/case_study_plots")
 
+# plots = plot_bias_curves(plot_data, estimator_var="reliability_threshold")
+# data_utils.save_plots(plots, plots_dir=f"{plots_dir}/case_study_plots")
+
+data = run_bootstrap_helper(df_case_study)
+plot_data = data["df_bootstrap"]
+plots = plot_bias_curves(plot_data, estimator_var="threshold")
 data_utils.save_plots(plots, plots_dir=f"{plots_dir}/case_study_plots")
 
 # THE LONG LIST OF TODOS
 # ------------------------------------------------------
 
-# TODO: Make sure to use the supremum estimator for somewhat more consistent plots
-# (hopefully)
-# Step 1: We already have a bootstrap function to get success rates per bin.
-# Step 2: Compute the supremum estimator across bins for each model
-# Step 3: Make sure to choose most reliable parameters for the simulation
-# Note: supremum estimator is likely to remain mostly unchanged
+# TODO: Make sure to plot the confidence intervals too.
 
 # TODO: Take our existing results and plot model estimates for two different
 # values of the budget. At full budget, we hope to see close to the identity
