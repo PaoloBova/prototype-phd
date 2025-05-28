@@ -68,7 +68,6 @@ class SensitivityResult(BaseModel):
     estimator: str = Field(..., description="Type of estimator used")
     bias: float = Field(..., description="Mean difference between estimate and true value")
     variance: float = Field(..., description="Variance of estimate")
-    detection_lag: Optional[float] = Field(None, description="Time to detect threshold crossing")
     ci_lower: float = Field(..., description="Lower bound of confidence interval")
     ci_upper: float = Field(..., description="Upper bound of confidence interval")
     contains_true: bool = Field(..., description="Whether CI contains true value")
