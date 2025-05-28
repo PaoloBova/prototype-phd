@@ -10,6 +10,7 @@ import numpy as np
 import networkx
 import os
 import pandas as pd
+from pathlib import Path
 import plotly.graph_objects as go
 import plotly.io as pio
 import pprint
@@ -17,10 +18,11 @@ import random
 import regex
 from scipy.stats import qmc
 import subprocess
+import sys
 import tqdm
 from typing import Any, Dict, List, Union, Tuple
 import uuid
-     
+import yaml
 
 def setup_logging(log_path='logs/chat_logs.log', level=logging.INFO):
     # Get the directory portion of the log_path.
@@ -253,12 +255,99 @@ def read_ndjson(file_path):
             results.append(json.loads(line))
     return results
 
+def configure_logging_console(level: int = logging.INFO):
+    """
+    Ensure there’s a StreamHandler on the root logger.
+    Doesn’t call basicConfig so it won’t remove existing file handlers.
+    """
+    root = logging.getLogger()
+    # Only add a console handler if none exists yet
+    if not any(isinstance(h, logging.StreamHandler) for h in root.handlers):
+        console = logging.StreamHandler(sys.stdout)
+        console.setLevel(level)
+        fmt = logging.Formatter("%(asctime)s [%(levelname)s] %(message)s")
+        console.setFormatter(fmt)
+        root.addHandler(console)
+    root.setLevel(level)
+
+def read_config(config_path: str) -> Dict[str, Any]:
+    """Read JSON or YAML configuration file."""
+    ext = os.path.splitext(config_path)[1].lower()
+    with open(config_path, "r") as f:
+        if ext in (".yaml", ".yml"):
+            return yaml.safe_load(f)
+        elif ext == ".json":
+            return json.load(f)
+        else:
+            raise ValueError(f"Unsupported config format: {ext}")
+
+def read_data(data_path: str) -> pd.DataFrame:
+    """Read data from CSV file or directory."""
+    path = Path(data_path)
+    if path.is_dir():
+        # Read all CSV files in directory
+        dfs = []
+        for file_path in path.glob("*.csv"):
+            df = pd.read_csv(file_path)
+            dfs.append(df)
+        return pd.concat(dfs, ignore_index=True)
+    else:
+        # Read single CSV file
+        return pd.read_csv(path)
+
+def filter_data(df: pd.DataFrame, config: Dict[str, Any]) -> pd.DataFrame:
+    """
+    Filter data based on configuration.
+    
+    Args:
+        df: Raw data frame
+        config: Configuration dictionary
+    
+    Returns:
+        Filtered DataFrame
+    
+    Example config:
+    {
+        "filters": {
+            "model": ["gpt-3.5-turbo", "!gpt-4"],
+            "task_source": ["source1", "!source2"]
+        }
+    }
+    """
+    if "filters" in config:
+        for col, values in config["filters"].items():
+            # support negative filters via "!"-prefix
+            if isinstance(values, list):
+                # separate positive and negative rules
+                pos = [v for v in values if not (isinstance(v, str) and v.startswith("!"))]
+                neg = [v[1:] for v in values if isinstance(v, str) and v.startswith("!")]
+                if pos:
+                    df = df[df[col].isin(pos)]
+                if neg:
+                    df = df[~df[col].isin(neg)]
+            else:
+                # single value filter
+                if isinstance(values, str) and values.startswith("!"):
+                    df = df[df[col] != values[1:]]
+                else:
+                    df = df[df[col] == values]
+    return df
+
 class NumpyEncoder(json.JSONEncoder): 
     def default(self, obj):
         if isinstance(obj, np.ndarray):
             return obj.tolist() # Convert NumPy array to list
         # Let the base class default method raise the TypeError
         return super().default(obj)
+
+class DateTimeEncoder(json.JSONEncoder):
+    def default(self, obj):
+        if isinstance(obj, (datetime.date, datetime.datetime)):
+            return obj.isoformat()
+        return super().default(obj)
+
+class CombinedEncoder(NumpyEncoder, DateTimeEncoder):
+    pass
 
 def save_data(data, data_dir=None, append=False):
     """
@@ -314,7 +403,7 @@ def save_data(data, data_dir=None, append=False):
                     # We often need to save numpy arrays, so we use a custom
                     # encoder to handle this
                     # indent=2 makes the JSON file human-readable
-                    json.dump(value, f, cls=NumpyEncoder, indent=2)
+                    json.dump(value, f, cls=CombinedEncoder, indent=2)
 
 def save_chunk(filepaths, chunk, filepath_key):
     """Save a single chunk of data to an HDF5 file, appending if the file exists."""
@@ -742,6 +831,8 @@ def bin_data_by_power(df: pd.DataFrame,
         - bin_left, bin_right, bin_mid
         - bin_power (Int or NaN)
     """
+    # force a real copy so we never write to a slice
+    df = df.copy()
     assert col in df.columns
     assert base > 1
     # Step 1: determine upper and lower bounds of bin edges for positive values
