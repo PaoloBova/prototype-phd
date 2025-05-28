@@ -39,6 +39,7 @@ dependencies = [
     "seaborn (>=0.13.2,<0.14.0)",
     "lark (>=1.2.2,<2.0.0)",
     "scikit-learn (>=1.6.1,<2.0.0)",
+    "h5py (>=3.13.0,<4.0.0)",
 ]
 
 [project.urls]

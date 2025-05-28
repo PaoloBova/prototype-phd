@@ -10,3 +10,4 @@ pytest
 regex
 scipy
 tqdm
+h5py
