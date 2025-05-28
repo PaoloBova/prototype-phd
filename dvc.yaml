@@ -1,0 +1,63 @@
+stages:
+  preprocess:
+    cmd: python -m src.preprocess --config configs/forecast_detection/preprocess.json
+    deps:
+      - external_data/detection_rates/metr_public_evals_all_runs.jsonl
+      - src/preprocess.py
+      - configs/forecast_detection/preprocess.json
+    outs:
+      - data/processed/forecast_detection/processed_data.csv
+
+  fit_curve:
+    cmd: python -m src.fit_curve --input data/processed/forecast_detection/processed_data.csv --output data/processed/forecast_detection/logistic_fit_results.json
+    deps:
+      - data/processed/forecast_detection/processed_data.csv
+      - src/fit_curve.py
+    outs:
+      - data/processed/forecast_detection/logistic_fit_results.json
+
+  forecast_ability:
+    cmd: python -m src.forecast_ability --params data/processed/forecast_detection/logistic_fit_results.json --config configs/forecast_detection/forecast_ability.json --out data/processed/forecast_detection/ability_forecasts.csv
+    deps:
+      - data/processed/forecast_detection/logistic_fit_results.json
+      - configs/forecast_detection/forecast_ability.json
+      - src/forecast_ability.py
+    outs:
+      - data/processed/forecast_detection/ability_forecasts.csv
+
+  forecast_cost:
+    cmd: python -m src.forecast_cost --input data/processed/forecast_detection/processed_data.csv --out data/processed/forecast_detection/cost_trends.csv
+    deps:
+      - data/processed/forecast_detection/processed_data.csv
+      - src/forecast_cost.py
+    outs:
+      - data/processed/forecast_detection/cost_trends.csv
+
+  forecast_evaluation:
+    cmd: python -m src.forecast_evaluation --ability data/processed/forecast_detection/ability_forecasts.csv --cost data/processed/forecast_detection/cost_trends.csv --out data/processed/forecast_detection/evaluation_forecasts.csv
+    deps:
+      - data/processed/forecast_detection/ability_forecasts.csv
+      - data/processed/forecast_detection/cost_trends.csv
+      - src/forecast_evaluation.py
+    outs:
+      - data/processed/forecast_detection/evaluation_forecasts.csv
+
+  forecast_simulation:
+    cmd: python -m src.forecast_simulation --in data/processed/forecast_detection/evaluation_forecasts.csv --out data/processed/forecast_detection/simulation_results.csv --config configs/forecast_simulation.json
+    deps:
+      - data/processed/forecast_detection/evaluation_forecasts.csv
+      - src/forecast_simulation.py
+      - configs/forecast_simulation.json
+      - src/simulation.py
+    outs:
+      - data/processed/forecast_detection/simulation_results.csv
+
+  plot_reports:
+    cmd: python -m scripts.plot_forecasts --inputs "data/processed/forecast_detection/*.csv" --out reports/forecast_detection/figures/
+    deps:
+      - data/processed/forecast_detection/
+      - scripts/plot_forecasts.py
+    outs:
+      - reports/forecast_detection/figures/
+    metrics:
+      - reports/forecast_detection/figures/*.png
