@@ -58,4 +58,5 @@ ipykernel = "^6.29.5"
 jupyterlab = "^4.3.5"
 itables = "^2.2.5"
 rich = "^13.9.4"
+dvc = "^3.59.2"
 
