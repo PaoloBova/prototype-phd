@@ -8,11 +8,11 @@ stages:
     outs:
       - data/processed/forecast_detection/processed_data.csv
 
-  fit_curve:
-    cmd: python -m src.fit_curve --input data/processed/forecast_detection/processed_data.csv --output data/processed/forecast_detection/logistic_fit_results.json
+  model_ability_regression:
+    cmd: python -m src.model_ability_regression --input data/processed/forecast_detection/processed_data.csv --output data/processed/forecast_detection/logistic_fit_results.json
     deps:
       - data/processed/forecast_detection/processed_data.csv
-      - src/fit_curve.py
+      - src/model_ability_regression.py
     outs:
       - data/processed/forecast_detection/logistic_fit_results.json
 
@@ -52,6 +52,48 @@ stages:
     outs:
       - data/processed/forecast_detection/simulation_results.csv
       - data/processed/forecast_detection/raw_simulation_results.h5
+
+  explore_logistic_fits:
+    cmd: python -m src.tools.explore_logistic_fits --fits data/processed/forecast_detection/logistic_fit_results.json --data data/processed/forecast_detection/processed_data.csv --output reports/forecast_detection/logistic_fit_visualizations
+    deps:
+      - data/processed/forecast_detection/logistic_fit_results.json
+      - data/processed/forecast_detection/processed_data.csv
+      - src/tools/explore_logistic_fits.py
+    outs:
+      - reports/forecast_detection/logistic_fit_visualizations
+
+  explore_ability_forecasts:
+    cmd: python -m src.tools.explore_ability_forecasts --input data/processed/forecast_detection/ability_forecasts.csv --output reports/forecast_detection/ability_visualizations
+    deps:
+      - data/processed/forecast_detection/ability_forecasts.csv
+      - src/tools/explore_ability_forecasts.py
+    outs:
+      - reports/forecast_detection/ability_visualizations
+
+  explore_cost_trends:
+    cmd: python -m src.tools.explore_cost_trends --trends data/processed/forecast_detection/cost_trends.csv --forecasts data/processed/forecast_detection/cost_forecasts.csv --output reports/forecast_detection/cost_visualizations
+    deps:
+      - data/processed/forecast_detection/cost_trends.csv
+      - data/processed/forecast_detection/cost_forecasts.csv
+      - src/tools/explore_cost_trends.py
+    outs:
+      - reports/forecast_detection/cost_visualizations
+
+  explore_evaluation_forecasts:
+    cmd: python -m src.tools.explore_evaluation_forecasts --input data/processed/forecast_detection/evaluation_forecasts.csv --output reports/forecast_detection/evaluation_visualizations
+    deps:
+      - data/processed/forecast_detection/evaluation_forecasts.csv
+      - src/tools/explore_evaluation_forecasts.py
+    outs:
+      - reports/forecast_detection/evaluation_visualizations
+
+  explore_simulations:
+    cmd: python -m src.tools.explore_simulations --raw data/processed/forecast_detection/raw_simulation_results.h5 --output reports/forecast_detection/exploration_results.csv --debug
+    deps:
+      - data/processed/forecast_detection/raw_simulation_results.h5
+      - src/explore_simulations.py
+    outs:
+      - reports/forecast_detection/exploration_results.csv
 
   plot_reports:
     cmd: python -m scripts.plot_forecasts --inputs "data/processed/forecast_detection/*.csv" --out reports/forecast_detection/figures/

@@ -16,6 +16,8 @@ def parse_args():
     parser.add_argument("--raw", required=True, help="Path to raw simulation results HDF5 file")
     parser.add_argument("--output", default="reports/simulation_visualizations",
                         help="Output directory for visualizations")
+    parser.add_argument("--csv", action="store_true", help="Export summary as CSV instead of generating visualizations")
+    parser.add_argument("--debug", action="store_true", help="Print debug information")
     return parser.parse_args()
 
 def load_simulation_metadata(h5_file: h5py.File) -> Dict[str, Any]:
@@ -37,6 +39,29 @@ def load_simulation_metadata(h5_file: h5py.File) -> Dict[str, Any]:
     
     return metadata
 
+def recursive_list_groups(h5_file_or_group, prefix=''):
+    """
+    Recursively list all groups in the HDF5 file for debugging.
+    
+    Args:
+        h5_file_or_group: HDF5 file or group to explore
+        prefix: Path prefix for recursive calls
+        
+    Returns:
+        List of all group paths
+    """
+    paths = []
+    for key in h5_file_or_group.keys():
+        item = h5_file_or_group[key]
+        path = f"{prefix}/{key}" if prefix else key
+        
+        if isinstance(item, h5py.Group):
+            paths.append(path)
+            # Recursively explore this group
+            paths.extend(recursive_list_groups(item, path))
+    
+    return paths
+
 def list_available_scenarios(h5_file: h5py.File) -> Dict[str, List[str]]:
     """
     List all available scenarios and their budget options in the HDF5 file.
@@ -49,14 +74,17 @@ def list_available_scenarios(h5_file: h5py.File) -> Dict[str, List[str]]:
     """
     scenarios = {}
     
-    for scenario_name, scenario_group in h5_file.items():
+    for scenario_name in h5_file.keys():
         if scenario_name == 'metadata':
             continue
         
+        scenario_group = h5_file[scenario_name]
+        if not isinstance(scenario_group, h5py.Group):
+            continue
+            
         scenarios[scenario_name] = []
-        if isinstance(scenario_group, h5py.Group):
-            for budget_name in scenario_group.keys():
-                scenarios[scenario_name].append(budget_name)
+        for budget_name in scenario_group.keys():
+            scenarios[scenario_name].append(budget_name)
     
     return scenarios
 
@@ -78,52 +106,38 @@ def get_simulation_paths(h5_file: h5py.File, scenario: Optional[str] = None,
     """
     paths = []
     
-    # Filter by scenario
+    # Get all paths recursively for safety
+    all_paths = recursive_list_groups(h5_file)
+    
+    # Filter out metadata path
+    all_paths = [p for p in all_paths if not p.startswith('metadata')]
+    
+    # Filter paths based on criteria
+    filtered_paths = all_paths
+    
     if scenario:
-        if scenario in h5_file:
-            scenario_groups = [h5_file[scenario]]
-        else:
-            return []
-    else:
-        scenario_groups = [h5_file[name] for name in h5_file.keys() if name != 'metadata']
-    
-    # Filter by budget
-    for scenario_group in scenario_groups:
-        if budget:
-            if budget in scenario_group:
-                budget_groups = [scenario_group[budget]]
-            else:
-                continue
-        else:
-            budget_groups = [scenario_group[name] for name in scenario_group.keys()]
+        filtered_paths = [p for p in filtered_paths if f"/{scenario}/" in f"/{p}/"]
         
-        # Filter by date
-        for budget_group in budget_groups:
-            if date:
-                if date in budget_group:
-                    date_groups = [budget_group[date]]
-                else:
-                    continue
-            else:
-                date_groups = [budget_group[name] for name in budget_group.keys()]
-            
-            # Filter by estimator
-            for date_group in date_groups:
-                if estimator:
-                    if estimator in date_group:
-                        estimator_groups = [date_group[estimator]]
-                    else:
-                        continue
-                else:
-                    estimator_groups = [date_group[name] for name in date_group.keys()]
-                
-                # Get all simulation groups
-                for estimator_group in estimator_groups:
-                    for sim_name in estimator_group.keys():
-                        path = f"{scenario_group.name}/{budget_group.name}/{date_group.name}/{estimator_group.name}/{sim_name}"
-                        paths.append(path)
+    if budget:
+        filtered_paths = [p for p in filtered_paths if f"/{budget}/" in f"/{p}/"]
+        
+    if date:
+        filtered_paths = [p for p in filtered_paths if f"/{date}/" in f"/{p}/"]
+        
+    if estimator:
+        filtered_paths = [p for p in filtered_paths if f"/{estimator}/" in f"/{p}/"]
     
-    return paths
+    # Only include paths that have a 'results' dataset
+    result_paths = []
+    for path in filtered_paths:
+        try:
+            if 'results' in h5_file[path]:
+                result_paths.append(path)
+        except KeyError:
+            # Skip paths that don't exist
+            continue
+    
+    return result_paths
 
 def load_simulation_results(h5_file: h5py.File, path: str) -> Tuple[np.ndarray, Dict[str, Any], Dict[str, Any]]:
     """
@@ -136,22 +150,29 @@ def load_simulation_results(h5_file: h5py.File, path: str) -> Tuple[np.ndarray, 
     Returns:
         Tuple of (results array, simulation metadata, simulation statistics)
     """
-    group = h5_file[path]
-    results = group['results'][:]
-    
-    # Load metadata
-    metadata = {}
-    for key, value in group.attrs.items():
-        metadata[key] = value
-    
-    # Load statistics
-    stats = {}
-    if 'stats' in group:
-        stats_group = group['stats']
-        for key, value in stats_group.attrs.items():
-            stats[key] = value
-    
-    return results, metadata, stats
+    try:
+        group = h5_file[path]
+        if 'results' not in group:
+            return np.array([]), {}, {}
+            
+        results = group['results'][:]
+        
+        # Load metadata
+        metadata = {}
+        for key, value in group.attrs.items():
+            metadata[key] = value
+        
+        # Load statistics
+        stats = {}
+        if 'stats' in group:
+            stats_group = group['stats']
+            for key, value in stats_group.attrs.items():
+                stats[key] = value
+        
+        return results, metadata, stats
+    except KeyError as e:
+        print(f"Error accessing path '{path}': {e}")
+        return np.array([]), {}, {}
 
 def visualize_simulation_distribution(results: np.ndarray, metadata: Dict[str, Any], 
                                      stats: Dict[str, Any], output_path: str) -> None:
@@ -219,6 +240,70 @@ def visualize_simulation_distribution(results: np.ndarray, metadata: Dict[str, A
     plt.savefig(output_path, dpi=150)
     plt.close()
 
+def export_summary_csv(h5_file: h5py.File, output_path: str) -> None:
+    """
+    Export a CSV summary of all simulation results.
+    
+    Args:
+        h5_file: Open HDF5 file
+        output_path: Path to save the CSV file
+    """
+    # Get all paths with results
+    paths = recursive_list_groups(h5_file)
+    paths = [p for p in paths if 'metadata' not in p]
+    
+    records = []
+    
+    for path in paths:
+        try:
+            group = h5_file[path]
+            
+            # Skip groups without results
+            if 'results' not in group:
+                continue
+                
+            # Extract path components
+            path_parts = path.split('/')
+            scenario = path_parts[0] if len(path_parts) > 0 else ""
+            budget = path_parts[1] if len(path_parts) > 1 else ""
+            date = path_parts[2] if len(path_parts) > 2 else ""
+            estimator = path_parts[3] if len(path_parts) > 3 else ""
+            
+            # Get results array
+            results = group['results'][:]
+            
+            # Get metadata from attributes
+            record = {
+                'scenario': scenario,
+                'budget': budget,
+                'date': date,
+                'estimator': estimator,
+                'path': path,
+                'n_results': len(results),
+                'n_valid': np.sum(~np.isnan(results))
+            }
+            
+            # Add attributes
+            for key, value in group.attrs.items():
+                record[f"attr_{key}"] = value
+                
+            # Add statistics if available
+            if 'stats' in group:
+                stats_group = group['stats']
+                for key, value in stats_group.attrs.items():
+                    record[f"stat_{key}"] = value
+            
+            records.append(record)
+        except Exception as e:
+            print(f"Error processing path '{path}': {e}")
+            continue
+    
+    # Create DataFrame and save to CSV
+    df = pd.DataFrame(records)
+    os.makedirs(os.path.dirname(output_path), exist_ok=True)
+    df.to_csv(output_path, index=False)
+    print(f"Saved summary to {output_path}")
+
 def main():
     """Main entry point."""
     args = parse_args()
@@ -231,6 +316,13 @@ def main():
         for key, value in metadata.items():
             print(f"  {key}: {value}")
         
+        # List all groups for debugging if requested
+        if args.debug:
+            print("\nAll HDF5 Groups:")
+            all_groups = recursive_list_groups(h5_file)
+            for group in sorted(all_groups):
+                print(f"  {group}")
+        
         # List available scenarios
         scenarios = list_available_scenarios(h5_file)
         print("\nAvailable Scenarios:")
@@ -241,13 +333,28 @@ def main():
             for budget in budgets:
                 print(f"    {budget}")
         
+        # If CSV export is requested
+        if args.csv:
+            export_summary_csv(h5_file, args.output)
+            return
+        
         # Get all simulation paths
         paths = get_simulation_paths(h5_file)
         print(f"\nFound {len(paths)} simulation results")
         
+        if args.debug:
+            print("\nPaths found:")
+            for path in paths:
+                print(f"  {path}")
+        
         # Generate visualizations for each simulation
         for path in paths:
             results, metadata, stats = load_simulation_results(h5_file, path)
+            
+            # Skip if we couldn't load results
+            if len(results) == 0:
+                print(f"Skipping path '{path}' - no results found")
+                continue
             
             # Create a descriptive output path
             parts = path.strip('/').split('/')

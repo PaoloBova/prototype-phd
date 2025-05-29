@@ -1,5 +1,10 @@
 """
-Fit logistic curves to processed data.
+Fit logistic curves to model performance data across task difficulty levels.
+
+This module analyzes how model success rates vary with task difficulty,
+fitting logistic regression models to estimate ability parameters:
+1. Threshold: The difficulty level where success rate = 0.5
+2. Slope: How quickly success rate changes with difficulty
 """
 import argparse
 import logging
@@ -47,6 +52,13 @@ def fit_curves_by_model(df: pd.DataFrame) -> Dict[str, LogisticFitParams]:
         coeffs = logreg_result.coeffs
         intercept, slope = coeffs[0], coeffs[1]
         threshold = -intercept / slope
+        
+        # Validate that the slope is negative (success decreases with difficulty)
+        if slope >= 0:
+            logging.warning(f"Model {model} has non-negative slope {slope}, which is unexpected.")
+            # In real-world applications, success rate decreases as difficulty increases
+            # So a negative slope is expected in the logistic curve
+        
         # Create params object
         params = LogisticFitParams(
             threshold=float(threshold),
@@ -82,3 +94,4 @@ def main():
 
 if __name__ == "__main__":
     main()
+

@@ -47,6 +47,10 @@ class AbilityForecast(BaseModel):
     slope: float = Field(..., description="Curve slope")
     scenario: str = Field(..., description="Name of forecast scenario")
     model: str = Field(..., description="Model identifier (for future models, this is a placeholder)")
+    threshold_ci_lower: Optional[float] = Field(None, description="Lower bound of 95% confidence interval for threshold")
+    threshold_ci_upper: Optional[float] = Field(None, description="Upper bound of 95% confidence interval for threshold")
+    slope_ci_lower: Optional[float] = Field(None, description="Lower bound of 95% confidence interval for slope")
+    slope_ci_upper: Optional[float] = Field(None, description="Upper bound of 95% confidence interval for slope")
     
     class Config:
         arbitrary_types_allowed = True
@@ -159,6 +163,21 @@ class BootstrapConfig(BaseModel):
     sample_size: Optional[int] = Field(None, description="Size of each bootstrap sample")
     weights: Optional[List[float]] = Field(None, description="Sampling weights")
     random_state: Optional[int] = Field(None, description="Random seed for reproducibility")
+    
+    class Config:
+        arbitrary_types_allowed = True
+
+class ForecastConfig(BaseModel):
+    """Configuration for ability forecasts."""
+    trend_type: TrendType = Field(TrendType.LINEAR, description="Type of trend to apply")
+    start_date: datetime = Field(..., description="Start date for forecasts")
+    end_date: datetime = Field(..., description="End date for forecasts")
+    frequency: str = Field("QE", description="Frequency for forecast dates (QE=quarterly, ME=monthly, YE=yearly)")
+    cycle_period: float = Field(3.0, description="Period in years for cyclic trends")
+    cycle_amplitude: float = Field(0.5, description="Amplitude for cyclic trends")
+    random_walk_std: float = Field(0.1, description="Standard deviation for random walk innovations")
+    random_seed: int = Field(42, description="Random seed for reproducible forecasts")
+    constant_slope_type: Optional[str] = Field("mean", description="Type of constant slope to use (mean, median, min, max, etc.)")
     
     class Config:
         arbitrary_types_allowed = True
