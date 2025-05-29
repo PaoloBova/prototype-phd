@@ -43,7 +43,7 @@ stages:
       - data/processed/forecast_detection/evaluation_forecasts.csv
 
   forecast_simulation:
-    cmd: python -m src.forecast_simulation --in data/processed/forecast_detection/evaluation_forecasts.csv --out data/processed/forecast_detection/simulation_results.csv --config configs/forecast_simulation.json
+    cmd: python -m src.forecast_simulation --in data/processed/forecast_detection/evaluation_forecasts.csv --out data/processed/forecast_detection/simulation_results.csv --raw data/processed/forecast_detection/raw_simulation_results.h5 --config configs/forecast_simulation.json
     deps:
       - data/processed/forecast_detection/evaluation_forecasts.csv
       - src/forecast_simulation.py
@@ -51,6 +51,7 @@ stages:
       - src/simulation.py
     outs:
       - data/processed/forecast_detection/simulation_results.csv
+      - data/processed/forecast_detection/raw_simulation_results.h5
 
   plot_reports:
     cmd: python -m scripts.plot_forecasts --inputs "data/processed/forecast_detection/*.csv" --out reports/forecast_detection/figures/
