@@ -43,18 +43,6 @@ class TrendEstimate(BaseModel):
     base_date: datetime = Field(..., description="Base date for the trend")
     slope_scenarios: Dict[str, float] = Field(default_factory=dict, description="Different slope values")
 
-# class ForecastConfig(BaseModel):
-#     """Configuration for ability forecasts."""
-#     trend_type: TrendType = Field(TrendType.LINEAR, description="Type of trend to apply")
-#     start_date: datetime = Field(..., description="Start date for forecasts")
-#     end_date: datetime = Field(..., description="End date for forecasts")
-#     frequency: str = Field("QE", description="Frequency for forecast dates")
-#     cycle_period: float = Field(3.0, description="Period in years for cyclic trends")
-#     cycle_amplitude: float = Field(0.5, description="Amplitude for cyclic trends")
-#     random_walk_std: float = Field(0.1, description="Standard deviation for random walk innovations")
-#     random_seed: int = Field(42, description="Random seed for reproducibility")
-#     constant_slope_type: Optional[str] = Field("mean", description="Type of constant slope to use")
-
 class ForecastConfig(BaseModel):
     """Configuration for ability forecasts."""
     trend_type: TrendType = Field(TrendType.LINEAR, description="Type of trend to apply")
@@ -136,8 +124,8 @@ def estimate_confidence_intervals(
     
     # Calculate confidence intervals
     intercept_ci = (
-        float(intercept - t_value * intercept_se[0]),
-        float(intercept + t_value * intercept_se[0])
+        float(intercept - t_value * intercept_se),
+        float(intercept + t_value * intercept_se)
     )
     slope_ci = (
         float(slope - t_value * slope_se),
