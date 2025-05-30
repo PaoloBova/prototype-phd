@@ -99,8 +99,10 @@ def calculate_slope_scenarios(slopes: np.ndarray) -> Dict[str, float]:
         "median": float(np.median(slopes)),
         "min": float(np.min(slopes)),
         "max": float(np.max(slopes)),
+        "p10": float(np.percentile(slopes, 5)) if len(slopes) >= 10 else float(np.min(slopes)),
         "p25": float(np.percentile(slopes, 25)) if len(slopes) >= 4 else float(np.min(slopes)),
-        "p75": float(np.percentile(slopes, 75)) if len(slopes) >= 4 else float(np.max(slopes))
+        "p75": float(np.percentile(slopes, 75)) if len(slopes) >= 4 else float(np.max(slopes)),
+        "p90": float(np.percentile(slopes, 95)) if len(slopes) >= 10 else float(np.max(slopes)),
     }
 
 def estimate_confidence_intervals(

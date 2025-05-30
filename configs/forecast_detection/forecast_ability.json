@@ -3,7 +3,7 @@
   "end_date": "2030-12-31T00:00:00",
   "trend_types": ["constant_slope"],
   "frequencies": ["QE"],
-  "constant_slope_types": ["median", "p25", "p75"],
+  "constant_slope_types": ["median", "p10", "p25", "p75", "p90"],
   "cycle_period": 3.0,
   "cycle_amplitude": 0.5,
   "random_walk_std": 0.1,
