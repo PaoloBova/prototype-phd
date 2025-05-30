@@ -37,3 +37,24 @@ stages:
       hash: md5
       md5: eab1e4203259e62ec72a1f435a34965d
       size: 2096
+  forecast_ability:
+    cmd: python -m src.forecast_ability --params output/forecast_detection/logistic_fit_results.json
+      --config configs/forecast_detection/forecast_ability.json --out output/forecast_detection/ability_forecasts.csv
+    deps:
+    - path: configs/forecast_detection/forecast_ability.json
+      hash: md5
+      md5: 6a82ba603a137449c7eddb15c01bf2cb
+      size: 192
+    - path: output/forecast_detection/logistic_fit_results.json
+      hash: md5
+      md5: eab1e4203259e62ec72a1f435a34965d
+      size: 2096
+    - path: src/forecast_ability.py
+      hash: md5
+      md5: 8f27fe495179e2b5c8ed00a193845658
+      size: 20806
+    outs:
+    - path: output/forecast_detection/ability_forecasts.csv
+      hash: md5
+      md5: 2ae578cec69c3ef778eb3bf54deb1349
+      size: 94447
