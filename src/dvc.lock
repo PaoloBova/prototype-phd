@@ -43,29 +43,29 @@ stages:
     deps:
     - path: configs/forecast_detection/forecast_ability.json
       hash: md5
-      md5: c450834394d9f055c85afab0141b2308
-      size: 289
+      md5: 8a89261b6d633096b1c6af465e6cdc5a
+      size: 303
     - path: output/forecast_detection/logistic_fit_results.json
       hash: md5
       md5: eab1e4203259e62ec72a1f435a34965d
       size: 2096
     - path: src/forecast_ability.py
       hash: md5
-      md5: e4d40354ae0cbcff59c102f1b8992226
-      size: 21796
+      md5: f115d5b9bd670b244a8472bfe986d14d
+      size: 21990
     outs:
     - path: output/forecast_detection/ability_forecasts.csv
       hash: md5
-      md5: 5cb48d2c08ca5f1fa369943a895b0149
-      size: 7208
+      md5: 06807c429c453d6bea4f4fae6e5d5b70
+      size: 11896
   explore_ability_forecasts:
     cmd: python -m src.tools.explore_ability_forecasts --input output/forecast_detection/ability_forecasts.csv
       --output reports/forecast_detection/ability_visualizations
     deps:
     - path: output/forecast_detection/ability_forecasts.csv
       hash: md5
-      md5: 5cb48d2c08ca5f1fa369943a895b0149
-      size: 7208
+      md5: 06807c429c453d6bea4f4fae6e5d5b70
+      size: 11896
     - path: src/tools/explore_ability_forecasts.py
       hash: md5
       md5: 24c07edb44ea0aa60fc8f4b67519506c
@@ -73,6 +73,27 @@ stages:
     outs:
     - path: reports/forecast_detection/ability_visualizations
       hash: md5
-      md5: 432938f513700ecb6c32c04d9a1522cc.dir
-      size: 1155339
-      nfiles: 11
+      md5: 6beeb4d206c2d2613b1b679a24a83b40.dir
+      size: 1549071
+      nfiles: 13
+  forecast_cost:
+    cmd: python -m src.forecast_cost --input output/forecast_detection/processed_data.csv
+      --out output/forecast_detection/cost_trends.csv
+    deps:
+    - path: output/forecast_detection/processed_data.csv
+      hash: md5
+      md5: 751a014873ecfa17ce7dabed23864a21
+      size: 4888168
+    - path: src/forecast_cost.py
+      hash: md5
+      md5: 2d6866f3afabf9b316b98f576c2e4e41
+      size: 9282
+    outs:
+    - path: output/forecast_detection/cost_forecasts.csv
+      hash: md5
+      md5: de354144fa57e8c9814cdff298dd0496
+      size: 108147
+    - path: output/forecast_detection/cost_trends.csv
+      hash: md5
+      md5: 99d5aac7d875968844fffa46783c3830
+      size: 2045
