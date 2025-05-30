@@ -64,8 +64,8 @@ stages:
     deps:
     - path: output/forecast_detection/ability_forecasts.csv
       hash: md5
-      md5: 2ae578cec69c3ef778eb3bf54deb1349
-      size: 94447
+      md5: 5cb48d2c08ca5f1fa369943a895b0149
+      size: 7208
     - path: src/tools/explore_ability_forecasts.py
       hash: md5
       md5: 24c07edb44ea0aa60fc8f4b67519506c
@@ -73,6 +73,6 @@ stages:
     outs:
     - path: reports/forecast_detection/ability_visualizations
       hash: md5
-      md5: a03d156688318194fa27edc707eefa68.dir
-      size: 7181426
-      nfiles: 43
+      md5: 432938f513700ecb6c32c04d9a1522cc.dir
+      size: 1155339
+      nfiles: 11
