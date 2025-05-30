@@ -9,458 +9,439 @@ import pandas as pd
 import numpy as np
 from datetime import datetime
 import prototype_phd.data_utils as data_utils
-from typing import Dict, List, Tuple, Optional, Union, Any
+from typing import Dict, List, Tuple, Optional, Any
 from enum import Enum
 from pydantic import BaseModel, Field
 from sklearn.linear_model import LinearRegression
 from scipy import stats
 from .schemas import LogisticFitParams, AbilityForecast
 
-# Define trend types for different parameters
-class ParameterTrendType(str, Enum):
-    """Base enum for parameter trend types."""
+# Enums for configuration
+class TrendType(str, Enum):
+    """Types of forecasting trends."""
     LINEAR = "linear"
-    CONSTANT = "constant"
     CYCLIC = "cyclic"
     RANDOM_WALK = "random_walk"
+    CONSTANT_SLOPE = "constant_slope"
 
-# Define the parameter trend data models
-class ParameterTrend(BaseModel):
-    """Base class for parameter trends."""
-    param_name: str = Field(..., description="Name of the parameter")
-    trend_type: ParameterTrendType = Field(..., description="Type of trend")
+# Data models for validation
+class TrendEstimate(BaseModel):
+    """Results of parameter trend estimation."""
+    # Parameter estimates
+    threshold_intercept: float = Field(..., description="Intercept for threshold trend")
+    threshold_slope: float = Field(..., description="Slope for threshold trend")
+    slope_intercept: float = Field(..., description="Intercept for slope trend")
+    slope_slope: float = Field(..., description="Slope for slope trend")
     
-    # Methods each trend must implement
-    def forecast(self, base_date: datetime, target_date: datetime, 
-                 random_state: Optional[np.random.RandomState] = None) -> float:
-        """Generate a forecast for the parameter at the target date."""
-        raise NotImplementedError("Subclasses must implement forecast method")
+    # Confidence intervals
+    threshold_intercept_ci: Optional[Tuple[float, float]] = Field(None, description="95% CI for threshold intercept")
+    threshold_slope_ci: Optional[Tuple[float, float]] = Field(None, description="95% CI for threshold slope")
+    slope_intercept_ci: Optional[Tuple[float, float]] = Field(None, description="95% CI for slope intercept")
+    slope_slope_ci: Optional[Tuple[float, float]] = Field(None, description="95% CI for slope slope")
+    
+    # Reference data
+    base_date: datetime = Field(..., description="Base date for the trend")
+    slope_scenarios: Dict[str, float] = Field(default_factory=dict, description="Different slope values")
 
-class LinearTrend(ParameterTrend):
-    """Linear trend for a parameter."""
-    intercept: float = Field(..., description="Intercept of the linear trend")
-    slope: float = Field(..., description="Slope of the linear trend (change per year)")
-    intercept_ci: Optional[Tuple[float, float]] = Field(None, description="Confidence interval for intercept")
-    slope_ci: Optional[Tuple[float, float]] = Field(None, description="Confidence interval for slope")
-    
-    def forecast(self, base_date: datetime, target_date: datetime, 
-                 random_state: Optional[np.random.RandomState] = None) -> float:
-        """Generate a forecast based on linear trend."""
-        years_delta = (target_date - base_date).total_seconds() / (365.25 * 24 * 3600)
-        return self.intercept + self.slope * years_delta
-    
-    def forecast_ci(self, base_date: datetime, target_date: datetime) -> Optional[Tuple[float, float]]:
-        """Generate confidence interval for the forecast if available."""
-        if self.intercept_ci is None or self.slope_ci is None:
-            return None
-            
-        years_delta = (target_date - base_date).total_seconds() / (365.25 * 24 * 3600)
-        lower = self.intercept_ci[0] + self.slope_ci[0] * years_delta
-        upper = self.intercept_ci[1] + self.slope_ci[1] * years_delta
-        return (lower, upper)
-
-class ConstantTrend(ParameterTrend):
-    """Constant trend for a parameter."""
-    value: float = Field(..., description="Constant value for the parameter")
-    variance: Optional[float] = Field(None, description="Variance of the parameter value")
-    
-    def forecast(self, base_date: datetime, target_date: datetime, 
-                 random_state: Optional[np.random.RandomState] = None) -> float:
-        """Generate a forecast with constant value."""
-        return self.value
-
-class CyclicTrend(ParameterTrend):
-    """Cyclic trend with underlying linear trend for a parameter."""
-    base_trend: LinearTrend = Field(..., description="Underlying linear trend")
-    period: float = Field(..., description="Period of the cycle in years")
-    amplitude: float = Field(..., description="Amplitude of the cycle")
-    
-    def forecast(self, base_date: datetime, target_date: datetime, 
-                 random_state: Optional[np.random.RandomState] = None) -> float:
-        """Generate a forecast based on linear trend with cyclic component."""
-        years_delta = (target_date - base_date).total_seconds() / (365.25 * 24 * 3600)
-        linear_component = self.base_trend.forecast(base_date, target_date)
-        cyclic_component = self.amplitude * np.sin(2 * np.pi * years_delta / self.period)
-        return linear_component + cyclic_component
-
-class RandomWalkTrend(ParameterTrend):
-    """Random walk trend for a parameter."""
-    base_trend: LinearTrend = Field(..., description="Underlying drift trend")
-    std_dev: float = Field(..., description="Standard deviation of random innovations")
-    last_value: Optional[float] = Field(None, description="Last forecasted value")
-    last_date: Optional[datetime] = Field(None, description="Date of last forecast")
-    
-    def forecast(self, base_date: datetime, target_date: datetime, 
-                 random_state: Optional[np.random.RandomState] = None) -> float:
-        """Generate a forecast based on random walk with drift."""
-        if random_state is None:
-            random_state = np.random.RandomState()
-            
-        if self.last_value is None or self.last_date is None:
-            # First forecast - start from base trend
-            value = self.base_trend.forecast(base_date, target_date)
-            innovation = random_state.normal(0, self.std_dev)
-            forecast_value = value + innovation
-        else:
-            # Continue from last forecast
-            years_delta = (target_date - self.last_date).total_seconds() / (365.25 * 24 * 3600)
-            drift = self.base_trend.slope * years_delta
-            innovation = random_state.normal(0, self.std_dev * np.sqrt(years_delta))
-            forecast_value = self.last_value + drift + innovation
-            
-        # Update state for next forecast
-        self._update_state(target_date, forecast_value)
-        return forecast_value
-    
-    def _update_state(self, date: datetime, value: float):
-        """Update the internal state with the new forecast."""
-        self.last_date = date
-        self.last_value = value
-
-class AbilityTrend(BaseModel):
-    """Container for threshold and slope trends."""
-    threshold_trend: Union[LinearTrend, ConstantTrend, CyclicTrend, RandomWalkTrend] = Field(
-        ..., description="Trend for threshold parameter")
-    slope_trend: Union[LinearTrend, ConstantTrend, CyclicTrend, RandomWalkTrend] = Field(
-        ..., description="Trend for slope parameter")
-    base_date: datetime = Field(..., description="Base date for the trends")
-    historic_dates: List[datetime] = Field(default_factory=list, description="Dates of historical data points")
-    historic_thresholds: List[float] = Field(default_factory=list, description="Historical threshold values")
-    historic_slopes: List[float] = Field(default_factory=list, description="Historical slope values")
+# class ForecastConfig(BaseModel):
+#     """Configuration for ability forecasts."""
+#     trend_type: TrendType = Field(TrendType.LINEAR, description="Type of trend to apply")
+#     start_date: datetime = Field(..., description="Start date for forecasts")
+#     end_date: datetime = Field(..., description="End date for forecasts")
+#     frequency: str = Field("QE", description="Frequency for forecast dates")
+#     cycle_period: float = Field(3.0, description="Period in years for cyclic trends")
+#     cycle_amplitude: float = Field(0.5, description="Amplitude for cyclic trends")
+#     random_walk_std: float = Field(0.1, description="Standard deviation for random walk innovations")
+#     random_seed: int = Field(42, description="Random seed for reproducibility")
+#     constant_slope_type: Optional[str] = Field("mean", description="Type of constant slope to use")
 
 class ForecastConfig(BaseModel):
     """Configuration for ability forecasts."""
-    threshold_trend_type: ParameterTrendType = Field(ParameterTrendType.LINEAR, description="Trend type for threshold")
-    slope_trend_type: ParameterTrendType = Field(ParameterTrendType.CONSTANT, description="Trend type for slope")
-    slope_constant_type: Optional[str] = Field("mean", description="Type of constant slope value if using CONSTANT trend")
+    trend_type: TrendType = Field(TrendType.LINEAR, description="Type of trend to apply")
     start_date: datetime = Field(..., description="Start date for forecasts")
     end_date: datetime = Field(..., description="End date for forecasts")
-    frequency: str = Field("QE", description="Frequency for forecast dates")
+    frequency: str = Field("QE", description="Frequency for forecast dates (QE=quarterly, ME=monthly, YE=yearly)")
     cycle_period: float = Field(3.0, description="Period in years for cyclic trends")
     cycle_amplitude: float = Field(0.5, description="Amplitude for cyclic trends")
     random_walk_std: float = Field(0.1, description="Standard deviation for random walk innovations")
-    random_seed: int = Field(42, description="Random seed for reproducibility")
+    random_seed: int = Field(42, description="Random seed for reproducible forecasts")
+    constant_slope_type: Optional[str] = Field("mean", description="Type of constant slope to use (mean, median, min, max, etc.)")
+    
+    class Config:
+        arbitrary_types_allowed = True
 
-def estimate_linear_trend(dates: List[datetime], values: List[float]) -> Tuple[LinearTrend, Dict[str, Any]]:
-    """
-    Estimate a linear trend from historical data.
+# Multimethod implementation
+def multi(dispatch_fn):
+    """Create a multimethod dispatcher."""
+    def _inner(*args, **kwargs):
+        key = dispatch_fn(*args, **kwargs)
+        fn = _inner.__multi__.get(key, _inner.__multi_default__)
+        return fn(*args, **kwargs)
+    _inner.__dispatch_fn__ = dispatch_fn
+    _inner.__multi__ = {}
+    _inner.__multi_default__ = lambda *args, **kwargs: (_ for _ in ()).throw(
+        ValueError(f"Unsupported type: {dispatch_fn(*args, **kwargs)}"))
+    return _inner
+
+def method(dispatch_fn, dispatch_key=None):
+    """Register a function with a multimethod."""
+    def apply_decorator(fn):
+        if dispatch_key is None:
+            dispatch_fn.__multi_default__ = fn
+        else:
+            dispatch_fn.__multi__[dispatch_key] = fn
+        return dispatch_fn
+    return apply_decorator
+
+# Multimethod for trend estimation
+def trend_type_dispatch(config: ForecastConfig, *args, **kwargs):
+    """Dispatch based on trend type from config."""
+    return config.trend_type
+
+forecast_trend = multi(trend_type_dispatch)
+
+# Common utility functions
+def calculate_slope_scenarios(slopes: np.ndarray) -> Dict[str, float]:
+    """Calculate various slope scenarios from historical data."""
+    return {
+        "mean": float(np.mean(slopes)),
+        "median": float(np.median(slopes)),
+        "min": float(np.min(slopes)),
+        "max": float(np.max(slopes)),
+        "p25": float(np.percentile(slopes, 25)) if len(slopes) >= 4 else float(np.min(slopes)),
+        "p75": float(np.percentile(slopes, 75)) if len(slopes) >= 4 else float(np.max(slopes))
+    }
+
+def estimate_confidence_intervals(
+    years: np.ndarray, 
+    values: np.ndarray, 
+    model: LinearRegression
+) -> Tuple[Optional[Tuple[float, float]], Optional[Tuple[float, float]]]:
+    """Calculate confidence intervals for intercept and slope if enough data points."""
+    n = len(years)
+    if n <= 2:  # Need at least 3 points for confidence intervals
+        return None, None
+        
+    t_value = stats.t.ppf(0.975, n-2)
     
-    Args:
-        dates: List of dates for historical data points
-        values: List of parameter values corresponding to the dates
+    # Calculate standard errors
+    y_pred = model.predict(years)
+    residuals = values - y_pred
+    mse = np.sum(residuals**2) / (n - 2)
+    intercept_se = np.sqrt(mse * (1/n + np.mean(years)**2 / np.sum((years - np.mean(years))**2)))
+    slope_se = np.sqrt(mse / np.sum((years - np.mean(years))**2))
     
-    Returns:
-        Tuple of (LinearTrend object, metadata dictionary)
-    """
-    if len(dates) < 2:
-        return LinearTrend(
-            param_name="unknown",
-            trend_type=ParameterTrendType.LINEAR,
-            intercept=values[0] if values else 0.0,
-            slope=0.0
-        ), {}
+    intercept = model.intercept_
+    slope = model.coef_[0]
     
-    # Convert dates to years since earliest date
+    # Calculate confidence intervals
+    intercept_ci = (
+        float(intercept - t_value * intercept_se[0]),
+        float(intercept + t_value * intercept_se[0])
+    )
+    slope_ci = (
+        float(slope - t_value * slope_se),
+        float(slope + t_value * slope_se)
+    )
+    
+    return intercept_ci, slope_ci
+
+def estimate_linear_trend_core(
+    dates: List[datetime], 
+    thresholds: List[float], 
+    slopes: List[float]
+) -> TrendEstimate:
+    """Core implementation of linear trend estimation."""
+    # Extract dates as years since earliest date
     base_date = min(dates)
     years = np.array([(d - base_date).total_seconds() / (365.25 * 24 * 3600) 
-                    for d in dates]).reshape(-1, 1)
-    vals = np.array(values)
+                     for d in dates]).reshape(-1, 1)
     
-    # Fit linear regression
-    model = LinearRegression()
-    model.fit(years, vals)
-    intercept = float(model.intercept_)
-    slope = float(model.coef_[0])  # Annual change
+    # Fit linear regression for threshold trend
+    threshold_model = LinearRegression()
+    threshold_model.fit(years, thresholds)
+    threshold_intercept = float(threshold_model.intercept_)
+    threshold_slope = float(threshold_model.coef_[0])
     
-    # Calculate confidence intervals if enough data points
-    intercept_ci = None
-    slope_ci = None
-    metadata = {}
+    # Fit linear regression for slope trend
+    slope_model = LinearRegression()
+    slope_model.fit(years, slopes)
+    slope_intercept = float(slope_model.intercept_)
+    slope_slope = float(slope_model.coef_[0])
     
-    n = len(years)
-    if n > 2:  # Need at least 3 points for confidence intervals
-        t_value = stats.t.ppf(0.975, n-2)
-        
-        # Calculate standard errors
-        residuals = vals - model.predict(years)
-        mse = np.sum(residuals**2) / (n - 2)
-        intercept_se = np.sqrt(mse * (1/n + np.mean(years)**2 / np.sum((years - np.mean(years))**2)))
-        slope_se = np.sqrt(mse / np.sum((years - np.mean(years))**2))
-        
-        intercept_ci = (
-            float(intercept - t_value * intercept_se[0]),
-            float(intercept + t_value * intercept_se[0])
-        )
-        slope_ci = (
-            float(slope - t_value * slope_se),
-            float(slope + t_value * slope_se)
-        )
-        
-        metadata = {
-            "r_squared": float(model.score(years, vals)),
-            "mse": float(mse),
-            "residuals": residuals.tolist()
-        }
+    # Calculate confidence intervals
+    threshold_intercept_ci, threshold_slope_ci = estimate_confidence_intervals(
+        years, thresholds, threshold_model
+    )
     
-    return LinearTrend(
-        param_name="unknown",
-        trend_type=ParameterTrendType.LINEAR,
-        intercept=intercept,
-        slope=slope,
-        intercept_ci=intercept_ci,
-        slope_ci=slope_ci
-    ), metadata
-
-def estimate_constant_trend(values: List[float], method: str = "mean") -> ConstantTrend:
-    """
-    Estimate a constant trend using various methods.
+    slope_intercept_ci, slope_slope_ci = estimate_confidence_intervals(
+        years, slopes, slope_model
+    )
     
-    Args:
-        values: List of parameter values
-        method: Method to compute the constant value ("mean", "median", "min", "max", "p25", "p75")
-        
-    Returns:
-        ConstantTrend object
-    """
-    if not values:
-        return ConstantTrend(
-            param_name="unknown",
-            trend_type=ParameterTrendType.CONSTANT,
-            value=0.0
-        )
+    # Calculate slope scenarios
+    slope_scenarios = calculate_slope_scenarios(np.array(slopes))
     
-    if method == "mean":
-        value = float(np.mean(values))
-    elif method == "median":
-        value = float(np.median(values))
-    elif method == "min":
-        value = float(np.min(values))
-    elif method == "max":
-        value = float(np.max(values))
-    elif method == "p25" and len(values) >= 4:
-        value = float(np.percentile(values, 25))
-    elif method == "p75" and len(values) >= 4:
-        value = float(np.percentile(values, 75))
-    else:
-        value = float(np.mean(values))
-        
-    variance = float(np.var(values)) if len(values) > 1 else None
-    
-    return ConstantTrend(
-        param_name="unknown",
-        trend_type=ParameterTrendType.CONSTANT,
-        value=value,
-        variance=variance
+    return TrendEstimate(
+        threshold_intercept=threshold_intercept,
+        threshold_slope=threshold_slope,
+        slope_intercept=slope_intercept,
+        slope_slope=slope_slope,
+        threshold_intercept_ci=threshold_intercept_ci,
+        threshold_slope_ci=threshold_slope_ci,
+        slope_intercept_ci=slope_intercept_ci,
+        slope_slope_ci=slope_slope_ci,
+        base_date=base_date,
+        slope_scenarios=slope_scenarios
     )
 
-def estimate_parameter_trends(all_params: Dict[str, LogisticFitParams], 
-                              config: ForecastConfig) -> AbilityTrend:
-    """
-    Estimate parameter trends based on historical data and configuration.
-    
-    Args:
-        all_params: Dictionary mapping model names to their LogisticFitParams
-        config: Forecast configuration
-        
-    Returns:
-        AbilityTrend object with estimated trends for threshold and slope
-    """
-    # Extract historical parameter values
-    params_list = list(all_params.values())
+# Multimethod implementations for different trend types
+@method(forecast_trend, TrendType.LINEAR)
+def forecast_linear_trend(
+    config: ForecastConfig, 
+    historical_params: Dict[str, LogisticFitParams],
+    forecast_dates: List[datetime]
+) -> List[AbilityForecast]:
+    """Generate forecasts using linear trends for both threshold and slope."""
+    # Extract historical parameters
+    params_list = list(historical_params.values())
     params_list.sort(key=lambda p: p.date)
-    
     dates = [p.date for p in params_list]
     thresholds = [p.threshold for p in params_list]
     slopes = [p.slope for p in params_list]
     
-    base_date = min(dates) if dates else datetime.now()
-    
-    # Log the historical data
-    logging.info(f"Estimating trends from {len(params_list)} models")
-    logging.info(f"Date range: {min(dates)} to {max(dates)}")
-    logging.info(f"Threshold range: {min(thresholds):.2f} to {max(thresholds):.2f}")
-    logging.info(f"Slope range: {min(slopes):.2f} to {max(slopes):.2f}")
-    logging.info(f"Slope values: {', '.join([f'{s:.2f}' for s in slopes])}")
-    
-    # Check if slopes are consistently negative
-    if not all(s < 0 for s in slopes):
-        logging.warning("Some slope values are non-negative, which contradicts expectations")
-        logging.warning("Models with non-negative slopes: " + 
-                       ", ".join([p.model for p in params_list if p.slope >= 0]))
-    
-    # Estimate threshold trend based on configuration
-    if config.threshold_trend_type == ParameterTrendType.LINEAR:
-        threshold_trend, t_meta = estimate_linear_trend(dates, thresholds)
-        threshold_trend.param_name = "threshold"
-        logging.info(f"Estimated linear threshold trend: "
-                    f"{threshold_trend.intercept:.2f} + {threshold_trend.slope:.2f}t per year")
-        if threshold_trend.intercept_ci:
-            logging.info(f"Threshold intercept 95% CI: "
-                        f"({threshold_trend.intercept_ci[0]:.2f}, {threshold_trend.intercept_ci[1]:.2f})")
-            logging.info(f"Threshold slope 95% CI: "
-                        f"({threshold_trend.slope_ci[0]:.2f}, {threshold_trend.slope_ci[1]:.2f})")
-    
-    elif config.threshold_trend_type == ParameterTrendType.CONSTANT:
-        threshold_trend = estimate_constant_trend(thresholds, "mean")
-        threshold_trend.param_name = "threshold"
-        logging.info(f"Using constant threshold value: {threshold_trend.value:.2f}")
-    
-    elif config.threshold_trend_type == ParameterTrendType.CYCLIC:
-        base_trend, _ = estimate_linear_trend(dates, thresholds)
-        threshold_trend = CyclicTrend(
-            param_name="threshold",
-            trend_type=ParameterTrendType.CYCLIC,
-            base_trend=base_trend,
-            period=config.cycle_period,
-            amplitude=config.cycle_amplitude
-        )
-        logging.info(f"Using cyclic threshold trend with period {config.cycle_period} years "
-                    f"and amplitude {config.cycle_amplitude}")
-    
-    elif config.threshold_trend_type == ParameterTrendType.RANDOM_WALK:
-        base_trend, _ = estimate_linear_trend(dates, thresholds)
-        threshold_trend = RandomWalkTrend(
-            param_name="threshold",
-            trend_type=ParameterTrendType.RANDOM_WALK,
-            base_trend=base_trend,
-            std_dev=config.random_walk_std
-        )
-        logging.info(f"Using random walk threshold trend with std_dev {config.random_walk_std}")
-    
-    # Estimate slope trend based on configuration
-    if config.slope_trend_type == ParameterTrendType.LINEAR:
-        slope_trend, s_meta = estimate_linear_trend(dates, slopes)
-        slope_trend.param_name = "slope"
-        logging.info(f"Estimated linear slope trend: "
-                   f"{slope_trend.intercept:.2f} + {slope_trend.slope:.2f}t per year")
-        if slope_trend.intercept_ci:
-            logging.info(f"Slope intercept 95% CI: "
-                        f"({slope_trend.intercept_ci[0]:.2f}, {slope_trend.intercept_ci[1]:.2f})")
-            logging.info(f"Slope slope 95% CI: "
-                        f"({slope_trend.slope_ci[0]:.2f}, {slope_trend.slope_ci[1]:.2f})")
-    
-    elif config.slope_trend_type == ParameterTrendType.CONSTANT:
-        slope_trend = estimate_constant_trend(slopes, config.slope_constant_type)
-        slope_trend.param_name = "slope"
-        logging.info(f"Using constant slope value ({config.slope_constant_type}): {slope_trend.value:.2f}")
-    
-    elif config.slope_trend_type == ParameterTrendType.CYCLIC:
-        base_trend, _ = estimate_linear_trend(dates, slopes)
-        slope_trend = CyclicTrend(
-            param_name="slope",
-            trend_type=ParameterTrendType.CYCLIC,
-            base_trend=base_trend,
-            period=config.cycle_period,
-            amplitude=config.cycle_amplitude / 2  # Usually smaller amplitude for slope
-        )
-        logging.info(f"Using cyclic slope trend with period {config.cycle_period} years "
-                   f"and amplitude {config.cycle_amplitude/2}")
-    
-    elif config.slope_trend_type == ParameterTrendType.RANDOM_WALK:
-        base_trend, _ = estimate_linear_trend(dates, slopes)
-        slope_trend = RandomWalkTrend(
-            param_name="slope",
-            trend_type=ParameterTrendType.RANDOM_WALK,
-            base_trend=base_trend,
-            std_dev=config.random_walk_std / 2  # Usually smaller std_dev for slope
-        )
-        logging.info(f"Using random walk slope trend with std_dev {config.random_walk_std/2}")
-    
-    return AbilityTrend(
-        threshold_trend=threshold_trend,
-        slope_trend=slope_trend,
-        base_date=base_date,
-        historic_dates=dates,
-        historic_thresholds=thresholds,
-        historic_slopes=slopes
-    )
-
-def generate_forecasts(
-    ability_trend: AbilityTrend, 
-    config: ForecastConfig
-) -> List[AbilityForecast]:
-    """
-    Generate forecasts based on parameter trends and forecast configuration.
-    
-    Args:
-        ability_trend: AbilityTrend object with estimated trends
-        config: Forecast configuration
-    
-    Returns:
-        List of AbilityForecast objects for future hypothetical models
-    """
-    # Create date range for forecast
-    forecast_dates = pd.date_range(start=config.start_date, end=config.end_date, freq=config.frequency)
-    
-    # Set random seed for reproducibility
-    random_state = np.random.RandomState(config.random_seed)
-    
-    # Get mean slope for validation
-    avg_slope = np.mean(ability_trend.historic_slopes)
-    
-    forecasts = []
+    # Estimate trends
+    trend = estimate_linear_trend_core(dates, thresholds, slopes)
     
     # Generate forecasts for each date
+    forecasts = []
     for date in forecast_dates:
-        # Forecast threshold parameter
-        threshold = ability_trend.threshold_trend.forecast(
-            ability_trend.base_date, date, random_state)
+        years_delta = (date - trend.base_date).total_seconds() / (365.25 * 24 * 3600)
+        
+        # Calculate forecasted parameters
+        new_threshold = trend.threshold_intercept + trend.threshold_slope * years_delta
+        new_slope = trend.slope_intercept + trend.slope_slope * years_delta
+        
+        # Calculate confidence intervals if available
+        threshold_ci = None
+        if trend.threshold_intercept_ci and trend.threshold_slope_ci:
+            threshold_ci_lower = trend.threshold_intercept_ci[0] + trend.threshold_slope_ci[0] * years_delta
+            threshold_ci_upper = trend.threshold_intercept_ci[1] + trend.threshold_slope_ci[1] * years_delta
+            threshold_ci = (float(threshold_ci_lower), float(threshold_ci_upper))
+        
+        slope_ci = None
+        if trend.slope_intercept_ci and trend.slope_slope_ci:
+            slope_ci_lower = trend.slope_intercept_ci[0] + trend.slope_slope_ci[0] * years_delta
+            slope_ci_upper = trend.slope_intercept_ci[1] + trend.slope_slope_ci[1] * years_delta
+            slope_ci = (float(slope_ci_lower), float(slope_ci_upper))
+        
+        # Ensure slope is negative
+        avg_slope = np.mean(slopes)
+        if new_slope >= 0:
+            new_slope = avg_slope if avg_slope < 0 else -abs(avg_slope)
             
-        # Forecast slope parameter
-        slope = ability_trend.slope_trend.forecast(
-            ability_trend.base_date, date, random_state)
-        
-        # Ensure slope is negative (logistic curve requirement)
-        if slope >= 0:
-            logging.warning(f"Forecast produced invalid positive slope: {slope}. Fixing to negative value.")
-            # Use the average slope from historical data, making it negative if needed
-            slope = avg_slope if avg_slope < 0 else -abs(avg_slope)
-        
-        # Create scenario name based on trend types
-        scenario = f"{config.threshold_trend_type.value}_threshold"
-        
-        if config.slope_trend_type == ParameterTrendType.CONSTANT:
-            scenario += f"_{config.slope_trend_type.value}_{config.slope_constant_type}_slope"
-        else:
-            scenario += f"_{config.slope_trend_type.value}_slope"
-            
-        scenario += f"_{config.frequency}"
-        
-        # Create forecast data dictionary
+        # Create forecast
         forecast_data = {
             "date": date,
-            "threshold": float(threshold),
-            "slope": float(slope),
-            "scenario": scenario,
+            "threshold": float(new_threshold),
+            "slope": float(new_slope),
+            "scenario": f"{config.trend_type.value}_{config.frequency}",
             "model": f"future_model_{date.strftime('%Y%m%d')}"
         }
         
-        # Add confidence intervals if available for linear trends
-        if isinstance(ability_trend.threshold_trend, LinearTrend):
-            threshold_ci = ability_trend.threshold_trend.forecast_ci(ability_trend.base_date, date)
-            if threshold_ci:
-                forecast_data["threshold_ci_lower"] = threshold_ci[0]
-                forecast_data["threshold_ci_upper"] = threshold_ci[1]
-                
-        if isinstance(ability_trend.slope_trend, LinearTrend):
-            slope_ci = ability_trend.slope_trend.forecast_ci(ability_trend.base_date, date)
-            if slope_ci:
-                forecast_data["slope_ci_lower"] = slope_ci[0]
-                forecast_data["slope_ci_upper"] = slope_ci[1]
+        # Add confidence intervals if available
+        if threshold_ci:
+            forecast_data["threshold_ci_lower"] = threshold_ci[0]
+            forecast_data["threshold_ci_upper"] = threshold_ci[1]
         
-        # Create AbilityForecast object
+        if slope_ci:
+            forecast_data["slope_ci_lower"] = slope_ci[0]
+            forecast_data["slope_ci_upper"] = slope_ci[1]
+            
         forecast = AbilityForecast(**forecast_data)
         forecasts.append(forecast)
     
     return forecasts
 
-def read_curve_params(file_path: str) -> Dict[str, LogisticFitParams]:
-    """
-    Read curve parameters from JSON file.
+@method(forecast_trend, TrendType.CONSTANT_SLOPE)
+def forecast_constant_slope_trend(
+    config: ForecastConfig, 
+    historical_params: Dict[str, LogisticFitParams],
+    forecast_dates: List[datetime]
+) -> List[AbilityForecast]:
+    """Generate forecasts using linear trend for threshold but constant slope."""
+    # Extract historical parameters
+    params_list = list(historical_params.values())
+    params_list.sort(key=lambda p: p.date)
+    dates = [p.date for p in params_list]
+    thresholds = [p.threshold for p in params_list]
+    slopes = [p.slope for p in params_list]
     
-    Returns a dictionary where keys are model names and values are 
-    LogisticFitParams objects.
+    # Estimate trends (using same function as linear, but we'll use a constant slope)
+    trend = estimate_linear_trend_core(dates, thresholds, slopes)
+    
+    # Get the constant slope value based on specified type
+    slope_type = config.constant_slope_type or "mean"
+    constant_slope = trend.slope_scenarios.get(slope_type, trend.slope_scenarios["mean"])
+    
+    # Generate forecasts for each date
+    forecasts = []
+    for date in forecast_dates:
+        years_delta = (date - trend.base_date).total_seconds() / (365.25 * 24 * 3600)
+        
+        # Calculate forecasted threshold with linear trend
+        new_threshold = trend.threshold_intercept + trend.threshold_slope * years_delta
+        
+        # Use constant slope
+        new_slope = constant_slope
+            
+        # Create forecast
+        forecast = AbilityForecast(
+            date=date,
+            threshold=float(new_threshold),
+            slope=float(new_slope),
+            scenario=f"{config.trend_type.value}_{slope_type}_{config.frequency}",
+            model=f"future_model_{date.strftime('%Y%m%d')}"
+        )
+        forecasts.append(forecast)
+    
+    return forecasts
+
+@method(forecast_trend, TrendType.CYCLIC)
+def forecast_cyclic_trend(
+    config: ForecastConfig, 
+    historical_params: Dict[str, LogisticFitParams],
+    forecast_dates: List[datetime]
+) -> List[AbilityForecast]:
+    """Generate forecasts using cyclic trends for threshold."""
+    # Extract historical parameters
+    params_list = list(historical_params.values())
+    params_list.sort(key=lambda p: p.date)
+    dates = [p.date for p in params_list]
+    thresholds = [p.threshold for p in params_list]
+    slopes = [p.slope for p in params_list]
+    
+    # Estimate base linear trends
+    trend = estimate_linear_trend_core(dates, thresholds, slopes)
+    
+    # Generate forecasts for each date
+    forecasts = []
+    for date in forecast_dates:
+        years_delta = (date - trend.base_date).total_seconds() / (365.25 * 24 * 3600)
+        
+        # Calculate cyclic component
+        cycle_component = config.cycle_amplitude * np.sin(2 * np.pi * years_delta / config.cycle_period)
+        
+        # Calculate forecasted parameters
+        new_threshold = trend.threshold_intercept + trend.threshold_slope * years_delta + cycle_component
+        new_slope = trend.slope_intercept + trend.slope_slope * years_delta
+        
+        # Ensure slope is negative
+        avg_slope = np.mean(slopes)
+        if new_slope >= 0:
+            new_slope = avg_slope if avg_slope < 0 else -abs(avg_slope)
+            
+        # Create forecast
+        forecast = AbilityForecast(
+            date=date,
+            threshold=float(new_threshold),
+            slope=float(new_slope),
+            scenario=f"{config.trend_type.value}_{config.frequency}",
+            model=f"future_model_{date.strftime('%Y%m%d')}"
+        )
+        forecasts.append(forecast)
+    
+    return forecasts
+
+@method(forecast_trend, TrendType.RANDOM_WALK)
+def forecast_random_walk_trend(
+    config: ForecastConfig, 
+    historical_params: Dict[str, LogisticFitParams],
+    forecast_dates: List[datetime]
+) -> List[AbilityForecast]:
+    """Generate forecasts using random walk with drift."""
+    # Extract historical parameters
+    params_list = list(historical_params.values())
+    params_list.sort(key=lambda p: p.date)
+    dates = [p.date for p in params_list]
+    thresholds = [p.threshold for p in params_list]
+    slopes = [p.slope for p in params_list]
+    
+    # Estimate base linear trends
+    trend = estimate_linear_trend_core(dates, thresholds, slopes)
+    
+    # Set random seed for reproducibility
+    np.random.seed(config.random_seed)
+    
+    # Generate forecasts iteratively (random walk depends on prior forecasts)
+    forecasts = []
+    last_threshold = None
+    last_slope = None
+    last_date = None
+    
+    for date in forecast_dates:
+        years_delta = (date - trend.base_date).total_seconds() / (365.25 * 24 * 3600)
+        
+        if last_threshold is None:
+            # First forecast - start from linear trend
+            new_threshold = trend.threshold_intercept + trend.threshold_slope * years_delta + \
+                np.random.normal(0, config.random_walk_std)
+            new_slope = trend.slope_intercept + trend.slope_slope * years_delta + \
+                np.random.normal(0, config.random_walk_std)
+        else:
+            # Continue from last forecast
+            years_since_last = (date - last_date).total_seconds() / (365.25 * 24 * 3600)
+            
+            # Drift + random innovation
+            new_threshold = last_threshold + trend.threshold_slope * years_since_last + \
+                np.random.normal(0, config.random_walk_std * np.sqrt(years_since_last))
+            new_slope = last_slope + trend.slope_slope * years_since_last + \
+                np.random.normal(0, config.random_walk_std * np.sqrt(years_since_last))
+        
+        # Ensure slope is negative
+        avg_slope = np.mean(slopes)
+        if new_slope >= 0:
+            new_slope = avg_slope if avg_slope < 0 else -abs(avg_slope)
+            
+        # Create forecast
+        forecast = AbilityForecast(
+            date=date,
+            threshold=float(new_threshold),
+            slope=float(new_slope),
+            scenario=f"{config.trend_type.value}_{config.frequency}",
+            model=f"future_model_{date.strftime('%Y%m%d')}"
+        )
+        forecasts.append(forecast)
+        
+        # Update last values for next iteration
+        last_threshold = new_threshold
+        last_slope = new_slope
+        last_date = date
+    
+    return forecasts
+
+# Main functions
+def generate_forecasts(
+    historical_params: Dict[str, LogisticFitParams], 
+    config: ForecastConfig
+) -> List[AbilityForecast]:
     """
+    Generate forecasts based on historical parameters and configuration.
+    
+    Args:
+        historical_params: Dictionary mapping model names to LogisticFitParams
+        config: Forecast configuration
+    
+    Returns:
+        List of AbilityForecast objects for future models
+    """
+    # Create date range for forecast
+    forecast_dates = pd.date_range(start=config.start_date, end=config.end_date, freq=config.frequency)
+    
+    # Use the multimethod to dispatch based on trend type
+    return forecast_trend(config, historical_params, forecast_dates)
+
+def read_curve_params(file_path: str) -> Dict[str, List[LogisticFitParams]]:
+    """Read curve parameters from JSON file."""
     with open(file_path, "r") as f:
         params_dict = json.load(f)
     
@@ -508,45 +489,34 @@ def main():
     logging.info(f"Reading forecast config from {args.config}")
     with open(args.config, 'r') as f:
         config_dict = json.load(f)
-        
     # Convert date strings to datetime objects
     for date_field in ['start_date', 'end_date']:
         if date_field in config_dict and isinstance(config_dict[date_field], str):
             config_dict[date_field] = datetime.fromisoformat(config_dict[date_field].replace('Z', '+00:00'))
     
-    # Generate forecasts for various trend combinations
+    # Generate forecasts for each trend type and frequency
     all_forecasts = []
     
-    # Define the trend combinations to generate
-    trend_combinations = [
-        # Linear threshold with various slope scenarios
-        {"threshold_trend_type": ParameterTrendType.LINEAR, "slope_trend_type": ParameterTrendType.CONSTANT, "slope_constant_type": "mean"},
-        {"threshold_trend_type": ParameterTrendType.LINEAR, "slope_trend_type": ParameterTrendType.CONSTANT, "slope_constant_type": "median"},
-        {"threshold_trend_type": ParameterTrendType.LINEAR, "slope_trend_type": ParameterTrendType.CONSTANT, "slope_constant_type": "min"},
-        {"threshold_trend_type": ParameterTrendType.LINEAR, "slope_trend_type": ParameterTrendType.CONSTANT, "slope_constant_type": "max"},
-        {"threshold_trend_type": ParameterTrendType.LINEAR, "slope_trend_type": ParameterTrendType.LINEAR},
-        
-        # Cyclic threshold with constant slope
-        {"threshold_trend_type": ParameterTrendType.CYCLIC, "slope_trend_type": ParameterTrendType.CONSTANT, "slope_constant_type": "mean"},
-        
-        # Random walk for both parameters
-        {"threshold_trend_type": ParameterTrendType.RANDOM_WALK, "slope_trend_type": ParameterTrendType.CONSTANT, "slope_constant_type": "mean"},
-    ]
-    
-    for trend_combo in trend_combinations:
+    for trend_type in TrendType:
         for freq in ['YE', 'QE', 'ME']:
             # Create a config for this combination
-            combo_config_args = {**config_dict, **trend_combo, 'frequency': freq}
-            combo_config = ForecastConfig(**combo_config_args)
+            trend_config_args = {**config_dict, 'trend_type': trend_type, 'frequency': freq}
             
-            # Generate the trend estimates
-            ability_trend = estimate_parameter_trends(curve_params, combo_config)
-            
-            # Generate forecasts using the estimated trends
-            logging.info(f"Generating forecasts with {combo_config.threshold_trend_type.value} threshold and "
-                       f"{combo_config.slope_trend_type.value} slope at {freq} frequency")
-            forecasts = generate_forecasts(ability_trend, combo_config)
-            all_forecasts.extend(forecasts)
+            if trend_type == TrendType.CONSTANT_SLOPE:
+                # Generate different constant slope scenarios
+                for slope_type in ["mean", "median", "min", "max", "p25", "p75"]:
+                    slope_config_args = {**trend_config_args, 'constant_slope_type': slope_type}
+                    trend_config = ForecastConfig(**slope_config_args)
+                    
+                    logging.info(f"Generating {trend_type.value} ({slope_type}) forecasts at {freq} frequency")
+                    forecasts = generate_forecasts(curve_params, trend_config)
+                    all_forecasts.extend(forecasts)
+            else:
+                trend_config = ForecastConfig(**trend_config_args)
+                
+                logging.info(f"Generating {trend_type.value} forecasts at {freq} frequency")
+                forecasts = generate_forecasts(curve_params, trend_config)
+                all_forecasts.extend(forecasts)
     
     logging.info(f"Generated {len(all_forecasts)} forecasts")
     
