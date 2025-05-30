@@ -167,17 +167,3 @@ class BootstrapConfig(BaseModel):
     class Config:
         arbitrary_types_allowed = True
 
-class ForecastConfig(BaseModel):
-    """Configuration for ability forecasts."""
-    trend_type: TrendType = Field(TrendType.LINEAR, description="Type of trend to apply")
-    start_date: datetime = Field(..., description="Start date for forecasts")
-    end_date: datetime = Field(..., description="End date for forecasts")
-    frequency: str = Field("QE", description="Frequency for forecast dates (QE=quarterly, ME=monthly, YE=yearly)")
-    cycle_period: float = Field(3.0, description="Period in years for cyclic trends")
-    cycle_amplitude: float = Field(0.5, description="Amplitude for cyclic trends")
-    random_walk_std: float = Field(0.1, description="Standard deviation for random walk innovations")
-    random_seed: int = Field(42, description="Random seed for reproducible forecasts")
-    constant_slope_type: Optional[str] = Field("mean", description="Type of constant slope to use (mean, median, min, max, etc.)")
-    
-    class Config:
-        arbitrary_types_allowed = True
