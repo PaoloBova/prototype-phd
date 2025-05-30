@@ -1,8 +1,0 @@
-{
-    "data_path": "external_data/detection_rates/metr_public_evals_all_runs.jsonl",
-    "release_dates_path": "external_data/detection_rates/release_dates.yaml",
-    "output_dir": "data/processed/forecast_detection/",
-    "filters": {
-        "model": ["!human"]
-    }
-}
