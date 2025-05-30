@@ -1,0 +1,39 @@
+schema: '2.0'
+stages:
+  preprocess:
+    cmd: python -m src.preprocess --config configs/forecast_detection/preprocess.json
+    deps:
+    - path: configs/forecast_detection/preprocess.json
+      hash: md5
+      md5: 7a01baf7f38569412238cdc974bc1102
+      size: 259
+    - path: external_data/detection_rates/metr_public_evals_all_runs.jsonl
+      hash: md5
+      md5: 68452f6c550ac971c9fb13c0a1181702
+      size: 9757033
+    - path: src/preprocess.py
+      hash: md5
+      md5: 7288dfb20bfa22ddaaec181726d61964
+      size: 2660
+    outs:
+    - path: output/forecast_detection/processed_data.csv
+      hash: md5
+      md5: 751a014873ecfa17ce7dabed23864a21
+      size: 4888168
+  model_ability_regression:
+    cmd: python -m src.model_ability_regression --input output/forecast_detection/processed_data.csv
+      --output output/forecast_detection/logistic_fit_results.json
+    deps:
+    - path: output/forecast_detection/processed_data.csv
+      hash: md5
+      md5: 751a014873ecfa17ce7dabed23864a21
+      size: 4888168
+    - path: src/model_ability_regression.py
+      hash: md5
+      md5: 0ce4a21739af2e51c12f15e6bb8ef63e
+      size: 3401
+    outs:
+    - path: output/forecast_detection/logistic_fit_results.json
+      hash: md5
+      md5: eab1e4203259e62ec72a1f435a34965d
+      size: 2096
