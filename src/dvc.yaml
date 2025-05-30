@@ -1,0 +1,117 @@
+stages:
+  preprocess:
+    wdir: ..
+    cmd: python -m src.preprocess --config configs/forecast_detection/preprocess.json
+    deps:
+      - external_data/detection_rates/metr_public_evals_all_runs.jsonl
+      - src/preprocess.py
+      - configs/forecast_detection/preprocess.json
+    outs:
+      - output/forecast_detection/processed_data.csv
+
+  model_ability_regression:
+    wdir: ..
+    cmd: python -m src.model_ability_regression --input output/forecast_detection/processed_data.csv --output output/forecast_detection/logistic_fit_results.json
+    deps:
+      - output/forecast_detection/processed_data.csv
+      - src/model_ability_regression.py
+    outs:
+      - output/forecast_detection/logistic_fit_results.json
+
+  forecast_ability:
+    wdir: ..
+    cmd: python -m src.forecast_ability --params output/forecast_detection/logistic_fit_results.json --config configs/forecast_detection/forecast_ability.json --out output/forecast_detection/ability_forecasts.csv
+    deps:
+      - output/forecast_detection/logistic_fit_results.json
+      - configs/forecast_detection/forecast_ability.json
+      - src/forecast_ability.py
+    outs:
+      - output/forecast_detection/ability_forecasts.csv
+
+  forecast_cost:
+    wdir: ..
+    cmd: python -m src.forecast_cost --input output/forecast_detection/processed_data.csv --out output/forecast_detection/cost_trends.csv
+    deps:
+      - output/forecast_detection/processed_data.csv
+      - src/forecast_cost.py
+    outs:
+      - output/forecast_detection/cost_trends.csv
+      - output/forecast_detection/cost_forecasts.csv
+
+  forecast_evaluation:
+    wdir: ..
+    cmd: python -m src.forecast_evaluation --ability output/forecast_detection/ability_forecasts.csv --cost output/forecast_detection/cost_trends.csv --out output/forecast_detection/evaluation_forecasts.csv
+    deps:
+      - output/forecast_detection/ability_forecasts.csv
+      - output/forecast_detection/cost_trends.csv
+      - src/forecast_evaluation.py
+    outs:
+      - output/forecast_detection/evaluation_forecasts.csv
+
+  forecast_simulation:
+    wdir: ..
+    cmd: python -m src.forecast_simulation --in output/forecast_detection/evaluation_forecasts.csv --out output/forecast_detection/simulation_results.csv --raw output/forecast_detection/raw_simulation_results.h5 --config configs/forecast_simulation.json
+    deps:
+      - output/forecast_detection/evaluation_forecasts.csv
+      - src/forecast_simulation.py
+      - configs/forecast_simulation.json
+      - src/simulation.py
+    outs:
+      - output/forecast_detection/simulation_results.csv
+      - output/forecast_detection/raw_simulation_results.h5
+
+  explore_logistic_fits:
+    wdir: ..
+    cmd: python -m src.tools.explore_logistic_fits --fits output/forecast_detection/logistic_fit_results.json --data output/forecast_detection/processed_data.csv --output reports/forecast_detection/logistic_fit_visualizations
+    deps:
+      - output/forecast_detection/logistic_fit_results.json
+      - output/forecast_detection/processed_data.csv
+      - src/tools/explore_logistic_fits.py
+    outs:
+      - reports/forecast_detection/logistic_fit_visualizations
+
+  explore_ability_forecasts:
+    wdir: ..
+    cmd: python -m src.tools.explore_ability_forecasts --input output/forecast_detection/ability_forecasts.csv --output reports/forecast_detection/ability_visualizations
+    deps:
+      - output/forecast_detection/ability_forecasts.csv
+      - src/tools/explore_ability_forecasts.py
+    outs:
+      - reports/forecast_detection/ability_visualizations
+
+  explore_cost_trends:
+    wdir: ..
+    cmd: python -m src.tools.explore_cost_trends --trends output/forecast_detection/cost_trends.csv --forecasts output/forecast_detection/cost_forecasts.csv --output reports/forecast_detection/cost_visualizations
+    deps:
+      - output/forecast_detection/cost_trends.csv
+      - output/forecast_detection/cost_forecasts.csv
+      - src/tools/explore_cost_trends.py
+    outs:
+      - reports/forecast_detection/cost_visualizations
+
+  explore_evaluation_forecasts:
+    wdir: ..
+    cmd: python -m src.tools.explore_evaluation_forecasts --input output/forecast_detection/evaluation_forecasts.csv --output reports/forecast_detection/evaluation_visualizations
+    deps:
+      - output/forecast_detection/evaluation_forecasts.csv
+      - src/tools/explore_evaluation_forecasts.py
+    outs:
+      - reports/forecast_detection/evaluation_visualizations
+
+  explore_simulations:
+    wdir: ..
+    cmd: python -m src.tools.explore_simulations --raw output/forecast_detection/raw_simulation_results.h5 --output reports/forecast_detection/exploration_results.csv --debug
+    deps:
+      - output/forecast_detection/raw_simulation_results.h5
+      - src/explore_simulations.py
+    outs:
+      - reports/forecast_detection/exploration_results.csv
+
+  plot_reports:
+    wdir: ..
+    cmd: python -m scripts.plot_forecasts --inputs "output/forecast_detection/*.csv" --out reports/forecast_detection/figures/
+    deps:
+      - output/forecast_detection/
+      - scripts/plot_forecasts.py
+    outs:
+      - reports/forecast_detection/figures/
