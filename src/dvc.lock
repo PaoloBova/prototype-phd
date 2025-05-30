@@ -43,18 +43,36 @@ stages:
     deps:
     - path: configs/forecast_detection/forecast_ability.json
       hash: md5
-      md5: 6a82ba603a137449c7eddb15c01bf2cb
-      size: 192
+      md5: c450834394d9f055c85afab0141b2308
+      size: 289
     - path: output/forecast_detection/logistic_fit_results.json
       hash: md5
       md5: eab1e4203259e62ec72a1f435a34965d
       size: 2096
     - path: src/forecast_ability.py
       hash: md5
-      md5: 8f27fe495179e2b5c8ed00a193845658
-      size: 20806
+      md5: e4d40354ae0cbcff59c102f1b8992226
+      size: 21796
     outs:
+    - path: output/forecast_detection/ability_forecasts.csv
+      hash: md5
+      md5: 5cb48d2c08ca5f1fa369943a895b0149
+      size: 7208
+  explore_ability_forecasts:
+    cmd: python -m src.tools.explore_ability_forecasts --input output/forecast_detection/ability_forecasts.csv
+      --output reports/forecast_detection/ability_visualizations
+    deps:
     - path: output/forecast_detection/ability_forecasts.csv
       hash: md5
       md5: 2ae578cec69c3ef778eb3bf54deb1349
       size: 94447
+    - path: src/tools/explore_ability_forecasts.py
+      hash: md5
+      md5: 24c07edb44ea0aa60fc8f4b67519506c
+      size: 20723
+    outs:
+    - path: reports/forecast_detection/ability_visualizations
+      hash: md5
+      md5: a03d156688318194fa27edc707eefa68.dir
+      size: 7181426
+      nfiles: 43

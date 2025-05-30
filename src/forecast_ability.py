@@ -46,6 +46,9 @@ class TrendEstimate(BaseModel):
 class ForecastConfig(BaseModel):
     """Configuration for ability forecasts."""
     trend_type: TrendType = Field(TrendType.LINEAR, description="Type of trend to apply")
+    trend_types: List[TrendType] = Field([TrendType.LINEAR], description="Types of trends to generate forecasts for")
+    frequencies: List[str] = Field(["QE"], description="Frequencies for forecast dates (QE=quarterly, ME=monthly, YE=yearly)")
+    constant_slope_types: List[str] = Field(["mean"], description="Types of constant slopes to use when trend_type is CONSTANT_SLOPE")
     start_date: datetime = Field(..., description="Start date for forecasts")
     end_date: datetime = Field(..., description="End date for forecasts")
     frequency: str = Field("QE", description="Frequency for forecast dates (QE=quarterly, ME=monthly, YE=yearly)")
@@ -482,28 +485,45 @@ def main():
         if date_field in config_dict and isinstance(config_dict[date_field], str):
             config_dict[date_field] = datetime.fromisoformat(config_dict[date_field].replace('Z', '+00:00'))
     
-    # Generate forecasts for each trend type and frequency
+    # Convert trend_types from strings to TrendType enum values if present
+    if 'trend_types' in config_dict:
+        config_dict['trend_types'] = [TrendType(t) for t in config_dict['trend_types']]
+    else:
+        # Default to all trend types if not specified
+        config_dict['trend_types'] = list(TrendType)
+    
+    # Create base config
+    base_config = ForecastConfig(**config_dict)
+    
+    # Generate forecasts based on config
     all_forecasts = []
     
-    for trend_type in TrendType:
-        for freq in ['YE', 'QE', 'ME']:
-            # Create a config for this combination
-            trend_config_args = {**config_dict, 'trend_type': trend_type, 'frequency': freq}
-            
+    for trend_type in base_config.trend_types:
+        for freq in base_config.frequencies:
             if trend_type == TrendType.CONSTANT_SLOPE:
                 # Generate different constant slope scenarios
-                for slope_type in ["mean", "median", "min", "max", "p25", "p75"]:
-                    slope_config_args = {**trend_config_args, 'constant_slope_type': slope_type}
-                    trend_config = ForecastConfig(**slope_config_args)
+                for slope_type in base_config.constant_slope_types:
+                    # Create specific config for this combination
+                    specific_config = ForecastConfig(
+                        **{**config_dict, 
+                           'trend_type': trend_type, 
+                           'frequency': freq, 
+                           'constant_slope_type': slope_type}
+                    )
                     
                     logging.info(f"Generating {trend_type.value} ({slope_type}) forecasts at {freq} frequency")
-                    forecasts = generate_forecasts(curve_params, trend_config)
+                    forecasts = generate_forecasts(curve_params, specific_config)
                     all_forecasts.extend(forecasts)
             else:
-                trend_config = ForecastConfig(**trend_config_args)
+                # Create specific config for this combination
+                specific_config = ForecastConfig(
+                    **{**config_dict, 
+                       'trend_type': trend_type, 
+                       'frequency': freq}
+                )
                 
                 logging.info(f"Generating {trend_type.value} forecasts at {freq} frequency")
-                forecasts = generate_forecasts(curve_params, trend_config)
+                forecasts = generate_forecasts(curve_params, specific_config)
                 all_forecasts.extend(forecasts)
     
     logging.info(f"Generated {len(all_forecasts)} forecasts")
