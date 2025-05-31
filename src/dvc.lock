@@ -86,14 +86,36 @@ stages:
       size: 4888168
     - path: src/forecast_cost.py
       hash: md5
-      md5: 2d6866f3afabf9b316b98f576c2e4e41
-      size: 9282
+      md5: 2d1e2bf918168bc0462df3f12c1cb753
+      size: 26517
     outs:
     - path: output/forecast_detection/cost_forecasts.csv
       hash: md5
-      md5: de354144fa57e8c9814cdff298dd0496
-      size: 108147
+      md5: c13883d8f72ca56e80203b80a14d237d
+      size: 90170
     - path: output/forecast_detection/cost_trends.csv
       hash: md5
-      md5: 99d5aac7d875968844fffa46783c3830
-      size: 2045
+      md5: 7e8305d9859bedb08f4e63a6c7f39a8e
+      size: 1830
+  explore_cost_trends:
+    cmd: python -m src.tools.explore_cost_trends --trends output/forecast_detection/cost_trends.csv
+      --forecasts output/forecast_detection/cost_forecasts.csv --output reports/forecast_detection/cost_visualizations
+    deps:
+    - path: output/forecast_detection/cost_forecasts.csv
+      hash: md5
+      md5: c13883d8f72ca56e80203b80a14d237d
+      size: 90170
+    - path: output/forecast_detection/cost_trends.csv
+      hash: md5
+      md5: 7e8305d9859bedb08f4e63a6c7f39a8e
+      size: 1830
+    - path: src/tools/explore_cost_trends.py
+      hash: md5
+      md5: 041463924b532603cfabdc1376d33353
+      size: 24901
+    outs:
+    - path: reports/forecast_detection/cost_visualizations
+      hash: md5
+      md5: 89c3888b204bc6be91fea0e5b2616b16.dir
+      size: 1801867
+      nfiles: 10
