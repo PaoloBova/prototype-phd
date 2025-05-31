@@ -86,8 +86,8 @@ stages:
       size: 4888168
     - path: src/forecast_cost.py
       hash: md5
-      md5: 58bca4b7ab97a3758fd611194cc7677c
-      size: 26521
+      md5: 2d1e2bf918168bc0462df3f12c1cb753
+      size: 26517
     outs:
     - path: output/forecast_detection/cost_forecasts.csv
       hash: md5
@@ -133,10 +133,10 @@ stages:
       size: 1830
     - path: src/forecast_evaluation.py
       hash: md5
-      md5: 1949cfc6f25bff553eef58a5024f1b7a
-      size: 21382
+      md5: 0a4e1890b1a4d5753ff1e3de814791f4
+      size: 30933
     outs:
     - path: output/forecast_detection/evaluation_forecasts.csv
       hash: md5
-      md5: 91858b154e0f6b18b8b45ec6b5e32f34
-      size: 12781293
+      md5: 00b3b8ea8b1ab7b21478d210decad01c
+      size: 18220042
