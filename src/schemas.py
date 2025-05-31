@@ -138,25 +138,6 @@ class NormalTaskSampler(TaskSampler):
         # Truncate to window bounds
         return np.clip(samples, window_lower, window_upper)
 
-class EvaluationForecast(BaseModel):
-    """Parameters defining an evaluation forecast under resource constraints."""
-    ability: AbilityForecast = Field(..., description="Ability forecast for this evaluation")
-    budget_fraction: float = Field(..., description="Budget as fraction of gold standard")
-    budget_scenario: str = Field(..., description="Budget scenario name")
-    window_lower: float = Field(..., description="Lower bound of evaluation window")
-    window_upper: float = Field(..., description="Upper bound of evaluation window")
-    sampler_type: TaskSamplerType = Field(TaskSamplerType.UNIFORM, description="Type of task distribution")
-    total_samples: int = Field(..., description="Total number of tasks to sample")
-    gold_standard_cost: float = Field(..., description="Total cost of gold standard evaluation")
-    available_budget: float = Field(..., description="Available budget (gold_standard_cost * budget_fraction)")
-    adjustment_method: WindowAdjustmentMethod = Field(
-        WindowAdjustmentMethod.UPPER_BOUND, 
-        description="Method used to adjust window based on budget"
-    )
-    
-    class Config:
-        arbitrary_types_allowed = True
-
 class BootstrapConfig(BaseModel):
     """Configuration for bootstrap analysis."""
     n_bootstrap: int = Field(1000, description="Number of bootstrap samples")

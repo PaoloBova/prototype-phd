@@ -2,6 +2,7 @@
 Calculate evaluation forecasts under different resource constraints.
 """
 import argparse
+import json
 import logging
 import math
 import os
@@ -17,7 +18,6 @@ from .schemas import (
     TaskSampler, 
     UniformTaskSampler, 
     NormalTaskSampler,
-    EvaluationForecast,
     WindowAdjustmentMethod, 
     ResourceConstraintType, 
     ResourceConstraint
@@ -39,7 +39,35 @@ class EvaluationScenario(BaseModel):
     doubling_rate: float = Field(..., description="Cost doubling rate in difficulty units")
     budget_fraction: float = Field(..., description="Budget as fraction of gold standard")
     scenario_id: str = Field(..., description="Unique identifier for this scenario")
+    cost_model: str = Field(..., description="Name of the cost model used")
     
+    class Config:
+        arbitrary_types_allowed = True
+
+
+class EvaluationForecast(BaseModel):
+    """Parameters defining an evaluation forecast under resource constraints."""
+    ability: AbilityForecast = Field(..., description="Ability forecast for this evaluation")
+    budget_fraction: float = Field(..., description="Budget as fraction of gold standard")
+    budget_scenario: str = Field(..., description="Budget scenario name")
+    window_lower: float = Field(..., description="Lower bound of evaluation window")
+    window_upper: float = Field(..., description="Upper bound of evaluation window")
+    sampler_type: TaskSamplerType = Field(TaskSamplerType.UNIFORM, description="Type of task distribution")
+    total_samples: int = Field(..., description="Total number of tasks to sample")
+    gold_standard_cost: float = Field(..., description="Total cost of gold standard evaluation")
+    available_budget: float = Field(..., description="Available budget (gold_standard_cost * budget_fraction)")
+    adjustment_method: WindowAdjustmentMethod = Field(
+        WindowAdjustmentMethod.UPPER_BOUND, 
+        description="Method used to adjust window based on budget"
+    )
+    original_window_lower: float = Field(..., description="Original lower bound of evaluation window")
+    original_window_upper: float = Field(..., description="Original upper bound of evaluation window")
+    # Include design parameters
+    repeats_per_unit: int = Field(20, description="Number of sample repeats per difficulty unit")
+    # Include cost model info
+    cost_model: str = Field(..., description="Name of the cost model used")
+    doubling_rate: float = Field(..., description="Cost doubling rate in difficulty units")
+
     class Config:
         arbitrary_types_allowed = True
 
@@ -50,6 +78,7 @@ def parse_args():
     parser.add_argument("--cost", required=True, help="Path to cost trends CSV")
     parser.add_argument("--out", required=True, help="Path to output CSV file")
     parser.add_argument("--config", required=False, help="Path to evaluation config JSON")
+    parser.add_argument("--debug", action="store_true", help="Enable debug output")
     return parser.parse_args()
 
 def expand_ability_forecasts(abilities_df: pd.DataFrame) -> Dict[str, AbilityForecast]:
@@ -68,20 +97,31 @@ def expand_ability_forecasts(abilities_df: pd.DataFrame) -> Dict[str, AbilityFor
     for _, row in abilities_df.iterrows():
         # Create base scenario from median values
         base_scenario_id = f"{row['model']}_{row['scenario']}_base"
-        base_forecast = AbilityForecast(
-            date=pd.to_datetime(row['date']),
-            threshold=float(row['threshold']),
-            slope=float(row['slope']),
-            scenario=row['scenario'],
-            model=row['model']
-        )
-        expanded_forecasts[base_scenario_id] = base_forecast
+
+        # Ensure all fields are present
+        required_fields = {'date', 'threshold', 'slope', 'scenario', 'model'}
+        if not all(field in row for field in required_fields):
+            logging.warning(f"Skipping row missing required fields: {row}")
+            continue
+            
+        try:
+            base_forecast = AbilityForecast(
+                date=pd.to_datetime(row['date']),
+                threshold=float(row['threshold']),
+                slope=float(row['slope']),
+                scenario=row['scenario'],
+                model=row['model']
+            )
+            expanded_forecasts[base_scenario_id] = base_forecast
+        except Exception as e:
+            logging.error(f"Error creating base forecast: {e}, row: {row}")
+            continue
         
         # Create lower bound scenario if confidence intervals are available
         has_threshold_ci = ('threshold_ci_lower' in row and pd.notna(row['threshold_ci_lower']) and 
-                           'threshold_ci_upper' in row and pd.notna(row['threshold_ci_upper']))
+                          'threshold_ci_upper' in row and pd.notna(row['threshold_ci_upper']))
         has_slope_ci = ('slope_ci_lower' in row and pd.notna(row['slope_ci_lower']) and 
-                       'slope_ci_upper' in row and pd.notna(row['slope_ci_upper']))
+                      'slope_ci_upper' in row and pd.notna(row['slope_ci_upper']))
         
         if has_threshold_ci and has_slope_ci:
             # Lower bound scenario (more pessimistic)
@@ -229,11 +269,35 @@ def calculate_evaluation_window(threshold: float, slope: float) -> Tuple[float, 
     Returns:
         Tuple of (lower_bound, upper_bound)
     """
-    delta = np.log(0.9 / 0.1)
-    scale = 1.0 / slope
+    if not np.isfinite(threshold) or not np.isfinite(slope) or slope == 0:
+        logging.warning(f"Invalid parameters for window calculation: threshold={threshold}, slope={slope}")
+        # Return reasonable defaults to avoid crashes
+        return (0.0, 10.0)
+        
+    # Slope should be negative for our logistic model
+    abs_slope = abs(slope)
+    sign = -1 if slope < 0 else 1
     
-    lower_bound = threshold - (scale * delta)
-    upper_bound = threshold + (scale * delta)
+    # For logistic curve, we want to cover from p=0.1 to p=0.9
+    # Using logit transformation: logit(p) = threshold + slope*difficulty
+    # So difficulty = (logit(p) - threshold) / slope
+    # logit(0.1) = ln(0.1/0.9) ≈ -2.2
+    # logit(0.9) = ln(0.9/0.1) ≈ 2.2
+    
+    delta = np.log(9)  # ln(0.9/0.1) = ln(9) ≈ 2.2
+    scale = 1.0 / abs_slope
+    
+    # Lower difficulty corresponds to lower performance (p=0.1)
+    # Higher difficulty corresponds to higher performance (p=0.9)
+    lower_bound = threshold - sign * scale * delta
+    upper_bound = threshold + sign * scale * delta
+    
+    # Ensure lower bound is actually lower than upper bound
+    if lower_bound > upper_bound:
+        lower_bound, upper_bound = upper_bound, lower_bound
+        
+    logging.debug(f"Window calculation: threshold={threshold}, slope={slope}, "
+                  f"result: lower={lower_bound}, upper={upper_bound}")
     
     return lower_bound, upper_bound
 
@@ -249,11 +313,19 @@ def calculate_mean_cost(lower_bound: float, upper_bound: float, doubling_rate: f
     Returns:
         Mean cost per task
     """
-    # E[c] = (2^(u/d) − 2^(b/d)) · (d / W) / ln 2
+    # Ensure bounds are correctly ordered
+    if lower_bound > upper_bound:
+        lower_bound, upper_bound = upper_bound, lower_bound
+        
+    # E[c] = (2^(u/d) − 2^(l/d)) · (d / W) / ln 2
     window_width = upper_bound - lower_bound
     if window_width <= 0:
         return 2.0 ** (lower_bound / doubling_rate)
     
+    if doubling_rate == 0:
+        logging.warning("Doubling rate is zero, using default value")
+        doubling_rate = 1.0
+        
     term1 = 2.0 ** (upper_bound / doubling_rate)
     term2 = 2.0 ** (lower_bound / doubling_rate)
     
@@ -301,8 +373,23 @@ def calculate_evaluation_forecast(
         scenario.ability.threshold, scenario.ability.slope
     )
     
+    # Safety check: ensure window bounds are finite and properly ordered
+    if not (np.isfinite(lower_bound) and np.isfinite(upper_bound)):
+        logging.warning(f"Non-finite window bounds: {lower_bound}, {upper_bound}. "
+                       f"Using default values.")
+        lower_bound, upper_bound = 0.0, 10.0
+        
+    if lower_bound > upper_bound:
+        logging.warning(f"Window bounds reversed: lower={lower_bound}, upper={upper_bound}. "
+                       f"Swapping values.")
+        lower_bound, upper_bound = upper_bound, lower_bound
+    
     # Calculate costs based on window and doubling rate
-    mean_cost = calculate_mean_cost(lower_bound, upper_bound, scenario.doubling_rate)
+    try:
+        mean_cost = calculate_mean_cost(lower_bound, upper_bound, scenario.doubling_rate)
+    except Exception as e:
+        logging.error(f"Error calculating mean cost: {e}. Using default value.")
+        mean_cost = 1.0
     
     # Calculate total samples and cost for gold standard
     window_width = upper_bound - lower_bound
@@ -321,28 +408,50 @@ def calculate_evaluation_forecast(
         # Full budget - use full window
         pass
     elif scenario.budget_fraction <= 0.0:
-        # No budget - no window
+        # No budget - no window (collapse to lower bound)
         adjusted_upper = lower_bound
     else:
-        # Partial budget - adjust according to method
-        if design.adjustment_method == WindowAdjustmentMethod.UPPER_BOUND:
-            # Adjust only the upper bound
-            term1 = (available_budget * np.log(2)) / (design.repeats_per_unit * scenario.doubling_rate)
-            term2 = 2.0 ** (lower_bound / scenario.doubling_rate)
-            adjusted_upper = scenario.doubling_rate * np.log2(term1 + term2)
-            # Ensure we don't exceed the original upper bound
-            adjusted_upper = min(adjusted_upper, upper_bound)
-            
-        elif design.adjustment_method == WindowAdjustmentMethod.BOTH_BOUNDS:
-            # Adjust both bounds to maintain the center point
-            center_point = (upper_bound + lower_bound) / 2
-            affordable_width = (available_budget * np.log(2)) / (design.repeats_per_unit * mean_cost)
-            half_width = min(affordable_width / 2, (upper_bound - lower_bound) / 2)
-            adjusted_lower = center_point - half_width
-            adjusted_upper = center_point + half_width
-            
-        # For SAMPLE_BASED method, we don't adjust the window but instead will
-        # reduce the sampling density (handled in sample generation)
+        try:
+            # Partial budget - adjust according to method
+            if design.adjustment_method == WindowAdjustmentMethod.UPPER_BOUND:
+                # Adjust only the upper bound
+                if scenario.doubling_rate == 0:
+                    # Avoid division by zero
+                    adjusted_upper = lower_bound + (window_width * scenario.budget_fraction)
+                else:
+                    term1 = (available_budget * np.log(2)) / (design.repeats_per_unit * scenario.doubling_rate)
+                    term2 = 2.0 ** (lower_bound / scenario.doubling_rate)
+                    adjusted_upper = scenario.doubling_rate * np.log2(term1 + term2)
+                
+                # Ensure we don't exceed the original upper bound
+                adjusted_upper = min(adjusted_upper, upper_bound)
+                
+            elif design.adjustment_method == WindowAdjustmentMethod.BOTH_BOUNDS:
+                # Adjust both bounds to maintain the center point
+                center_point = (upper_bound + lower_bound) / 2
+                affordable_width = (window_width * scenario.budget_fraction)
+                
+                # Check if we're using cost-based scaling
+                if mean_cost > 0:
+                    affordable_width = (available_budget * np.log(2)) / (design.repeats_per_unit * mean_cost)
+                
+                half_width = min(affordable_width / 2, (upper_bound - lower_bound) / 2)
+                adjusted_lower = center_point - half_width
+                adjusted_upper = center_point + half_width
+                
+            # For SAMPLE_BASED method, we don't adjust the window but instead will
+            # reduce the sampling density (handled later)
+        except Exception as e:
+            logging.error(f"Error adjusting window: {e}. Using original window.")
+            # Fall back to original window or simple scaling
+            if design.adjustment_method == WindowAdjustmentMethod.UPPER_BOUND:
+                adjusted_upper = lower_bound + (window_width * scenario.budget_fraction)
+    
+    # Final safety check - ensure window is properly ordered
+    if adjusted_lower > adjusted_upper:
+        logging.warning(f"Adjusted window bounds reversed: lower={adjusted_lower}, "
+                       f"upper={adjusted_upper}. Swapping values.")
+        adjusted_lower, adjusted_upper = adjusted_upper, adjusted_lower
     
     # Calculate adjusted width and samples
     adjusted_width = max(0, adjusted_upper - adjusted_lower)
@@ -352,18 +461,30 @@ def calculate_evaluation_forecast(
     if design.adjustment_method == WindowAdjustmentMethod.SAMPLE_BASED and scenario.budget_fraction > 0:
         adjusted_samples = int(total_samples * scenario.budget_fraction)
     
-    return EvaluationForecast(
-        ability=scenario.ability,
-        budget_fraction=scenario.budget_fraction,
-        budget_scenario=scenario.scenario_id,
-        window_lower=adjusted_lower,
-        window_upper=adjusted_upper,
-        sampler_type=design.sampler_type,
-        total_samples=adjusted_samples,
-        gold_standard_cost=gold_standard_cost,
-        available_budget=available_budget,
-        adjustment_method=design.adjustment_method
-    )
+    # Create the evaluation forecast with all parameters for complete tracking
+    forecast_data = {
+        "ability": scenario.ability,
+        "budget_fraction": scenario.budget_fraction,
+        "budget_scenario": scenario.scenario_id,
+        "window_lower": adjusted_lower,
+        "window_upper": adjusted_upper,
+        "sampler_type": design.sampler_type,
+        "total_samples": adjusted_samples,
+        "gold_standard_cost": gold_standard_cost,
+        "available_budget": available_budget,
+        "adjustment_method": design.adjustment_method,
+        # Include original window for reference
+        "original_window_lower": lower_bound,
+        "original_window_lower": lower_bound,
+        "original_window_upper": upper_bound,
+        # Include design parameters
+        "repeats_per_unit": design.repeats_per_unit,
+        # Include cost model info
+        "cost_model": scenario.cost_model,
+        "doubling_rate": scenario.doubling_rate
+    }
+    
+    return EvaluationForecast(**forecast_data)
 
 def generate_task_samples(forecast: EvaluationForecast) -> np.ndarray:
     """
@@ -480,7 +601,8 @@ def generate_evaluation_scenarios(
                     ability=ability_forecast,
                     doubling_rate=doubling_rate,
                     budget_fraction=budget_fraction,
-                    scenario_id=scenario_id
+                    scenario_id=scenario_id,
+                    cost_model=cost_params['model']
                 )
                 
                 scenarios.append(scenario)
@@ -503,6 +625,7 @@ def calculate_forecasts_for_all_combinations(
     """
     # Generate all evaluation scenarios
     scenarios = generate_evaluation_scenarios(abilities_df, costs_df)
+    logging.info(f"Generated {len(scenarios)} evaluation scenarios")
     
     # Define evaluation designs to try
     designs = [
@@ -517,36 +640,101 @@ def calculate_forecasts_for_all_combinations(
     # Calculate forecasts for each scenario and design combination
     all_forecasts = []
     
-    for scenario in scenarios:
+    for i, scenario in enumerate(scenarios):
         for design in designs:
-            forecast = calculate_evaluation_forecast(scenario, design)
-            all_forecasts.append(forecast)
+            try:
+                forecast = calculate_evaluation_forecast(scenario, design)
+                all_forecasts.append(forecast)
+                
+                # Log progress periodically
+                if i % 100 == 0:
+                    logging.debug(f"Processed {i} scenarios out of {len(scenarios)}")
+                    
+            except Exception as e:
+                logging.error(f"Error calculating forecast for scenario {scenario.scenario_id}: {e}")
     
     return all_forecasts
 
-def save_forecasts(forecasts: List[EvaluationForecast], output_path: str):
-    """Save evaluation forecasts to CSV file."""
+def save_forecasts(forecasts: List[EvaluationForecast], output_path: str, debug: bool = False):
+    """
+    Save evaluation forecasts to CSV file with complete data fields.
+    
+    Args:
+        forecasts: List of evaluation forecast objects
+        output_path: Path to output CSV file
+        debug: Whether to include additional diagnostic data
+    """
     # Flatten nested objects for CSV format
     flat_records = []
     for forecast in forecasts:
+        # Convert the forecast to a dictionary
         record = forecast.model_dump()
+        
+        # Extract the ability object and flatten it
         ability = record.pop("ability")
-        # Flatten ability attributes with ability_ prefix
+        
+        # First add all the ability fields with ability_ prefix
         for key, value in ability.items():
             record[f"ability_{key}"] = value
+        
+        # Add other fields directly
         flat_records.append(record)
     
+    # Convert to DataFrame
     df = pd.DataFrame(flat_records)
+    
+    # Add sanity check columns
+    df["window_width"] = df["window_upper"] - df["window_lower"]
+    df["original_window_width"] = df["original_window_upper"] - df["original_window_lower"]
+    df["width_ratio"] = df["window_width"] / df["original_window_width"]
+    
+    # Sort columns for better readability
+    priority_cols = [
+        "budget_scenario", "ability_model", "ability_scenario", "cost_model", "budget_fraction",
+        "ability_threshold", "ability_slope", "doubling_rate",
+        "window_lower", "window_upper", "window_width",
+        "original_window_lower", "original_window_upper", "original_window_width",
+        "adjustment_method", "sampler_type"
+    ]
+    
+    # Reorder columns, putting priority columns first
+    existing_cols = set(df.columns)
+    col_order = [col for col in priority_cols if col in existing_cols]
+    col_order.extend([col for col in df.columns if col not in col_order])
+    df = df[col_order]
+    
+    # If in debug mode, include diagnostic data
+    if debug:
+        # Save a detailed JSON with all data
+        json_path = output_path.replace('.csv', '_detailed.json')
+        with open(json_path, 'w') as f:
+            json.dump([forecast.model_dump() for forecast in forecasts], f, 
+                     default=str, indent=2)
+        logging.info(f"Saved detailed forecast data to {json_path}")
     
     # Ensure output directory exists
     os.makedirs(os.path.dirname(output_path), exist_ok=True)
     
+    # Save to CSV
     df.to_csv(output_path, index=False)
+    logging.info(f"Saved {len(df)} forecast records to {output_path}")
+    
+    # Report any potential issues
+    # n_invalid_width = sum(df["window_width"] <= 0)
+    # if n_invalid_width > 0:
+    #     logging.warning(f"Found {n_invalid_width} records with invalid window width (≤0)")
+        
+    # n_reversed = sum(df["window_lower"] > df["window_upper"])
+    # if n_reversed > 0:
+    #     logging.warning(f"Found {n_reversed} records with reversed window bounds")
 
 def main():
     """Main entry point."""
-    data_utils.configure_logging_console()
     args = parse_args()
+    
+    # Configure logging
+    log_level = logging.DEBUG if args.debug else logging.INFO
+    data_utils.configure_logging_console(level=log_level)
     
     logging.info(f"Reading ability forecasts from {args.ability}")
     abilities_df = pd.read_csv(args.ability)
@@ -559,7 +747,16 @@ def main():
     logging.info(f"Calculated {len(forecasts)} evaluation forecasts")
     
     logging.info(f"Saving evaluation forecasts to {args.out}")
-    save_forecasts(forecasts, args.out)
+    save_forecasts(forecasts, args.out, debug=args.debug)
+    
+    # Provide summary statistics
+    df = pd.DataFrame([f.model_dump() for f in forecasts])
+    logging.info(f"Summary statistics:")
+    logging.info(f"  Total forecasts: {len(df)}")
+    logging.info(f"  Number of ability models: {len(abilities_df)}")
+    logging.info(f"  Number of cost models: {df['cost_model'].nunique()}")
+    logging.info(f"  Budget fractions: {sorted(df['budget_fraction'].unique())}")
+    
     logging.info("Complete")
 
 if __name__ == "__main__":
