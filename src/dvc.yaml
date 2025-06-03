@@ -30,9 +30,10 @@ stages:
 
   forecast_cost:
     wdir: ..
-    cmd: python -m src.forecast_cost --input output/forecast_detection/processed_data.csv --out output/forecast_detection/cost_trends.csv
+    cmd: python -m src.forecast_cost --input output/forecast_detection/processed_data.csv --out output/forecast_detection/cost_trends.csv --config configs/forecast_detection/forecast_cost.json
     deps:
       - output/forecast_detection/processed_data.csv
+      - configs/forecast_detection/forecast_cost.json
       - src/forecast_cost.py
     outs:
       - output/forecast_detection/cost_trends.csv
@@ -40,10 +41,11 @@ stages:
 
   forecast_evaluation:
     wdir: ..
-    cmd: python -m src.forecast_evaluation --ability output/forecast_detection/ability_forecasts.csv --cost output/forecast_detection/cost_trends.csv --out output/forecast_detection/evaluation_forecasts.csv
+    cmd: python -m src.forecast_evaluation --ability output/forecast_detection/ability_forecasts.csv --cost output/forecast_detection/cost_trends.csv --out output/forecast_detection/evaluation_forecasts.csv --config configs/forecast_detection/forecast_evaluation.json
     deps:
       - output/forecast_detection/ability_forecasts.csv
       - output/forecast_detection/cost_trends.csv
+      - configs/forecast_detection/forecast_evaluation.json
       - src/forecast_evaluation.py
     outs:
       - output/forecast_detection/evaluation_forecasts.csv
