@@ -1,0 +1,35 @@
+{
+  "simulation": {
+    "n_samples": 1000,
+    "method": "monte_carlo",
+    "correlation_model": "none",
+    "correlation_strength": 0.0,
+    "seed": 42
+  },
+  "methods_to_run": ["threshold", "weighted_score"],
+  "filters": {
+    "ability_variants": ["base", "lower", "upper"],
+    "cost_variants": ["base"],
+    "min_samples": 10,
+    "max_samples": null,
+    "sampler_types": ["uniform"]
+  },
+  "threshold_estimator": {
+    "engine": "scikit-learn",
+    "max_iter": 1000,
+    "C": 1.0
+  },
+  "weighted_score": {
+    "range_min": -5,
+    "range_max": 20,
+    "weight_function": {
+      "type": "linear",
+      "base": 1.0,
+      "slope": 0.5
+    }
+  },
+  "output": {
+    "save_individual_simulations": false,
+    "save_convergence_stats": true
+  }
+}
