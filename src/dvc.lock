@@ -43,8 +43,8 @@ stages:
     deps:
     - path: configs/forecast_detection/forecast_ability.json
       hash: md5
-      md5: 8a89261b6d633096b1c6af465e6cdc5a
-      size: 303
+      md5: 1c11f9ee00493303b122a63f623f4e31
+      size: 275
     - path: output/forecast_detection/logistic_fit_results.json
       hash: md5
       md5: eab1e4203259e62ec72a1f435a34965d
@@ -56,8 +56,8 @@ stages:
     outs:
     - path: output/forecast_detection/ability_forecasts.csv
       hash: md5
-      md5: 06807c429c453d6bea4f4fae6e5d5b70
-      size: 11896
+      md5: 6687806c0540c305bfecb28abf017f77
+      size: 2520
   explore_ability_forecasts:
     cmd: python -m src.tools.explore_ability_forecasts --input output/forecast_detection/ability_forecasts.csv
       --output reports/forecast_detection/ability_visualizations
@@ -78,8 +78,12 @@ stages:
       nfiles: 13
   forecast_cost:
     cmd: python -m src.forecast_cost --input output/forecast_detection/processed_data.csv
-      --out output/forecast_detection/cost_trends.csv
+      --out output/forecast_detection/cost_trends.csv --config configs/forecast_detection/forecast_cost.json
     deps:
+    - path: configs/forecast_detection/forecast_cost.json
+      hash: md5
+      md5: 8597c7613ef1709384e1d20dbf2ea53a
+      size: 286
     - path: output/forecast_detection/processed_data.csv
       hash: md5
       md5: 751a014873ecfa17ce7dabed23864a21
@@ -91,12 +95,12 @@ stages:
     outs:
     - path: output/forecast_detection/cost_forecasts.csv
       hash: md5
-      md5: c13883d8f72ca56e80203b80a14d237d
-      size: 90170
+      md5: 6f23df17ed3ad4100167a4de366a8789
+      size: 5517
     - path: output/forecast_detection/cost_trends.csv
       hash: md5
-      md5: 7e8305d9859bedb08f4e63a6c7f39a8e
-      size: 1830
+      md5: 0c91477d89f6ec4bab7a5df1d2862f5d
+      size: 191
   explore_cost_trends:
     cmd: python -m src.tools.explore_cost_trends --trends output/forecast_detection/cost_trends.csv
       --forecasts output/forecast_detection/cost_forecasts.csv --output reports/forecast_detection/cost_visualizations
@@ -122,39 +126,44 @@ stages:
   forecast_evaluation:
     cmd: python -m src.forecast_evaluation --ability output/forecast_detection/ability_forecasts.csv
       --cost output/forecast_detection/cost_trends.csv --out output/forecast_detection/evaluation_forecasts.csv
+      --config configs/forecast_detection/forecast_evaluation.json
     deps:
+    - path: configs/forecast_detection/forecast_evaluation.json
+      hash: md5
+      md5: 43766c729d4bf7908014b8244008992e
+      size: 639
     - path: output/forecast_detection/ability_forecasts.csv
       hash: md5
-      md5: 06807c429c453d6bea4f4fae6e5d5b70
-      size: 11896
+      md5: 6687806c0540c305bfecb28abf017f77
+      size: 2520
     - path: output/forecast_detection/cost_trends.csv
       hash: md5
-      md5: 7e8305d9859bedb08f4e63a6c7f39a8e
-      size: 1830
+      md5: 0c91477d89f6ec4bab7a5df1d2862f5d
+      size: 191
     - path: src/forecast_evaluation.py
       hash: md5
-      md5: 0a4e1890b1a4d5753ff1e3de814791f4
-      size: 30933
+      md5: 1c7dd50b5e66f4d01e2cd49cac3786aa
+      size: 35903
     outs:
     - path: output/forecast_detection/evaluation_forecasts.csv
       hash: md5
-      md5: 00b3b8ea8b1ab7b21478d210decad01c
-      size: 18220042
+      md5: 93d7acf409d1840de51284d7415a97e0
+      size: 222899
   explore_evaluation_forecasts:
     cmd: python -m src.tools.explore_evaluation_forecasts --input output/forecast_detection/evaluation_forecasts.csv
       --output reports/forecast_detection/evaluation_visualizations
     deps:
     - path: output/forecast_detection/evaluation_forecasts.csv
       hash: md5
-      md5: 00b3b8ea8b1ab7b21478d210decad01c
-      size: 18220042
+      md5: 74f77674806f337e36f84a828c29dc1a
+      size: 688132
     - path: src/tools/explore_evaluation_forecasts.py
       hash: md5
-      md5: 59cc18db1b7e38e5355c8eb20c1c9fc2
-      size: 28523
+      md5: 2835ba71b6cbf2ba11a1c3885da44613
+      size: 28810
     outs:
     - path: reports/forecast_detection/evaluation_visualizations
       hash: md5
-      md5: b40d782135e08a7d847501e628e98600.dir
-      size: 32191410
-      nfiles: 116
+      md5: f6ceb54d0b519f8b84f5616aa90600c5.dir
+      size: 9330962
+      nfiles: 48
