@@ -8,7 +8,10 @@ import matplotlib.pyplot as plt
 import numpy as np
 import os
 import pandas as pd
+import json
+import logging
 from typing import Dict, List, Optional, Tuple, Any
+import seaborn as sns
 
 def parse_args():
     """Parse command line arguments."""
@@ -16,7 +19,15 @@ def parse_args():
     parser.add_argument("--raw", required=True, help="Path to raw simulation results HDF5 file")
     parser.add_argument("--output", default="reports/simulation_visualizations",
                         help="Output directory for visualizations")
+    parser.add_argument("--config", help="Path to simulation config file (optional)")
     parser.add_argument("--csv", action="store_true", help="Export summary as CSV instead of generating visualizations")
+    parser.add_argument("--filter-ability-variant", choices=["base", "lower", "upper"], 
+                        help="Filter by ability variant")
+    parser.add_argument("--filter-cost-variant", choices=["base", "lower", "upper"], 
+                        help="Filter by cost variant")
+    parser.add_argument("--filter-estimator", choices=["threshold", "weighted_score"], 
+                        help="Filter by estimator type")
+    parser.add_argument("--filter-budget", type=float, help="Filter by specific budget fraction")
     parser.add_argument("--debug", action="store_true", help="Print debug information")
     return parser.parse_args()
 
@@ -34,8 +45,17 @@ def load_simulation_metadata(h5_file: h5py.File) -> Dict[str, Any]:
     
     if 'metadata' in h5_file:
         meta_group = h5_file['metadata']
+        # Get top-level attributes
         for key, value in meta_group.attrs.items():
             metadata[key] = value
+        
+        # Get estimator-specific attributes if available
+        for estimator in ['threshold', 'weighted_score']:
+            if estimator in meta_group:
+                estimator_group = meta_group[estimator]
+                metadata[estimator] = {}
+                for key, value in estimator_group.attrs.items():
+                    metadata[estimator][key] = value
     
     return metadata
 
@@ -88,9 +108,68 @@ def list_available_scenarios(h5_file: h5py.File) -> Dict[str, List[str]]:
     
     return scenarios
 
-def get_simulation_paths(h5_file: h5py.File, scenario: Optional[str] = None,
-                        budget: Optional[str] = None, date: Optional[str] = None,
-                        estimator: Optional[str] = None) -> List[str]:
+def extract_metadata_from_path(path: str) -> Dict[str, str]:
+    """
+    Extract metadata components from a HDF5 path.
+    
+    Args:
+        path: Path within the HDF5 file
+        
+    Returns:
+        Dictionary with extracted metadata
+    """
+    parts = path.strip('/').split('/')
+    
+    metadata = {}
+    if len(parts) > 0:
+        # Extract ability variant if present
+        scenario = parts[0]
+        if "_base" in scenario:
+            metadata["ability_variant"] = "base"
+            metadata["ability_scenario"] = scenario.replace("_base", "")
+        elif "_lower" in scenario:
+            metadata["ability_variant"] = "lower"
+            metadata["ability_scenario"] = scenario.replace("_lower", "")
+        elif "_upper" in scenario:
+            metadata["ability_variant"] = "upper" 
+            metadata["ability_scenario"] = scenario.replace("_upper", "")
+        else:
+            metadata["ability_scenario"] = scenario
+            metadata["ability_variant"] = "unknown"
+    
+    if len(parts) > 1:
+        # Extract cost variant if present
+        budget = parts[1]
+        if "_base" in budget:
+            metadata["cost_variant"] = "base"
+            metadata["budget"] = budget.replace("_base", "")
+        elif "_lower" in budget:
+            metadata["cost_variant"] = "lower"
+            metadata["budget"] = budget.replace("_lower", "")
+        elif "_upper" in budget:
+            metadata["cost_variant"] = "upper"
+            metadata["budget"] = budget.replace("_upper", "")
+        else:
+            metadata["budget"] = budget
+            metadata["cost_variant"] = "unknown"
+    
+    if len(parts) > 2:
+        metadata["date"] = parts[2]
+    
+    if len(parts) > 3:
+        metadata["estimator"] = parts[3]
+    
+    return metadata
+
+def get_simulation_paths(
+    h5_file: h5py.File, 
+    scenario: Optional[str] = None,
+    budget: Optional[str] = None, 
+    date: Optional[str] = None,
+    estimator: Optional[str] = None,
+    ability_variant: Optional[str] = None,
+    cost_variant: Optional[str] = None
+) -> List[str]:
     """
     Get paths to simulation results matching the specified criteria.
     
@@ -100,12 +179,12 @@ def get_simulation_paths(h5_file: h5py.File, scenario: Optional[str] = None,
         budget: Optional filter by budget scenario
         date: Optional filter by date
         estimator: Optional filter by estimator type
+        ability_variant: Optional filter by ability variant
+        cost_variant: Optional filter by cost variant
         
     Returns:
         List of paths to matching simulation results
     """
-    paths = []
-    
     # Get all paths recursively for safety
     all_paths = recursive_list_groups(h5_file)
     
@@ -115,24 +194,55 @@ def get_simulation_paths(h5_file: h5py.File, scenario: Optional[str] = None,
     # Filter paths based on criteria
     filtered_paths = all_paths
     
+    # Extract metadata from each path for more detailed filtering
+    path_metadata = {}
+    
+    for path in filtered_paths:
+        path_metadata[path] = extract_metadata_from_path(path)
+    
+    # Apply filters based on metadata
     if scenario:
-        filtered_paths = [p for p in filtered_paths if f"/{scenario}/" in f"/{p}/"]
+        filtered_paths = [p for p in filtered_paths if 
+                          path_metadata[p].get("ability_scenario", "") == scenario]
         
     if budget:
-        filtered_paths = [p for p in filtered_paths if f"/{budget}/" in f"/{p}/"]
+        filtered_paths = [p for p in filtered_paths if 
+                          path_metadata[p].get("budget", "") == budget]
         
     if date:
-        filtered_paths = [p for p in filtered_paths if f"/{date}/" in f"/{p}/"]
+        filtered_paths = [p for p in filtered_paths if 
+                          path_metadata[p].get("date", "") == date]
         
     if estimator:
-        filtered_paths = [p for p in filtered_paths if f"/{estimator}/" in f"/{p}/"]
+        filtered_paths = [p for p in filtered_paths if 
+                          path_metadata[p].get("estimator", "") == estimator]
+    
+    if ability_variant:
+        filtered_paths = [p for p in filtered_paths if 
+                          path_metadata[p].get("ability_variant", "") == ability_variant]
+        
+    if cost_variant:
+        filtered_paths = [p for p in filtered_paths if 
+                          path_metadata[p].get("cost_variant", "") == cost_variant]
     
     # Only include paths that have a 'results' dataset
     result_paths = []
     for path in filtered_paths:
         try:
-            if 'results' in h5_file[path]:
+            # Check if path leads to groups that might contain 'results'
+            current_group = h5_file[path]
+            
+            # Look for groups that directly contain a 'results' dataset
+            has_results = False
+            for key in current_group.keys():
+                if isinstance(current_group[key], h5py.Group) and 'results' in current_group[key]:
+                    has_results = True
+                    result_paths.append(f"{path}/{key}")
+                    
+            # If we didn't find any results directly, check for results in this group
+            if not has_results and 'results' in current_group:
                 result_paths.append(path)
+                
         except KeyError:
             # Skip paths that don't exist
             continue
@@ -162,6 +272,10 @@ def load_simulation_results(h5_file: h5py.File, path: str) -> Tuple[np.ndarray, 
         for key, value in group.attrs.items():
             metadata[key] = value
         
+        # Add path metadata
+        path_metadata = extract_metadata_from_path(path)
+        metadata.update(path_metadata)
+        
         # Load statistics
         stats = {}
         if 'stats' in group:
@@ -174,8 +288,43 @@ def load_simulation_results(h5_file: h5py.File, path: str) -> Tuple[np.ndarray, 
         print(f"Error accessing path '{path}': {e}")
         return np.array([]), {}, {}
 
-def visualize_simulation_distribution(results: np.ndarray, metadata: Dict[str, Any], 
-                                     stats: Dict[str, Any], output_path: str) -> None:
+def get_weight_function_description(config: Dict[str, Any]) -> str:
+    """
+    Generate a description of the weight function from configuration.
+    
+    Args:
+        config: Configuration dictionary with weighted_score section
+        
+    Returns:
+        Text description of weight function
+    """
+    if "weighted_score" not in config:
+        return "Default linear weight function (1.0 + 0.5*x)"
+    
+    weight_config = config["weighted_score"].get("weight_function", {"type": "linear"})
+    weight_type = weight_config.get("type", "linear")
+    
+    if weight_type == "linear":
+        base = weight_config.get("base", 1.0)
+        slope = weight_config.get("slope", 0.5)
+        return f"Linear weight function: {base} + {slope}*x"
+    elif weight_type == "exponential":
+        base = weight_config.get("base", 1.0)
+        scale = weight_config.get("scale", 0.1)
+        return f"Exponential weight function: {base}*exp({scale}*x)"
+    elif weight_type == "constant":
+        value = weight_config.get("value", 1.0)
+        return f"Constant weight function: {value}"
+    else:
+        return f"Unknown weight function type: {weight_type}"
+
+def visualize_simulation_distribution(
+    results: np.ndarray, 
+    metadata: Dict[str, Any], 
+    stats: Dict[str, Any], 
+    output_path: str,
+    config: Optional[Dict[str, Any]] = None
+) -> None:
     """
     Create visualizations for a simulation's result distribution.
     
@@ -184,55 +333,97 @@ def visualize_simulation_distribution(results: np.ndarray, metadata: Dict[str, A
         metadata: Simulation metadata
         stats: Simulation statistics
         output_path: Path to save the visualization
+        config: Optional configuration dictionary
     """
-    plt.figure(figsize=(10, 6))
+    plt.figure(figsize=(12, 8))
     
     # Filter out NaN values for the histogram
     valid_results = results[~np.isnan(results)]
     
     # Plot histogram
-    plt.hist(valid_results, bins=30, alpha=0.7, density=True)
+    sns.histplot(valid_results, kde=True, bins=30)
     
     # Plot vertical lines for key statistics
     if 'true_value' in metadata:
-        plt.axvline(x=metadata['true_value'], color='r', linestyle='-', label=f"True Value: {metadata['true_value']:.3f}")
+        plt.axvline(x=metadata['true_value'], color='r', linestyle='-', 
+                    label=f"True Value: {metadata['true_value']:.3f}")
     
     if 'mean' in stats:
-        plt.axvline(x=stats['mean'], color='g', linestyle='--', label=f"Mean: {stats['mean']:.3f}")
+        plt.axvline(x=stats['mean'], color='g', linestyle='--', 
+                    label=f"Mean: {stats['mean']:.3f}")
     
     if 'median' in stats:
-        plt.axvline(x=stats['median'], color='b', linestyle=':', label=f"Median: {stats['median']:.3f}")
+        plt.axvline(x=stats['median'], color='b', linestyle=':', 
+                    label=f"Median: {stats['median']:.3f}")
     
     if 'lower_ci' in stats and 'upper_ci' in stats:
-        plt.axvline(x=stats['lower_ci'], color='m', linestyle='-.', label=f"95% CI: [{stats['lower_ci']:.3f}, {stats['upper_ci']:.3f}]")
+        plt.axvline(x=stats['lower_ci'], color='m', linestyle='-.', 
+                    label=f"95% CI: [{stats['lower_ci']:.3f}, {stats['upper_ci']:.3f}]")
         plt.axvline(x=stats['upper_ci'], color='m', linestyle='-.')
+        
+        # Shade the confidence interval area
+        plt.axvspan(stats['lower_ci'], stats['upper_ci'], alpha=0.1, color='m')
+    
+    # Get estimator from metadata
+    estimator = metadata.get("estimator", "unknown")
     
     # Add labels and title
-    estimator = os.path.basename(os.path.dirname(os.path.dirname(output_path)))
-    plt.xlabel(f"{estimator} Estimate")
+    plt.xlabel(f"{estimator.capitalize()} Estimate")
     plt.ylabel("Density")
     
     # Create title from metadata
     title_parts = []
+    
+    # Add variant information if available
+    ability_variant = metadata.get("ability_variant", "unknown")
+    cost_variant = metadata.get("cost_variant", "unknown")
+    variant_info = ""
+    
+    if ability_variant != "unknown" and cost_variant != "unknown":
+        variant_info = f" ({ability_variant} ability, {cost_variant} cost)"
+    elif ability_variant != "unknown":
+        variant_info = f" ({ability_variant} ability)"
+    elif cost_variant != "unknown":
+        variant_info = f" ({cost_variant} cost)"
+        
+    scenario_name = metadata.get("ability_scenario", "")
+    if scenario_name:
+        title_parts.append(f"Scenario: {scenario_name}{variant_info}")
+    
+    if 'budget' in metadata:
+        title_parts.append(f"Budget: {metadata['budget']}")
+    
     if 'window_lower' in metadata and 'window_upper' in metadata:
         title_parts.append(f"Window: [{metadata['window_lower']:.1f}, {metadata['window_upper']:.1f}]")
+    
     if 'total_samples' in metadata:
         title_parts.append(f"Samples: {metadata['total_samples']}")
+    
     if 'budget_fraction' in metadata:
         title_parts.append(f"Budget: {metadata['budget_fraction']*100:.0f}%")
+        
+    # Add estimator-specific information
+    if estimator == "weighted_score" and config is not None:
+        title_parts.append(get_weight_function_description(config))
+        
+    elif estimator == "threshold" and config is not None and "threshold_estimator" in config:
+        threshold_config = config["threshold_estimator"]
+        engine = threshold_config.get("engine", "scikit-learn")
+        title_parts.append(f"Engine: {engine}")
     
-    plt.title(", ".join(title_parts))
+    plt.title("\n".join(title_parts))
     plt.legend()
     plt.grid(True, alpha=0.3)
     
     # Add statistics as text
-    textstr = "\n".join([
+    stats_text = "\n".join([
         f"Bias: {stats.get('bias', 'N/A'):.4f}",
         f"Variance: {stats.get('variance', 'N/A'):.4f}",
         f"Skewness: {stats.get('skewness', 'N/A'):.2f}",
-        f"Valid Results: {len(valid_results)}/{len(results)} ({100*len(valid_results)/len(results):.1f}%)"
+        f"Contains True: {stats.get('contains_true', 'N/A')}",
+        f"Valid Results: {len(valid_results)}/{len(results)} ({100*len(valid_results)/len(results) if len(results) > 0 else 0:.1f}%)"
     ])
-    plt.figtext(0.02, 0.02, textstr, fontsize=9)
+    plt.figtext(0.02, 0.02, stats_text, fontsize=9)
     
     # Save figure
     os.makedirs(os.path.dirname(output_path), exist_ok=True)
@@ -249,12 +440,24 @@ def export_summary_csv(h5_file: h5py.File, output_path: str) -> None:
         output_path: Path to save the CSV file
     """
     # Get all paths with results
-    paths = recursive_list_groups(h5_file)
-    paths = [p for p in paths if 'metadata' not in p]
+    result_paths = []
+    
+    # Get all paths
+    all_paths = recursive_list_groups(h5_file)
+    all_paths = [p for p in all_paths if not p.startswith('metadata')]
+    
+    # Find all paths that contain results
+    for path in all_paths:
+        try:
+            group = h5_file[path]
+            if 'results' in group:
+                result_paths.append(path)
+        except Exception:
+            continue
     
     records = []
     
-    for path in paths:
+    for path in result_paths:
         try:
             group = h5_file[path]
             
@@ -262,26 +465,19 @@ def export_summary_csv(h5_file: h5py.File, output_path: str) -> None:
             if 'results' not in group:
                 continue
                 
-            # Extract path components
-            path_parts = path.split('/')
-            scenario = path_parts[0] if len(path_parts) > 0 else ""
-            budget = path_parts[1] if len(path_parts) > 1 else ""
-            date = path_parts[2] if len(path_parts) > 2 else ""
-            estimator = path_parts[3] if len(path_parts) > 3 else ""
+            # Extract metadata from path
+            path_metadata = extract_metadata_from_path(path)
             
             # Get results array
             results = group['results'][:]
             
-            # Get metadata from attributes
+            # Initialize record with path metadata
             record = {
-                'scenario': scenario,
-                'budget': budget,
-                'date': date,
-                'estimator': estimator,
                 'path': path,
                 'n_results': len(results),
                 'n_valid': np.sum(~np.isnan(results))
             }
+            record.update(path_metadata)
             
             # Add attributes
             for key, value in group.attrs.items():
@@ -302,11 +498,111 @@ def export_summary_csv(h5_file: h5py.File, output_path: str) -> None:
     df = pd.DataFrame(records)
     os.makedirs(os.path.dirname(output_path), exist_ok=True)
     df.to_csv(output_path, index=False)
-    print(f"Saved summary to {output_path}")
+    print(f"Saved summary to {output_path} with {len(df)} records")
+
+def plot_bias_variance_tradeoff(h5_file: h5py.File, output_dir: str) -> None:
+    """
+    Create a bias vs. variance plot to visualize the trade-off.
+    
+    Args:
+        h5_file: Open HDF5 file
+        output_dir: Directory to save plots
+    """
+    # Collect bias and variance by estimator, scenario, and budget
+    results = []
+    
+    # Get all paths with results
+    all_paths = get_simulation_paths(h5_file)
+    
+    for path in all_paths:
+        _, metadata, stats = load_simulation_results(h5_file, path)
+        
+        if 'bias' in stats and 'variance' in stats:
+            results.append({
+                'estimator': metadata.get('estimator', 'unknown'),
+                'bias': stats['bias'],
+                'variance': stats['variance'],
+                'ability_scenario': metadata.get('ability_scenario', 'unknown'),
+                'budget': metadata.get('budget', 'unknown'),
+                'total_samples': metadata.get('total_samples', 0),
+                'budget_fraction': metadata.get('budget_fraction', 0),
+                'ability_variant': metadata.get('ability_variant', 'unknown'),
+                'cost_variant': metadata.get('cost_variant', 'unknown')
+            })
+    
+    if not results:
+        print("No bias/variance data available for plotting")
+        return
+    
+    # Convert to DataFrame
+    df = pd.DataFrame(results)
+    
+    # Plot bias vs. variance by estimator
+    plt.figure(figsize=(12, 8))
+    
+    # Use different markers for different estimators
+    for estimator, group in df.groupby('estimator'):
+        scatter = plt.scatter(
+            group['bias'], group['variance'],
+            label=estimator, alpha=0.7,
+            c=group['total_samples'], cmap='viridis',
+            s=50, marker='o' if estimator == 'threshold' else 's'
+        )
+    
+    plt.colorbar(scatter, label='Sample Count')
+    plt.xlabel('Bias')
+    plt.ylabel('Variance')
+    plt.title('Bias vs. Variance Trade-off by Estimator')
+    plt.grid(True, alpha=0.3)
+    plt.legend()
+    
+    # Save plot
+    output_path = os.path.join(output_dir, "bias_variance_tradeoff.png")
+    os.makedirs(os.path.dirname(output_path), exist_ok=True)
+    plt.tight_layout()
+    plt.savefig(output_path, dpi=150)
+    plt.close()
+    
+    print(f"Saved bias-variance trade-off plot to {output_path}")
+    
+    # Plot bias vs. variance by budget fraction
+    if len(df['budget_fraction'].unique()) > 1:
+        plt.figure(figsize=(12, 8))
+        
+        scatter = plt.scatter(
+            df['bias'], df['variance'],
+            c=df['budget_fraction'], cmap='plasma',
+            s=50, alpha=0.7
+        )
+        
+        plt.colorbar(scatter, label='Budget Fraction')
+        plt.xlabel('Bias')
+        plt.ylabel('Variance')
+        plt.title('Bias vs. Variance Trade-off by Budget Fraction')
+        plt.grid(True, alpha=0.3)
+        
+        # Save plot
+        output_path = os.path.join(output_dir, "bias_variance_by_budget.png")
+        os.makedirs(os.path.dirname(output_path), exist_ok=True)
+        plt.tight_layout()
+        plt.savefig(output_path, dpi=150)
+        plt.close()
+        
+        print(f"Saved bias-variance by budget plot to {output_path}")
 
 def main():
     """Main entry point."""
     args = parse_args()
+    
+    # Load configuration if provided
+    config = None
+    if args.config:
+        try:
+            with open(args.config, 'r') as f:
+                config = json.load(f)
+            print(f"Loaded configuration from {args.config}")
+        except Exception as e:
+            print(f"Error loading configuration: {e}")
     
     # Open the HDF5 file
     with h5py.File(args.raw, 'r') as h5_file:
@@ -314,7 +610,12 @@ def main():
         metadata = load_simulation_metadata(h5_file)
         print("Simulation Configuration:")
         for key, value in metadata.items():
-            print(f"  {key}: {value}")
+            if isinstance(value, dict):
+                print(f"  {key}:")
+                for k, v in value.items():
+                    print(f"    {k}: {v}")
+            else:
+                print(f"  {key}: {value}")
         
         # List all groups for debugging if requested
         if args.debug:
@@ -335,17 +636,30 @@ def main():
         
         # If CSV export is requested
         if args.csv:
-            export_summary_csv(h5_file, args.output)
+            csv_path = args.output if args.output.endswith('.csv') else os.path.join(args.output, "simulation_summary.csv")
+            export_summary_csv(h5_file, csv_path)
             return
         
-        # Get all simulation paths
-        paths = get_simulation_paths(h5_file)
+        # Get simulation paths, applying filters if provided
+        paths = get_simulation_paths(
+            h5_file,
+            ability_variant=args.filter_ability_variant,
+            cost_variant=args.filter_cost_variant,
+            estimator=args.filter_estimator
+        )
         print(f"\nFound {len(paths)} simulation results")
         
         if args.debug:
             print("\nPaths found:")
             for path in paths:
                 print(f"  {path}")
+        
+        if not paths:
+            print("No simulation results found matching the filters.")
+            return
+        
+        # Create output directory
+        os.makedirs(args.output, exist_ok=True)
         
         # Generate visualizations for each simulation
         for path in paths:
@@ -357,13 +671,32 @@ def main():
                 continue
             
             # Create a descriptive output path
-            parts = path.strip('/').split('/')
-            output_dir = os.path.join(args.output, *parts[:-1])
-            output_file = os.path.join(output_dir, f"{parts[-1]}.png")
+            path_metadata = extract_metadata_from_path(path)
+            estimator = path_metadata.get("estimator", "unknown")
+            ability_scenario = path_metadata.get("ability_scenario", "unknown")
+            budget = path_metadata.get("budget", "unknown")
+            ability_variant = path_metadata.get("ability_variant", "unknown")
+            cost_variant = path_metadata.get("cost_variant", "unknown")
             
-            visualize_simulation_distribution(results, metadata, stats, output_file)
+            # Create descriptive filename
+            filename = f"{estimator}_{ability_scenario}"
+            if ability_variant != "unknown":
+                filename += f"_{ability_variant}"
+            filename += f"_{budget}"
+            if cost_variant != "unknown":
+                filename += f"_{cost_variant}"
+            
+            # Clean up filename to remove special characters
+            safe_filename = "".join(c if c.isalnum() or c in "_-." else "_" for c in filename)
+            output_path = os.path.join(args.output, f"{safe_filename}.png")
+            
+            visualize_simulation_distribution(results, metadata, stats, output_path, config)
+            print(f"Created visualization: {output_path}")
         
-        print(f"Visualizations saved to {args.output}")
+        # Generate additional plots
+        plot_bias_variance_tradeoff(h5_file, args.output)
+        
+        print(f"All visualizations saved to {args.output}")
 
 if __name__ == "__main__":
     main()

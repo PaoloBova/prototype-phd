@@ -534,7 +534,25 @@ def run_simulations(
                 # Calculate statistics
                 stats = calculate_stats(sim_results, estimator, true_value)
                 
-                # Create sensitivity result
+                # Create additional fields dictionary with all necessary metadata for analysis
+                additional_fields = {
+                    "ability_id": forecast.ability_id,
+                    "cost_id": forecast.cost_id,
+                    "design_id": forecast.design_id,
+                    "budget_fraction": forecast.budget_fraction,
+                }
+                
+                # Add variant information if available
+                if hasattr(forecast, "ability_variant"):
+                    additional_fields["ability_variant"] = forecast.ability_variant
+                if hasattr(forecast, "cost_variant"):
+                    additional_fields["cost_variant"] = forecast.cost_variant
+                if hasattr(forecast, "base_ability_id"):
+                    additional_fields["base_ability_id"] = forecast.base_ability_id
+                if hasattr(forecast, "base_cost_id"):
+                    additional_fields["base_cost_id"] = forecast.base_cost_id
+                
+                # Create sensitivity result with additional fields
                 sensitivity_result = SensitivityResult(
                     ability_scenario=forecast.ability.scenario,
                     budget_scenario=forecast.budget_scenario,
@@ -544,7 +562,8 @@ def run_simulations(
                     variance=float(stats["variance"]),
                     ci_lower=float(stats["lower_ci"]),
                     ci_upper=float(stats["upper_ci"]),
-                    contains_true=bool(stats["contains_true"])
+                    contains_true=bool(stats["contains_true"]),
+                    **additional_fields
                 )
                 
                 results.append(sensitivity_result)
@@ -569,7 +588,12 @@ def run_simulations(
                         'total_samples': forecast.total_samples,
                         'threshold': forecast.ability.threshold,
                         'slope': forecast.ability.slope,
-                        'sampler_type': forecast.sampler_type
+                        'sampler_type': forecast.sampler_type,
+                        # Add the same additional fields here
+                        'ability_id': forecast.ability_id,
+                        'cost_id': forecast.cost_id,
+                        'design_id': forecast.design_id,
+                        'budget_fraction': forecast.budget_fraction
                     },
                     'stats': stats
                 }
@@ -578,6 +602,9 @@ def run_simulations(
                 if hasattr(forecast, "ability_variant") and hasattr(forecast, "cost_variant"):
                     raw_results[sim_id]['metadata']['ability_variant'] = forecast.ability_variant
                     raw_results[sim_id]['metadata']['cost_variant'] = forecast.cost_variant
+                if hasattr(forecast, "base_ability_id") and hasattr(forecast, "base_cost_id"):
+                    raw_results[sim_id]['metadata']['base_ability_id'] = forecast.base_ability_id
+                    raw_results[sim_id]['metadata']['base_cost_id'] = forecast.base_cost_id
     finally:
         # Close the HDF5 file if it was opened
         if raw_file is not None:

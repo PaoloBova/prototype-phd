@@ -75,6 +75,14 @@ class SensitivityResult(BaseModel):
     ci_lower: float = Field(..., description="Lower bound of confidence interval")
     ci_upper: float = Field(..., description="Upper bound of confidence interval")
     contains_true: bool = Field(..., description="Whether CI contains true value")
+    ability_id: Optional[str] = Field(None, description="ID of the ability forecast used")
+    cost_id: Optional[str] = Field(None, description="ID of the cost trend used")
+    design_id: Optional[str] = Field(None, description="ID of the evaluation design")
+    budget_fraction: Optional[float] = Field(None, description="Budget as fraction of gold standard")
+    ability_variant: Optional[str] = Field(None, description="Variant of ability model (base, lower, upper)")
+    cost_variant: Optional[str] = Field(None, description="Variant of cost model (base, lower, upper)")
+    base_ability_id: Optional[str] = Field(None, description="Base ability ID without variant suffix")
+    base_cost_id: Optional[str] = Field(None, description="Base cost ID without variant suffix")
     
     class Config:
         arbitrary_types_allowed = True
