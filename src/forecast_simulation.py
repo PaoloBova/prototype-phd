@@ -32,7 +32,7 @@ def parse_args():
     parser.add_argument("--in", dest="input", required=True, help="Path to evaluation forecasts CSV")
     parser.add_argument("--out", required=True, help="Path to output CSV file")
     parser.add_argument("--raw", required=False, help="Path to raw simulation results HDF5 file")
-    parser.add_argument("--config", default="configs/forecast_sensitivity.json", 
+    parser.add_argument("--config", default="configs/forecast_detection/forecast_simulation.json", 
                         help="Path to sensitivity config file")
     parser.add_argument("--debug", action="store_true", help="Run in debug mode with limited forecasts")
     return parser.parse_args()
@@ -105,9 +105,34 @@ def create_evaluation_forecast_from_row(row: pd.Series) -> EvaluationForecast:
     
     return EvaluationForecast(**forecast_data)
 
-def calculate_true_weighted_score(threshold: float, slope: float, 
-                                 range_min: float = -5, range_max: float = 20,
-                                 weight_fn: Callable[[float], float] = lambda x: 1.0 + 0.5 * x) -> float:
+def create_weight_function(weight_config: Dict[str, Any]) -> Callable[[float], float]:
+    """
+    Create a weight function based on configuration.
+    
+    Args:
+        weight_config: Weight function configuration
+        
+    Returns:
+        Callable weight function
+    """
+    weight_type = weight_config.get("type", "linear")
+    
+    if weight_type == "linear":
+        base = weight_config.get("base", 1.0)
+        slope = weight_config.get("slope", 0.5)
+        return lambda x: base + slope * x
+    elif weight_type == "exponential":
+        base = weight_config.get("base", 1.0)
+        scale = weight_config.get("scale", 0.1)
+        return lambda x: base * np.exp(scale * x)
+    elif weight_type == "constant":
+        value = weight_config.get("value", 1.0)
+        return lambda x: value
+    else:
+        logging.warning(f"Unsupported weight function type: {weight_type}, using default linear")
+        return lambda x: 1.0 + 0.5 * x
+
+def calculate_true_weighted_score(threshold: float, slope: float, config: Dict[str, Any]) -> float:
     """
     Calculate the true weighted score for a given logistic curve.
     
@@ -117,13 +142,15 @@ def calculate_true_weighted_score(threshold: float, slope: float,
     Args:
         threshold: Threshold parameter of logistic curve
         slope: Slope parameter of logistic curve
-        range_min: Minimum difficulty to consider
-        range_max: Maximum difficulty to consider
-        weight_fn: Function mapping difficulty to weight
+        config: Configuration for the calculation
     
     Returns:
         True weighted score
     """
+    range_min = config.get("range_min", -5)
+    range_max = config.get("range_max", 20)
+    weight_fn = create_weight_function(config.get("weight_function", {"type": "linear"}))
+    
     # Create a fine grid of difficulties
     diff_grid = np.linspace(range_min, range_max, 1000)
     
@@ -141,7 +168,8 @@ def calculate_true_weighted_score(threshold: float, slope: float,
 def simulate_estimator(
     forecast: EvaluationForecast,
     simulation_config: SimulationConfig,
-    estimator: str
+    estimator: str,
+    config: Dict[str, Any]
 ) -> np.ndarray:
     """
     Simulate an estimator distribution using the specified configuration.
@@ -150,20 +178,24 @@ def simulate_estimator(
         forecast: Evaluation forecast to simulate
         simulation_config: Simulation configuration
         estimator: Which estimator to use ("threshold" or "weighted_score")
+        config: Configuration for estimators
         
     Returns:
         Array of simulation results
     """
     # Set up the analysis function based on the specified estimator
     if estimator == "threshold":
-        logreg_config = prototype_phd.stats.LogRegConfig(engine="scikit-learn")
+        threshold_config = config.get("threshold_estimator", {})
+        logreg_config = prototype_phd.stats.LogRegConfig(**threshold_config)
         analysis_fn = lambda tasks, outcomes: prototype_phd.stats.compute_threshold(
             tasks[:, None], outcomes,
             config=logreg_config,
         )
     elif estimator == "weighted_score":
+        weighted_score_config = config.get("weighted_score", {})
+        weight_fn = create_weight_function(weighted_score_config.get("weight_function", {"type": "linear"}))
         analysis_fn = lambda tasks, outcomes: weighted_score_estimator(
-            tasks, outcomes, lambda x: 1.0 + 0.5 * x
+            tasks, outcomes, weight_fn
         )
     else:
         raise ValueError(f"Unsupported estimator: {estimator}")
@@ -182,13 +214,14 @@ def simulate_estimator(
 
     return results
 
-def calculate_true_value(estimator: str, forecast: EvaluationForecast) -> float:
+def calculate_true_value(estimator: str, forecast: EvaluationForecast, config: Dict[str, Any]) -> float:
     """
     Calculate the true value for a given estimator and forecast.
     
     Args:
         estimator: Type of estimator ("threshold" or "weighted_score")
         forecast: Evaluation forecast
+        config: Configuration for calculation
         
     Returns:
         True value for the estimator
@@ -196,11 +229,11 @@ def calculate_true_value(estimator: str, forecast: EvaluationForecast) -> float:
     if estimator == "threshold":
         return forecast.ability.threshold
     elif estimator == "weighted_score":
-        weight_fn = lambda x: 1.0 + 0.5 * x
+        weighted_score_config = config.get("weighted_score", {})
         return calculate_true_weighted_score(
             forecast.ability.threshold,
             forecast.ability.slope,
-            weight_fn=weight_fn
+            weighted_score_config
         )
     else:
         raise ValueError(f"Unsupported estimator: {estimator}")
@@ -249,6 +282,49 @@ def calculate_stats(
         stats["valid_ratio"] = len(valid_results) / len(results) if len(results) > 0 else 0.0
     
     return stats
+
+def filter_forecasts(
+    forecasts_df: pd.DataFrame, 
+    filters: Dict[str, Any]
+) -> pd.DataFrame:
+    """
+    Filter forecasts based on configuration.
+    
+    Args:
+        forecasts_df: DataFrame with evaluation forecasts
+        filters: Filter configuration
+        
+    Returns:
+        Filtered DataFrame
+    """
+    filtered_df = forecasts_df.copy()
+    
+    # Basic sample size filter
+    min_samples = filters.get("min_samples")
+    if min_samples is not None:
+        filtered_df = filtered_df[filtered_df["total_samples"] >= min_samples]
+    
+    max_samples = filters.get("max_samples")
+    if max_samples is not None:
+        filtered_df = filtered_df[filtered_df["total_samples"] <= max_samples]
+    
+    # Filter by variants
+    ability_variants = filters.get("ability_variants")
+    if ability_variants is not None and "ability_variant" in filtered_df.columns:
+        filtered_df = filtered_df[filtered_df["ability_variant"].isin(ability_variants)]
+    
+    cost_variants = filters.get("cost_variants")
+    if cost_variants is not None and "cost_variant" in filtered_df.columns:
+        filtered_df = filtered_df[filtered_df["cost_variant"].isin(cost_variants)]
+    
+    # Filter by sampler type
+    sampler_types = filters.get("sampler_types")
+    if sampler_types is not None:
+        filtered_df = filtered_df[filtered_df["sampler_type"].isin(sampler_types)]
+    
+    logging.info(f"Filtered from {len(forecasts_df)} to {len(filtered_df)} forecasts")
+    
+    return filtered_df
 
 def generate_simulation_id(forecast: EvaluationForecast, estimator: str, sim_config: SimulationConfig) -> str:
     """
@@ -404,6 +480,11 @@ def run_simulations(
     with open(config_path, 'r') as f:
         config_data = json.load(f)
     
+    # Get filters from config and apply them
+    filters = config_data.get("filters", {})
+    filtered_df = filter_forecasts(forecasts_df, filters)
+    
+    # Extract simulation configuration
     simulation_config = SimulationConfig(**config_data["simulation"])
     methods_to_run = config_data.get("methods_to_run", ["threshold", "weighted_score"])
     
@@ -417,12 +498,21 @@ def run_simulations(
         for key, value in simulation_config.model_dump().items():
             if isinstance(value, (str, int, float, bool)):
                 meta_group.attrs[key] = value
+        
+        # Store estimator configs if save_individual_simulations is enabled
+        if config_data.get("output", {}).get("save_individual_simulations", False):
+            for estimator in methods_to_run:
+                if estimator in config_data:
+                    estimator_group = meta_group.create_group(estimator)
+                    for key, value in config_data[estimator].items():
+                        if isinstance(value, (str, int, float, bool)):
+                            estimator_group.attrs[key] = value
     else:
         raw_file = None
     
     try:
         # Process each evaluation forecast
-        for _, row in tqdm.tqdm(forecasts_df.iterrows(), total=len(forecasts_df)):
+        for _, row in tqdm.tqdm(filtered_df.iterrows(), total=len(filtered_df)):
             # Skip scenarios with no samples
             if row["total_samples"] <= 0:
                 continue
@@ -436,10 +526,10 @@ def run_simulations(
                 sim_id = generate_simulation_id(forecast, estimator, simulation_config)
                 
                 # Run the simulation and get results array
-                sim_results = simulate_estimator(forecast, simulation_config, estimator)
+                sim_results = simulate_estimator(forecast, simulation_config, estimator, config_data)
                 
                 # Calculate true value
-                true_value = calculate_true_value(estimator, forecast)
+                true_value = calculate_true_value(estimator, forecast, config_data)
                 
                 # Calculate statistics
                 stats = calculate_stats(sim_results, estimator, true_value)
@@ -459,8 +549,8 @@ def run_simulations(
                 
                 results.append(sensitivity_result)
                 
-                # Save raw results to HDF5 file if provided
-                if raw_file is not None:
+                # Save raw results to HDF5 file if provided and configured
+                if raw_file is not None and config_data.get("output", {}).get("save_individual_simulations", False):
                     create_nested_hdf5_structure(
                         raw_file, forecast, estimator, sim_results, stats, simulation_config
                     )
