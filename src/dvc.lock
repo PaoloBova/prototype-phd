@@ -167,3 +167,33 @@ stages:
       md5: ee48bf14ec3d0f2967b86151e6bee5b5.dir
       size: 3891815
       nfiles: 44
+  forecast_simulation:
+    cmd: python -m src.forecast_simulation --in output/forecast_detection/evaluation_forecasts.csv
+      --out output/forecast_detection/simulation_results.csv --raw output/forecast_detection/raw_simulation_results.h5
+      --config configs/forecast_detection/forecast_simulation.json
+    deps:
+    - path: configs/forecast_detection/forecast_simulation.json
+      hash: md5
+      md5: 46d7a0f431aca3cac7381ae8517c6a23
+      size: 751
+    - path: output/forecast_detection/evaluation_forecasts.csv
+      hash: md5
+      md5: a00810bd482b392e25da842c66f4427d
+      size: 252189
+    - path: src/forecast_simulation.py
+      hash: md5
+      md5: 5cc11bb7964beb1342456d87294a27e4
+      size: 24880
+    - path: src/simulation.py
+      hash: md5
+      md5: 2e59931b5f6095a946b1b4451a29ab4d
+      size: 10600
+    outs:
+    - path: output/forecast_detection/raw_simulation_results.h5
+      hash: md5
+      md5: 79667818c50cc9cee3f5fb139daa7d9a
+      size: 6336
+    - path: output/forecast_detection/simulation_results.csv
+      hash: md5
+      md5: a8aff41b069bd0481ba0965f342763ab
+      size: 53344
