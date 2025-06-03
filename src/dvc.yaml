@@ -109,6 +109,15 @@ stages:
     outs:
       - reports/forecast_detection/exploration_results.csv
 
+  analyze_bias:
+    wdir: ..
+    cmd: python -m src.tools.analyze_bias --input output/forecast_detection/simulation_results.csv --output reports/bias_analysis
+    deps:
+      - output/forecast_detection/simulation_results.csv
+      - src/tools/analyze_bias.py
+    outs:
+      - reports/bias_analysis
+
   plot_reports:
     wdir: ..
     cmd: python -m scripts.plot_forecasts --inputs "output/forecast_detection/*.csv" --out reports/forecast_detection/figures/
