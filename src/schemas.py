@@ -3,7 +3,7 @@ Pydantic models for the forecast detection case study.
 """
 from enum import Enum
 from pydantic import BaseModel, Field
-from typing import Dict, List, Optional, Tuple, Union
+from typing import Dict, List, Optional, Tuple, Union, Any
 import numpy as np
 from datetime import datetime
 
@@ -137,6 +137,65 @@ class NormalTaskSampler(TaskSampler):
         samples = np.random.normal(mean, std, n_samples)
         # Truncate to window bounds
         return np.clip(samples, window_lower, window_upper)
+
+class EvaluationDesign(BaseModel):
+    """Parameters defining how evaluations are designed and sampled."""
+    sampler_type: TaskSamplerType = Field(TaskSamplerType.UNIFORM, description="Type of task distribution")
+    adjustment_method: WindowAdjustmentMethod = Field(
+        WindowAdjustmentMethod.UPPER_BOUND, 
+        description="Method used to adjust window based on budget"
+    )
+    repeats_per_unit: int = Field(20, description="Number of sample repeats per difficulty unit")
+    sampler_params: Dict[str, Any] = Field(default_factory=dict, description="Additional parameters for the sampler")
+
+class EvaluationScenario(BaseModel):
+    """A scenario for evaluation combining ability, cost, and resource constraints."""
+    ability: AbilityForecast = Field(..., description="Ability forecast for this scenario")
+    doubling_rate: float = Field(..., description="Cost doubling rate in difficulty units")
+    budget_fraction: float = Field(..., description="Budget as fraction of gold standard")
+    scenario_id: str = Field(..., description="Unique identifier for this scenario")
+    ability_id: str = Field(..., description="ID of the ability forecast used")
+    cost_id: str = Field(..., description="ID of the cost trend used")
+    constraint_id: str = Field(..., description="ID of the resource constraint applied")
+    cost_model: str = Field(..., description="Name of the cost model used")
+    
+    class Config:
+        arbitrary_types_allowed = True
+
+class EvaluationForecast(BaseModel):
+    """Parameters defining an evaluation forecast under resource constraints."""
+    ability: AbilityForecast = Field(..., description="Ability forecast for this evaluation")
+    budget_fraction: float = Field(..., description="Budget as fraction of gold standard")
+    budget_scenario: str = Field(..., description="Budget scenario name")
+    window_lower: float = Field(..., description="Lower bound of evaluation window")
+    window_upper: float = Field(..., description="Upper bound of evaluation window")
+    sampler_type: TaskSamplerType = Field(TaskSamplerType.UNIFORM, description="Type of task distribution")
+    total_samples: int = Field(..., description="Total number of tasks to sample")
+    gold_standard_cost: float = Field(..., description="Total cost of gold standard evaluation")
+    available_budget: float = Field(..., description="Available budget (gold_standard_cost * budget_fraction)")
+    adjustment_method: WindowAdjustmentMethod = Field(
+        WindowAdjustmentMethod.UPPER_BOUND, 
+        description="Method used to adjust window based on budget"
+    )
+    original_window_lower: float = Field(..., description="Original lower bound of evaluation window")
+    original_window_upper: float = Field(..., description="Original upper bound of evaluation window")
+    # Include design parameters
+    repeats_per_unit: int = Field(20, description="Number of sample repeats per difficulty unit")
+    # Include cost model info
+    cost_model: str = Field(..., description="Name of the cost model used")
+    doubling_rate: float = Field(..., description="Cost doubling rate in difficulty units")
+    ability_id: str = Field(..., description="ID of the ability forecast used")
+    cost_id: str = Field(..., description="ID of the cost trend used")
+    constraint_id: str = Field(..., description="ID of the resource constraint applied")
+    design_id: str = Field(..., description="Unique identifier for the evaluation design method")
+    # Add new fields for variant information
+    ability_variant: str = Field("unknown", description="Variant of ability model (base, lower, upper)")
+    cost_variant: str = Field("unknown", description="Variant of cost model (base, lower, upper)")
+    base_ability_id: str = Field("", description="Base ID of ability forecast without variant suffix")
+    base_cost_id: str = Field("", description="Base ID of cost trend without variant suffix")
+    
+    class Config:
+        arbitrary_types_allowed = True
 
 class BootstrapConfig(BaseModel):
     """Configuration for bootstrap analysis."""
