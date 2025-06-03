@@ -21,9 +21,10 @@ from .schemas import (
 )
 from .simulation import (
     SimulationConfig, SimulationMethod, CorrelationModel,
-    run_simulation, calculate_simulation_statistics,
-    threshold_estimator, weighted_score_estimator
+    run_simulation, calculate_simulation_statistics, weighted_score_estimator
 )
+
+import prototype_phd.stats
 
 def parse_args():
     """Parse command line arguments."""
@@ -69,21 +70,40 @@ def create_evaluation_forecast_from_row(row: pd.Series) -> EvaluationForecast:
         model=row["ability_model"]
     )
     
-    # Create evaluation forecast object
-    forecast = EvaluationForecast(
-        ability=ability,
-        budget_fraction=row["budget_fraction"],
-        budget_scenario=row["budget_scenario"],
-        window_lower=row["window_lower"],
-        window_upper=row["window_upper"],
-        sampler_type=row["sampler_type"],
-        total_samples=int(row["total_samples"]),
-        gold_standard_cost=row["gold_standard_cost"],
-        available_budget=row["available_budget"],
-        adjustment_method=row["adjustment_method"]
-    )
+    # Create evaluation forecast object with all needed fields
+    forecast_data = {
+        "ability": ability,
+        "budget_fraction": row["budget_fraction"],
+        "budget_scenario": row["budget_scenario"],
+        "window_lower": row["window_lower"],
+        "window_upper": row["window_upper"],
+        "sampler_type": row["sampler_type"],
+        "total_samples": int(row["total_samples"]),
+        "gold_standard_cost": row["gold_standard_cost"],
+        "available_budget": row["available_budget"],
+        "adjustment_method": row["adjustment_method"],
+        "original_window_lower": row["original_window_lower"],
+        "original_window_upper": row["original_window_upper"],
+        "repeats_per_unit": row.get("repeats_per_unit", 20),  # Default if missing
+        "cost_model": row["cost_model"],
+        "doubling_rate": row["doubling_rate"],
+        "ability_id": row["ability_id"],
+        "cost_id": row["cost_id"],
+        "constraint_id": row["constraint_id"],
+        "design_id": row["design_id"]
+    }
     
-    return forecast
+    # Add variant information if available in the DataFrame
+    if "ability_variant" in row:
+        forecast_data["ability_variant"] = row["ability_variant"]
+    if "cost_variant" in row:
+        forecast_data["cost_variant"] = row["cost_variant"]
+    if "base_ability_id" in row:
+        forecast_data["base_ability_id"] = row["base_ability_id"]
+    if "base_cost_id" in row:
+        forecast_data["base_cost_id"] = row["base_cost_id"]
+    
+    return EvaluationForecast(**forecast_data)
 
 def calculate_true_weighted_score(threshold: float, slope: float, 
                                  range_min: float = -5, range_max: float = 20,
@@ -136,7 +156,11 @@ def simulate_estimator(
     """
     # Set up the analysis function based on the specified estimator
     if estimator == "threshold":
-        analysis_fn = threshold_estimator
+        logreg_config = prototype_phd.stats.LogRegConfig(engine="scikit-learn")
+        analysis_fn = lambda tasks, outcomes: prototype_phd.stats.compute_threshold(
+            tasks[:, None], outcomes,
+            config=logreg_config,
+        )
     elif estimator == "weighted_score":
         analysis_fn = lambda tasks, outcomes: weighted_score_estimator(
             tasks, outcomes, lambda x: 1.0 + 0.5 * x
@@ -238,11 +262,17 @@ def generate_simulation_id(forecast: EvaluationForecast, estimator: str, sim_con
     Returns:
         Unique simulation ID
     """
+    # Include variant information in ID if available
+    variant_info = ""
+    if hasattr(forecast, "ability_variant") and hasattr(forecast, "cost_variant"):
+        if forecast.ability_variant != "unknown" or forecast.cost_variant != "unknown":
+            variant_info = f"{forecast.ability_variant}_{forecast.cost_variant}_"
+    
     components = [
         forecast.ability.scenario,
         forecast.budget_scenario,
         forecast.ability.date.strftime("%Y-%m-%d"),
-        estimator,
+        variant_info + estimator,
         sim_config.method,
         f"{forecast.total_samples}_samples",
         f"{sim_config.n_samples}_sims"
@@ -254,7 +284,7 @@ def create_nested_hdf5_structure(
     forecast: EvaluationForecast,
     estimator: str,
     sim_results: np.ndarray,
-    stats: Dict[str, Any],
+    stats_data: Dict[str, Any],
     sim_config: SimulationConfig
 ) -> None:
     """
@@ -265,21 +295,29 @@ def create_nested_hdf5_structure(
         forecast: Evaluation forecast
         estimator: Estimator type
         sim_results: Simulation results array
-        stats: Statistics calculated from the results
+        stats_data: Statistics calculated from the results
         sim_config: Simulation configuration
     """
     # Create hierarchical structure:
     # /ability_scenario/budget_scenario/date/estimator/simulation_method
     
-    # Level 1: Ability scenario
-    ability_group_name = str(forecast.ability.scenario).replace(" ", "_")
+    # Level 1: Ability scenario (include variant info if available)
+    ability_scenario_name = str(forecast.ability.scenario)
+    if hasattr(forecast, "ability_variant") and forecast.ability_variant != "unknown":
+        ability_scenario_name += f"_{forecast.ability_variant}"
+    ability_group_name = ability_scenario_name.replace(" ", "_")
+    
     if ability_group_name not in raw_file:
         ability_group = raw_file.create_group(ability_group_name)
     else:
         ability_group = raw_file[ability_group_name]
     
-    # Level 2: Budget scenario
-    budget_group_name = str(forecast.budget_scenario).replace(" ", "_")
+    # Level 2: Budget scenario (include cost variant if available)
+    budget_scenario_name = str(forecast.budget_scenario)
+    if hasattr(forecast, "cost_variant") and forecast.cost_variant != "unknown":
+        budget_scenario_name += f"_{forecast.cost_variant}"
+    budget_group_name = budget_scenario_name.replace(" ", "_")
+    
     if budget_group_name not in ability_group:
         budget_group = ability_group.create_group(budget_group_name)
     else:
@@ -326,9 +364,15 @@ def create_nested_hdf5_structure(
     sim_group.attrs['correlation_model'] = str(sim_config.correlation_model)
     sim_group.attrs['correlation_strength'] = sim_config.correlation_strength
     
+    # Store variant information if available
+    if hasattr(forecast, "ability_variant"):
+        sim_group.attrs['ability_variant'] = forecast.ability_variant
+    if hasattr(forecast, "cost_variant"):
+        sim_group.attrs['cost_variant'] = forecast.cost_variant
+    
     # Store full statistics
     stats_group = sim_group.create_group('stats')
-    for stat_name, stat_value in stats.items():
+    for stat_name, stat_value in stats_data.items():
         # Handle different types correctly
         if isinstance(stat_value, str):
             stats_group.attrs[stat_name] = stat_value
@@ -370,7 +414,7 @@ def run_simulations(
         # Create a metadata group
         meta_group = raw_file.create_group('metadata')
         # Store simulation config as attributes
-        for key, value in simulation_config.dict().items():
+        for key, value in simulation_config.model_dump().items():
             if isinstance(value, (str, int, float, bool)):
                 meta_group.attrs[key] = value
     else:
@@ -439,6 +483,11 @@ def run_simulations(
                     },
                     'stats': stats
                 }
+                
+                # Add variant information to metadata if available
+                if hasattr(forecast, "ability_variant") and hasattr(forecast, "cost_variant"):
+                    raw_results[sim_id]['metadata']['ability_variant'] = forecast.ability_variant
+                    raw_results[sim_id]['metadata']['cost_variant'] = forecast.cost_variant
     finally:
         # Close the HDF5 file if it was opened
         if raw_file is not None:

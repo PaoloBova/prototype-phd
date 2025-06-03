@@ -14,6 +14,7 @@ from enum import Enum
 from typing import Callable, Dict, List, Optional, Tuple, Union
 from pydantic import BaseModel, Field
 from .schemas import TaskSamplerType
+import prototype_phd.stats as stats
 
 class SimulationMethod(str, Enum):
     """Types of simulation methods."""
@@ -271,43 +272,6 @@ def calculate_simulation_statistics(results: np.ndarray) -> Dict[str, float]:
         "lower_ci": float(np.percentile(results, 2.5)),
         "upper_ci": float(np.percentile(results, 97.5))
     }
-
-
-def threshold_estimator(tasks: np.ndarray, outcomes: np.ndarray) -> float:
-    """
-    Estimate the threshold parameter from tasks and outcomes.
-    
-    Args:
-        tasks: Array of task difficulties
-        outcomes: Array of binary success outcomes
-        
-    Returns:
-        Estimated threshold parameter
-    """
-    from scipy.optimize import curve_fit
-    
-    # Skip if all success or all failure
-    if len(np.unique(outcomes)) < 2:
-        return float('nan')
-        
-    try:
-        # Define logistic function for curve fitting
-        def logistic_wrapper(x, threshold, slope):
-            return logistic_function(x, threshold, slope)
-        
-        # Fit the curve
-        params, _ = curve_fit(
-            logistic_wrapper, 
-            tasks, 
-            outcomes,
-            p0=[np.median(tasks), 1.0],
-            bounds=([min(tasks), 0.01], [max(tasks), 10])
-        )
-        
-        return params[0]  # threshold parameter
-    except Exception as e:
-        return float('nan')
-
 
 def weighted_score_estimator(
     tasks: np.ndarray, 
