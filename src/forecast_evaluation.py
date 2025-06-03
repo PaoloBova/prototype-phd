@@ -23,6 +23,45 @@ from .schemas import (
     ResourceConstraint
 )
 
+class EvaluationConfig(BaseModel):
+    """Configuration for evaluation forecasts."""
+    resource_constraints: Dict[str, Any] = Field(
+        {
+            "static_budgets": [1.0, 0.75, 0.5, 0.25, 0.1, 0.0],
+            "include_dynamic_scenarios": False,
+            "dynamic_start_date": "2025-01-01T00:00:00",
+            "dynamic_end_date": "2030-12-31T00:00:00",
+            "dynamic_frequency": "YE"
+        },
+        description="Resource constraint parameters"
+    )
+    evaluation_design: Dict[str, Any] = Field(
+        {
+            "sampler_types": ["uniform", "normal"],
+            "adjustment_methods": ["upper_bound", "sample_based"],
+            "repeats_per_unit": 20,
+            "sampler_params": {
+                "normal": {
+                    "mean_offset": 0.0,
+                    "std_dev_factor": 0.3
+                }
+            }
+        }, 
+        description="Evaluation design parameters"
+    )
+    scenario_generation: Dict[str, bool] = Field(
+        {
+            "include_base_scenarios": True,
+            "include_ci_scenarios": True
+        },
+        description="Scenario generation options"
+    )
+    save_detailed_json: bool = Field(
+        False,
+        description="Whether to save detailed JSON output with all forecast data"
+    )
+
+
 class EvaluationDesign(BaseModel):
     """Parameters defining how evaluations are designed and sampled."""
     sampler_type: TaskSamplerType = Field(TaskSamplerType.UNIFORM, description="Type of task distribution")
@@ -39,6 +78,9 @@ class EvaluationScenario(BaseModel):
     doubling_rate: float = Field(..., description="Cost doubling rate in difficulty units")
     budget_fraction: float = Field(..., description="Budget as fraction of gold standard")
     scenario_id: str = Field(..., description="Unique identifier for this scenario")
+    ability_id: str = Field(..., description="ID of the ability forecast used")
+    cost_id: str = Field(..., description="ID of the cost trend used")
+    constraint_id: str = Field(..., description="ID of the resource constraint applied")
     cost_model: str = Field(..., description="Name of the cost model used")
     
     class Config:
@@ -67,7 +109,10 @@ class EvaluationForecast(BaseModel):
     # Include cost model info
     cost_model: str = Field(..., description="Name of the cost model used")
     doubling_rate: float = Field(..., description="Cost doubling rate in difficulty units")
-
+    ability_id: str = Field(..., description="ID of the ability forecast used")
+    cost_id: str = Field(..., description="ID of the cost trend used")
+    constraint_id: str = Field(..., description="ID of the resource constraint applied")
+    design_id: str = Field(..., description="Unique identifier for the evaluation design method")
     class Config:
         arbitrary_types_allowed = True
 
@@ -81,12 +126,13 @@ def parse_args():
     parser.add_argument("--debug", action="store_true", help="Enable debug output")
     return parser.parse_args()
 
-def expand_ability_forecasts(abilities_df: pd.DataFrame) -> Dict[str, AbilityForecast]:
+def expand_ability_forecasts(abilities_df: pd.DataFrame, include_ci: bool = True) -> Dict[str, AbilityForecast]:
     """
     Expand ability forecasts to include confidence interval scenarios.
     
     Args:
         abilities_df: DataFrame with ability forecasts including confidence intervals
+        include_ci: Whether to include confidence interval scenarios
         
     Returns:
         Dictionary mapping scenario IDs to AbilityForecast objects
@@ -117,43 +163,45 @@ def expand_ability_forecasts(abilities_df: pd.DataFrame) -> Dict[str, AbilityFor
             logging.error(f"Error creating base forecast: {e}, row: {row}")
             continue
         
-        # Create lower bound scenario if confidence intervals are available
-        has_threshold_ci = ('threshold_ci_lower' in row and pd.notna(row['threshold_ci_lower']) and 
-                          'threshold_ci_upper' in row and pd.notna(row['threshold_ci_upper']))
-        has_slope_ci = ('slope_ci_lower' in row and pd.notna(row['slope_ci_lower']) and 
-                      'slope_ci_upper' in row and pd.notna(row['slope_ci_upper']))
-        
-        if has_threshold_ci and has_slope_ci:
-            # Lower bound scenario (more pessimistic)
-            lower_scenario_id = f"{row['model']}_{row['scenario']}_lower"
-            lower_forecast = AbilityForecast(
-                date=pd.to_datetime(row['date']),
-                threshold=float(row['threshold_ci_upper']),  # Higher threshold = harder problems
-                slope=float(row['slope_ci_lower']),  # Flatter slope = less sensitive to difficulty
-                scenario=f"{row['scenario']}_lower_ci",
-                model=row['model']
-            )
-            expanded_forecasts[lower_scenario_id] = lower_forecast
+        # Create lower/upper bound scenarios if configured and confidence intervals are available
+        if include_ci:
+            has_threshold_ci = ('threshold_ci_lower' in row and pd.notna(row['threshold_ci_lower']) and 
+                               'threshold_ci_upper' in row and pd.notna(row['threshold_ci_upper']))
+            has_slope_ci = ('slope_ci_lower' in row and pd.notna(row['slope_ci_lower']) and 
+                           'slope_ci_upper' in row and pd.notna(row['slope_ci_upper']))
             
-            # Upper bound scenario (more optimistic)
-            upper_scenario_id = f"{row['model']}_{row['scenario']}_upper"
-            upper_forecast = AbilityForecast(
-                date=pd.to_datetime(row['date']),
-                threshold=float(row['threshold_ci_lower']),  # Lower threshold = easier problems
-                slope=float(row['slope_ci_upper']),  # Steeper slope = more sensitive to difficulty
-                scenario=f"{row['scenario']}_upper_ci",
-                model=row['model']
-            )
-            expanded_forecasts[upper_scenario_id] = upper_forecast
+            if has_threshold_ci and has_slope_ci:
+                # Lower bound scenario (more pessimistic)
+                lower_scenario_id = f"{row['model']}_{row['scenario']}_lower"
+                lower_forecast = AbilityForecast(
+                    date=pd.to_datetime(row['date']),
+                    threshold=float(row['threshold_ci_upper']),  # Higher threshold = harder problems
+                    slope=float(row['slope_ci_lower']),  # Flatter slope = less sensitive to difficulty
+                    scenario=f"{row['scenario']}_lower_ci",
+                    model=row['model']
+                )
+                expanded_forecasts[lower_scenario_id] = lower_forecast
+                
+                # Upper bound scenario (more optimistic)
+                upper_scenario_id = f"{row['model']}_{row['scenario']}_upper"
+                upper_forecast = AbilityForecast(
+                    date=pd.to_datetime(row['date']),
+                    threshold=float(row['threshold_ci_lower']),  # Lower threshold = easier problems
+                    slope=float(row['slope_ci_upper']),  # Steeper slope = more sensitive to difficulty
+                    scenario=f"{row['scenario']}_upper_ci",
+                    model=row['model']
+                )
+                expanded_forecasts[upper_scenario_id] = upper_forecast
     
     return expanded_forecasts
 
-def expand_cost_trends(costs_df: pd.DataFrame) -> Dict[str, Dict[str, float]]:
+def expand_cost_trends(costs_df: pd.DataFrame, include_ci: bool = True) -> Dict[str, Dict[str, float]]:
     """
     Expand cost trends to include confidence interval scenarios.
     
     Args:
         costs_df: DataFrame with cost trends including confidence intervals
+        include_ci: Whether to include confidence interval scenarios
         
     Returns:
         Dictionary mapping scenario IDs to cost parameters
@@ -172,39 +220,48 @@ def expand_cost_trends(costs_df: pd.DataFrame) -> Dict[str, Dict[str, float]]:
             'model': model
         }
         expanded_costs[base_scenario_id] = base_cost
-        
-        # Check if confidence intervals are available
-        has_ci = ('doubling_rate_ci_lower' in row and pd.notna(row['doubling_rate_ci_lower']) and
-                 'doubling_rate_ci_upper' in row and pd.notna(row['doubling_rate_ci_upper']) and
-                 np.isfinite(row['doubling_rate_ci_lower']) and np.isfinite(row['doubling_rate_ci_upper']))
-        
-        if has_ci:
-            # Lower bound scenario (more expensive)
-            lower_scenario_id = f"{model}_lower"
-            lower_cost = {
-                'doubling_rate': float(row['doubling_rate_ci_lower']),  # Lower doubling rate = costs grow faster
-                'intercept': float(row['intercept']),
-                'model': f"{model}_lower_ci"
-            }
-            expanded_costs[lower_scenario_id] = lower_cost
+
+        # Add confidence interval scenarios if configured and available
+        if include_ci:
+            has_ci = ('doubling_rate_ci_lower' in row and pd.notna(row['doubling_rate_ci_lower']) and
+                     'doubling_rate_ci_upper' in row and pd.notna(row['doubling_rate_ci_upper']) and
+                     np.isfinite(row['doubling_rate_ci_lower']) and np.isfinite(row['doubling_rate_ci_upper']))
             
-            # Upper bound scenario (less expensive)
-            upper_scenario_id = f"{model}_upper"
-            upper_cost = {
-                'doubling_rate': float(row['doubling_rate_ci_upper']),  # Higher doubling rate = costs grow slower
-                'intercept': float(row['intercept']),
-                'model': f"{model}_upper_ci"
-            }
-            expanded_costs[upper_scenario_id] = upper_cost
+            if has_ci:
+                # Lower bound scenario (more expensive)
+                lower_scenario_id = f"{model}_lower"
+                lower_cost = {
+                    'doubling_rate': float(row['doubling_rate_ci_lower']),  # Lower doubling rate = costs grow faster
+                    'intercept': float(row['intercept']),
+                    'model': f"{model}_lower_ci"
+                }
+                expanded_costs[lower_scenario_id] = lower_cost
+                
+                # Upper bound scenario (less expensive)
+                upper_scenario_id = f"{model}_upper"
+                upper_cost = {
+                    'doubling_rate': float(row['doubling_rate_ci_upper']),  # Higher doubling rate = costs grow slower
+                    'intercept': float(row['intercept']),
+                    'model': f"{model}_upper_ci"
+                }
+                expanded_costs[upper_scenario_id] = upper_cost
     
     return expanded_costs
 
-def define_resource_scenarios() -> List[ResourceConstraint]:
-    """Define resource constraint scenarios."""
+def define_resource_scenarios(config: EvaluationConfig) -> List[ResourceConstraint]:
+    """
+    Define resource constraint scenarios based on configuration.
+    
+    Args:
+        config: Evaluation configuration
+        
+    Returns:
+        List of ResourceConstraint objects
+    """
     scenarios = []
     
-    # Static budget scenarios
-    budget_fractions = [1.0, 0.75, 0.5, 0.25, 0.1, 0.0]
+    # Static budget scenarios from config
+    budget_fractions = config.resource_constraints["static_budgets"]
     for fraction in budget_fractions:
         scenario = ResourceConstraint(
             type=ResourceConstraintType.STATIC,
@@ -212,49 +269,57 @@ def define_resource_scenarios() -> List[ResourceConstraint]:
             values=fraction
         )
         scenarios.append(scenario)
-    
-    # Dynamic budget scenarios
-    start_date = datetime(2025, 1, 1)
-    end_date = datetime(2030, 12, 31)
-    dates = pd.date_range(start=start_date, end=end_date, freq="YE")
-    
-    # Linear decline over 5 years
-    linear_values = [(d, 1.0 - (i / (len(dates) - 1)) * 0.9) for i, d in enumerate(dates)]
-    scenarios.append(ResourceConstraint(
-        type=ResourceConstraintType.DYNAMIC,
-        name="linear_decline",
-        values=linear_values
-    ))
-    
-    # One-step decline (100→10→1)
-    step_values = []
-    for i, d in enumerate(dates):
-        if i < 2:
-            step_values.append((d, 1.0))
-        elif i < 4:
-            step_values.append((d, 0.1))
-        else:
-            step_values.append((d, 0.01))
-    scenarios.append(ResourceConstraint(
-        type=ResourceConstraintType.DYNAMIC,
-        name="step_decline",
-        values=step_values
-    ))
-    
-    # Rapid drop then plateau
-    plateau_values = []
-    for i, d in enumerate(dates):
-        if i == 0:
-            plateau_values.append((d, 1.0))
-        elif i == 1:
-            plateau_values.append((d, 0.3))
-        else:
-            plateau_values.append((d, 0.1))
-    scenarios.append(ResourceConstraint(
-        type=ResourceConstraintType.DYNAMIC,
-        name="plateau_decline",
-        values=plateau_values
-    ))
+
+    # Add dynamic scenarios if configured
+    if config.resource_constraints.get("include_dynamic_scenarios", False):
+        # Parse dates
+        start_date = datetime.fromisoformat(
+            config.resource_constraints.get("dynamic_start_date", "2025-01-01T00:00:00").replace('Z', '+00:00')
+        )
+        end_date = datetime.fromisoformat(
+            config.resource_constraints.get("dynamic_end_date", "2030-12-31T00:00:00").replace('Z', '+00:00')
+        )
+        frequency = config.resource_constraints.get("dynamic_frequency", "YE")
+        
+        dates = pd.date_range(start=start_date, end=end_date, freq=frequency)
+        
+        # Linear decline over time period
+        linear_values = [(d, 1.0 - (i / (len(dates) - 1)) * 0.9) for i, d in enumerate(dates)]
+        scenarios.append(ResourceConstraint(
+            type=ResourceConstraintType.DYNAMIC,
+            name="linear_decline",
+            values=linear_values
+        ))
+        
+        # One-step decline scenario
+        step_values = []
+        for i, d in enumerate(dates):
+            if i < 2:
+                step_values.append((d, 1.0))
+            elif i < 4:
+                step_values.append((d, 0.1))
+            else:
+                step_values.append((d, 0.01))
+        scenarios.append(ResourceConstraint(
+            type=ResourceConstraintType.DYNAMIC,
+            name="step_decline",
+            values=step_values
+        ))
+        
+        # Rapid drop then plateau scenario
+        plateau_values = []
+        for i, d in enumerate(dates):
+            if i == 0:
+                plateau_values.append((d, 1.0))
+            elif i == 1:
+                plateau_values.append((d, 0.3))
+            else:
+                plateau_values.append((d, 0.1))
+        scenarios.append(ResourceConstraint(
+            type=ResourceConstraintType.DYNAMIC,
+            name="plateau_decline",
+            values=plateau_values
+        ))
     
     return scenarios
 
@@ -461,6 +526,7 @@ def calculate_evaluation_forecast(
     if design.adjustment_method == WindowAdjustmentMethod.SAMPLE_BASED and scenario.budget_fraction > 0:
         adjusted_samples = int(total_samples * scenario.budget_fraction)
     
+    design_id = f"{design.sampler_type.value}_{design.adjustment_method.value}_repeats_{design.repeats_per_unit}"
     # Create the evaluation forecast with all parameters for complete tracking
     forecast_data = {
         "ability": scenario.ability,
@@ -481,7 +547,12 @@ def calculate_evaluation_forecast(
         "repeats_per_unit": design.repeats_per_unit,
         # Include cost model info
         "cost_model": scenario.cost_model,
-        "doubling_rate": scenario.doubling_rate
+        "doubling_rate": scenario.doubling_rate,
+        # Include IDs for tracking
+        "ability_id": scenario.ability_id,
+        "cost_id": scenario.cost_id,
+        "constraint_id": scenario.constraint_id,
+        "design_id": design_id
     }
     
     return EvaluationForecast(**forecast_data)
@@ -555,7 +626,8 @@ def discretize_task_allocation(forecast: EvaluationForecast) -> Dict[int, int]:
 
 def generate_evaluation_scenarios(
     abilities_df: pd.DataFrame, 
-    costs_df: pd.DataFrame
+    costs_df: pd.DataFrame,
+    config: EvaluationConfig
 ) -> List[EvaluationScenario]:
     """
     Generate all combinations of evaluation scenarios.
@@ -563,6 +635,7 @@ def generate_evaluation_scenarios(
     Args:
         abilities_df: DataFrame with ability forecasts
         costs_df: DataFrame with cost trends
+        config: Evaluation configuration
     
     Returns:
         List of EvaluationScenario objects
@@ -571,16 +644,20 @@ def generate_evaluation_scenarios(
     if 'date' in abilities_df.columns:
         abilities_df["date"] = pd.to_datetime(abilities_df["date"])
     
-    # Get resource constraints (we'll use static ones for now)
-    constraints = define_resource_scenarios()
-    static_constraints = [s for s in constraints if s.type == ResourceConstraintType.STATIC]
+    # Get resource constraints from config
+    constraints = define_resource_scenarios(config)
     
-    # Expand ability and cost forecasts to include confidence interval scenarios
-    expanded_abilities = expand_ability_forecasts(abilities_df)
-    expanded_costs = expand_cost_trends(costs_df)
-    
+    # Expand ability and cost forecasts based on config
+    expanded_abilities = expand_ability_forecasts(
+        abilities_df, 
+        include_ci=config.scenario_generation.get("include_ci_scenarios", True)
+    )
+    expanded_costs = expand_cost_trends(
+        costs_df,
+        include_ci=config.scenario_generation.get("include_ci_scenarios", True)
+    )
     # Filter for base cost scenarios
-    cost_models = [model for model in expanded_costs.keys() if model.endswith("_base")]
+    cost_models = [model for model in expanded_costs.keys()]
     
     # Generate all scenario combinations
     scenarios = []
@@ -590,7 +667,7 @@ def generate_evaluation_scenarios(
             cost_params = expanded_costs[cost_id]
             doubling_rate = cost_params['doubling_rate']
             
-            for constraint in static_constraints:
+            for constraint in constraints:
                 budget_fraction = float(constraint.values)
                 
                 # Create unique scenario ID
@@ -602,6 +679,9 @@ def generate_evaluation_scenarios(
                     doubling_rate=doubling_rate,
                     budget_fraction=budget_fraction,
                     scenario_id=scenario_id,
+                    ability_id=ability_id,
+                    cost_id=cost_id,
+                    constraint_id= constraint.name,
                     cost_model=cost_params['model']
                 )
                 
@@ -611,7 +691,8 @@ def generate_evaluation_scenarios(
 
 def calculate_forecasts_for_all_combinations(
     abilities_df: pd.DataFrame, 
-    costs_df: pd.DataFrame
+    costs_df: pd.DataFrame,
+    config: EvaluationConfig
 ) -> List[EvaluationForecast]:
     """
     Calculate evaluation forecasts for all combinations of ability forecasts and cost trends.
@@ -619,22 +700,41 @@ def calculate_forecasts_for_all_combinations(
     Args:
         abilities_df: DataFrame with ability forecasts
         costs_df: DataFrame with cost trends
+        config: Evaluation configuration
     
     Returns:
         List of EvaluationForecast objects
     """
     # Generate all evaluation scenarios
-    scenarios = generate_evaluation_scenarios(abilities_df, costs_df)
+    scenarios = generate_evaluation_scenarios(abilities_df, costs_df, config)
     logging.info(f"Generated {len(scenarios)} evaluation scenarios")
     
-    # Define evaluation designs to try
+    # Define evaluation designs based on config
+    sampler_types = [
+        TaskSamplerType(s) for s in 
+        config.evaluation_design.get("sampler_types", ["uniform", "normal"])
+    ]
+    
+    adjustment_methods = [
+        WindowAdjustmentMethod(m) for m in 
+        config.evaluation_design.get("adjustment_methods", ["upper_bound", "sample_based"])
+    ]
+    
+    logging.info(f"Using sampler types: {sampler_types}")
+    logging.info(f"Using adjustment methods: {adjustment_methods}")
+    
+    repeats_per_unit = config.evaluation_design.get("repeats_per_unit", 20)
+    
+    # Create all evaluation design combinations
     designs = [
         EvaluationDesign(
             sampler_type=sampler_type,
-            adjustment_method=adjustment_method
+            adjustment_method=adjustment_method,
+            repeats_per_unit=repeats_per_unit,
+            sampler_params=config.evaluation_design.get("sampler_params", {}).get(sampler_type.value, {})
         )
-        for sampler_type in [TaskSamplerType.UNIFORM, TaskSamplerType.NORMAL]
-        for adjustment_method in [WindowAdjustmentMethod.UPPER_BOUND, WindowAdjustmentMethod.SAMPLE_BASED]
+        for sampler_type in sampler_types
+        for adjustment_method in adjustment_methods
     ]
     
     # Calculate forecasts for each scenario and design combination
@@ -655,14 +755,16 @@ def calculate_forecasts_for_all_combinations(
     
     return all_forecasts
 
-def save_forecasts(forecasts: List[EvaluationForecast], output_path: str, debug: bool = False):
+def save_forecasts(forecasts: List[EvaluationForecast],
+                   output_path: str,
+                   config: EvaluationConfig):
     """
     Save evaluation forecasts to CSV file with complete data fields.
     
     Args:
         forecasts: List of evaluation forecast objects
         output_path: Path to output CSV file
-        debug: Whether to include additional diagnostic data
+        config: Evaluation configuration
     """
     # Flatten nested objects for CSV format
     flat_records = []
@@ -690,8 +792,8 @@ def save_forecasts(forecasts: List[EvaluationForecast], output_path: str, debug:
     
     # Sort columns for better readability
     priority_cols = [
-        "budget_scenario", "ability_model", "ability_scenario", "cost_model", "budget_fraction",
-        "ability_threshold", "ability_slope", "doubling_rate",
+        "budget_scenario", "ability_id", "ability_model", "ability_scenario", "cost_model", "budget_fraction",
+        "ability_threshold", "ability_slope", "constraint_id", "cost_id", "doubling_rate",
         "window_lower", "window_upper", "window_width",
         "original_window_lower", "original_window_upper", "original_window_width",
         "adjustment_method", "sampler_type"
@@ -703,8 +805,8 @@ def save_forecasts(forecasts: List[EvaluationForecast], output_path: str, debug:
     col_order.extend([col for col in df.columns if col not in col_order])
     df = df[col_order]
     
-    # If in debug mode, include diagnostic data
-    if debug:
+    # If specified, include diagnostic data
+    if config.save_detailed_json:
         # Save a detailed JSON with all data
         json_path = output_path.replace('.csv', '_detailed.json')
         with open(json_path, 'w') as f:
@@ -720,22 +822,33 @@ def save_forecasts(forecasts: List[EvaluationForecast], output_path: str, debug:
     logging.info(f"Saved {len(df)} forecast records to {output_path}")
     
     # Report any potential issues
-    # n_invalid_width = sum(df["window_width"] <= 0)
-    # if n_invalid_width > 0:
-    #     logging.warning(f"Found {n_invalid_width} records with invalid window width (≤0)")
+    n_invalid_width = sum(df["window_width"] <= 0)
+    if n_invalid_width > 0:
+        logging.warning(f"Found {n_invalid_width} records with invalid window width (≤0)")
         
-    # n_reversed = sum(df["window_lower"] > df["window_upper"])
-    # if n_reversed > 0:
-    #     logging.warning(f"Found {n_reversed} records with reversed window bounds")
+    n_reversed = sum(df["window_lower"] > df["window_upper"])
+    if n_reversed > 0:
+        logging.warning(f"Found {n_reversed} records with reversed window bounds")
 
 def main():
     """Main entry point."""
     args = parse_args()
     
+    # Load configuration if provided, otherwise use defaults
+    if args.config:
+        with open(args.config, 'r') as f:
+            config_data = json.load(f)
+        config = EvaluationConfig(**config_data)
+    else:
+        config = EvaluationConfig()
+
     # Configure logging
     log_level = logging.DEBUG if args.debug else logging.INFO
     data_utils.configure_logging_console(level=log_level)
     
+        
+    logging.info(f"Using configuration: {config.model_dump_json(indent=2)}")
+
     logging.info(f"Reading ability forecasts from {args.ability}")
     abilities_df = pd.read_csv(args.ability)
     
@@ -743,19 +856,21 @@ def main():
     costs_df = pd.read_csv(args.cost)
     
     logging.info("Calculating evaluation forecasts for all combinations")
-    forecasts = calculate_forecasts_for_all_combinations(abilities_df, costs_df)
+    forecasts = calculate_forecasts_for_all_combinations(abilities_df, costs_df, config)
     logging.info(f"Calculated {len(forecasts)} evaluation forecasts")
     
     logging.info(f"Saving evaluation forecasts to {args.out}")
-    save_forecasts(forecasts, args.out, debug=args.debug)
+    save_forecasts(forecasts, args.out, config)
     
     # Provide summary statistics
     df = pd.DataFrame([f.model_dump() for f in forecasts])
     logging.info(f"Summary statistics:")
     logging.info(f"  Total forecasts: {len(df)}")
-    logging.info(f"  Number of ability models: {len(abilities_df)}")
-    logging.info(f"  Number of cost models: {df['cost_model'].nunique()}")
-    logging.info(f"  Budget fractions: {sorted(df['budget_fraction'].unique())}")
+    logging.info(f"  Unique forecasts: {df['budget_scenario'].nunique()}")
+    logging.info(f"  Number of ability models: {df['ability_id'].nunique()}")
+    logging.info(f"  Number of cost models: {df['cost_id'].nunique()}")
+    logging.info(f"  Number of constraints: {df['constraint_id'].nunique()}")
+    logging.info(f"  Number of designs: {df['design_id'].nunique()}")
     
     logging.info("Complete")
 
