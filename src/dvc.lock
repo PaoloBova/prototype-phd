@@ -142,8 +142,8 @@ stages:
       size: 191
     - path: src/forecast_evaluation.py
       hash: md5
-      md5: d040e018c175280a5ca74be97e3582d5
-      size: 37578
+      md5: b1fcfae4c2ed6cc6a9f1a51b47b5c0fd
+      size: 33677
     outs:
     - path: output/forecast_detection/evaluation_forecasts.csv
       hash: md5
