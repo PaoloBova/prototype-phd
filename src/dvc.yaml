@@ -52,11 +52,11 @@ stages:
 
   forecast_simulation:
     wdir: ..
-    cmd: python -m src.forecast_simulation --in output/forecast_detection/evaluation_forecasts.csv --out output/forecast_detection/simulation_results.csv --raw output/forecast_detection/raw_simulation_results.h5 --config configs/forecast_simulation.json
+    cmd: python -m src.forecast_simulation --in output/forecast_detection/evaluation_forecasts.csv --out output/forecast_detection/simulation_results.csv --raw output/forecast_detection/raw_simulation_results.h5 --config configs/forecast_detection/forecast_simulation.json
     deps:
       - output/forecast_detection/evaluation_forecasts.csv
       - src/forecast_simulation.py
-      - configs/forecast_simulation.json
+      - configs/forecast_detection/forecast_simulation.json
       - src/simulation.py
     outs:
       - output/forecast_detection/simulation_results.csv
