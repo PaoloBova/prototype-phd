@@ -1,0 +1,11 @@
+{
+  "aggregation_methods": ["geometric_mean"],
+  "weighting_methods": ["uniform"],
+  "confidence_level": 0.95,
+  "include_model_specific": true,
+  "include_aggregate": true,
+  "include_recency_weighted": true,
+  "difficulty_min": 0,
+  "difficulty_max": 20,
+  "difficulty_step": 0.5
+}
