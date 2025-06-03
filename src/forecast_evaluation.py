@@ -113,6 +113,12 @@ class EvaluationForecast(BaseModel):
     cost_id: str = Field(..., description="ID of the cost trend used")
     constraint_id: str = Field(..., description="ID of the resource constraint applied")
     design_id: str = Field(..., description="Unique identifier for the evaluation design method")
+    # Add new fields for variant information
+    ability_variant: str = Field("unknown", description="Variant of ability model (base, lower, upper)")
+    cost_variant: str = Field("unknown", description="Variant of cost model (base, lower, upper)")
+    base_ability_id: str = Field("", description="Base ID of ability forecast without variant suffix")
+    base_cost_id: str = Field("", description="Base ID of cost trend without variant suffix")
+    
     class Config:
         arbitrary_types_allowed = True
 
@@ -143,7 +149,6 @@ def expand_ability_forecasts(abilities_df: pd.DataFrame, include_ci: bool = True
     for _, row in abilities_df.iterrows():
         # Create base scenario from median values
         base_scenario_id = f"{row['model']}_{row['scenario']}_base"
-
         # Ensure all fields are present
         required_fields = {'date', 'threshold', 'slope', 'scenario', 'model'}
         if not all(field in row for field in required_fields):
@@ -217,7 +222,7 @@ def expand_cost_trends(costs_df: pd.DataFrame, include_ci: bool = True) -> Dict[
         base_cost = {
             'doubling_rate': float(row['doubling_rate']),
             'intercept': float(row['intercept']),
-            'model': model
+            'model': model,
         }
         expanded_costs[base_scenario_id] = base_cost
 
@@ -233,7 +238,7 @@ def expand_cost_trends(costs_df: pd.DataFrame, include_ci: bool = True) -> Dict[
                 lower_cost = {
                     'doubling_rate': float(row['doubling_rate_ci_lower']),  # Lower doubling rate = costs grow faster
                     'intercept': float(row['intercept']),
-                    'model': f"{model}_lower_ci"
+                    'model': f"{model}_lower_ci",
                 }
                 expanded_costs[lower_scenario_id] = lower_cost
                 
@@ -242,7 +247,7 @@ def expand_cost_trends(costs_df: pd.DataFrame, include_ci: bool = True) -> Dict[
                 upper_cost = {
                     'doubling_rate': float(row['doubling_rate_ci_upper']),  # Higher doubling rate = costs grow slower
                     'intercept': float(row['intercept']),
-                    'model': f"{model}_upper_ci"
+                    'model': f"{model}_upper_ci",
                 }
                 expanded_costs[upper_scenario_id] = upper_cost
     
@@ -527,6 +532,32 @@ def calculate_evaluation_forecast(
         adjusted_samples = int(total_samples * scenario.budget_fraction)
     
     design_id = f"{design.sampler_type.value}_{design.adjustment_method.value}_repeats_{design.repeats_per_unit}"
+    
+    # Extract ability and cost variants from their IDs
+    ability_variant = "unknown"
+    base_ability_id = ""
+    if scenario.ability_id.endswith("_base"):
+        ability_variant = "base"
+        base_ability_id = scenario.ability_id[:-5]  # Remove "_base" suffix
+    elif scenario.ability_id.endswith("_lower"):
+        ability_variant = "lower"
+        base_ability_id = scenario.ability_id[:-6]  # Remove "_lower" suffix
+    elif scenario.ability_id.endswith("_upper"):
+        ability_variant = "upper"
+        base_ability_id = scenario.ability_id[:-6]  # Remove "_upper" suffix
+    
+    cost_variant = "unknown"
+    base_cost_id = ""
+    if scenario.cost_id.endswith("_base"):
+        cost_variant = "base"
+        base_cost_id = scenario.cost_id[:-5]  # Remove "_base" suffix
+    elif scenario.cost_id.endswith("_lower"):
+        cost_variant = "lower"
+        base_cost_id = scenario.cost_id[:-6]  # Remove "_lower" suffix
+    elif scenario.cost_id.endswith("_upper"):
+        cost_variant = "upper"
+        base_cost_id = scenario.cost_id[:-6]  # Remove "_upper" suffix
+
     # Create the evaluation forecast with all parameters for complete tracking
     forecast_data = {
         "ability": scenario.ability,
@@ -541,7 +572,6 @@ def calculate_evaluation_forecast(
         "adjustment_method": design.adjustment_method,
         # Include original window for reference
         "original_window_lower": lower_bound,
-        "original_window_lower": lower_bound,
         "original_window_upper": upper_bound,
         # Include design parameters
         "repeats_per_unit": design.repeats_per_unit,
@@ -552,7 +582,12 @@ def calculate_evaluation_forecast(
         "ability_id": scenario.ability_id,
         "cost_id": scenario.cost_id,
         "constraint_id": scenario.constraint_id,
-        "design_id": design_id
+        "design_id": design_id,
+        # Add variant information
+        "ability_variant": ability_variant,
+        "cost_variant": cost_variant,
+        "base_ability_id": base_ability_id,
+        "base_cost_id": base_cost_id
     }
     
     return EvaluationForecast(**forecast_data)
@@ -681,10 +716,9 @@ def generate_evaluation_scenarios(
                     scenario_id=scenario_id,
                     ability_id=ability_id,
                     cost_id=cost_id,
-                    constraint_id= constraint.name,
+                    constraint_id=constraint.name,
                     cost_model=cost_params['model']
                 )
-                
                 scenarios.append(scenario)
     
     return scenarios
