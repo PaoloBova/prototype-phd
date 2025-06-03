@@ -95,7 +95,7 @@ def plot_evaluation_windows(df: pd.DataFrame, output_dir: str, fmt: str = "png")
                     by_label = dict(zip(labels, handles))
                     plt.legend(by_label.values(), by_label.keys())
                     
-                    plt.tight_layout()
+                    # plt.tight_layout()
                     
                     # Save figure
                     safe_filename = f"windows_{scenario}_{cost_model}_{sampler}_{adj_method}.{fmt}".replace(" ", "_")
@@ -161,7 +161,7 @@ def plot_window_adjustments(df: pd.DataFrame, output_dir: str, fmt: str = "png")
         plt.grid(True, alpha=0.3)
         plt.legend()
         
-        plt.tight_layout()
+        # plt.tight_layout()
         
         # Save figure
         safe_filename = (f"window_adjustment_{row['ability_scenario']}_{row['ability_model']}_"
@@ -255,7 +255,7 @@ def plot_task_density(df: pd.DataFrame, output_dir: str, fmt: str = "png"):
                     plt.grid(True, alpha=0.3)
                     plt.legend()
                     
-                    plt.tight_layout()
+                    # plt.tight_layout()
                     
                     # Save figure
                     safe_filename = f"density_{scenario}_{cost_model}_{sampler}_{adj_method}.{fmt}".replace(" ", "_")
@@ -307,7 +307,7 @@ def plot_sample_counts(df: pd.DataFrame, output_dir: str, fmt: str = "png"):
             plt.xticks(ticks=plt.xticks()[0], 
                       labels=[f"{x*100:.0f}%" for x in sorted(scenario_df["budget_fraction"].unique())])
             
-            plt.tight_layout()
+            # plt.tight_layout()
             
             # Save figure
             safe_filename = f"sample_counts_{scenario}_{cost_model}.{fmt}".replace(" ", "_")
@@ -357,7 +357,7 @@ def plot_cost_allocation(df: pd.DataFrame, output_dir: str, fmt: str = "png"):
             plt.xticks(ticks=plt.xticks()[0], 
                       labels=[f"{x*100:.0f}%" for x in sorted(scenario_df["budget_fraction"].unique())])
             
-            plt.tight_layout()
+            # plt.tight_layout()
             
             # Save figure
             safe_filename = f"cost_allocation_{scenario}_{cost_model}.{fmt}".replace(" ", "_")
@@ -430,7 +430,7 @@ def plot_scenario_comparison(df: pd.DataFrame, output_dir: str, fmt: str = "png"
     
     for base_scenario in plot_scenarios:
         # Get all related scenarios
-        scenario_family = plot_df[plot_df['base_scenario'] == base_scenario]
+        scenario_family = plot_df[plot_df['base_scenario'] == base_scenario].copy()  # Create an explicit copy
         
         if len(scenario_family) == 0:
             print(f"No matching scenarios found for base: {base_scenario}")
@@ -443,12 +443,13 @@ def plot_scenario_comparison(df: pd.DataFrame, output_dir: str, fmt: str = "png"
         combinations = scenario_family.groupby(key_columns).size().reset_index()[key_columns]
         
         for _, combo in combinations.iterrows():
+            # Use .copy() to create a new DataFrame instead of a view
             filtered_df = scenario_family[
                 (scenario_family['ability_model'] == combo['ability_model']) &
                 (scenario_family['cost_model'] == combo['cost_model']) &
                 (scenario_family['adjustment_method'] == combo['adjustment_method']) &
                 (scenario_family['sampler_type'] == combo['sampler_type'])
-            ]
+            ].copy()  # Create an explicit copy to avoid SettingWithCopyWarning
             
             # Sort variants for consistent ordering
             filtered_df['plot_order'] = 0
@@ -471,7 +472,7 @@ def plot_scenario_comparison(df: pd.DataFrame, output_dir: str, fmt: str = "png"
             
             # Plot each variant
             for i, variant in enumerate(variants_present):
-                variant_df = filtered_df[filtered_df['scenario_variant'] == variant]
+                variant_df = filtered_df[filtered_df['scenario_variant'] == variant].copy()  # Another explicit copy
                 variant_df = variant_df.sort_values('budget_fraction')
                 
                 plt.subplot(n_subplots, 1, i+1)
@@ -505,7 +506,7 @@ def plot_scenario_comparison(df: pd.DataFrame, output_dir: str, fmt: str = "png"
             plt.suptitle(f"Window Comparison Across Scenarios\n"
                         f"Model: {combo['ability_model']}, Cost: {combo['cost_model']}\n"
                         f"Method: {combo['adjustment_method']}, Sampler: {combo['sampler_type']}")
-            plt.tight_layout()
+            # plt.tight_layout()
             
             # Save figure
             safe_filename = (f"scenario_comparison_{base_scenario}_{combo['ability_model']}_{combo['cost_model']}_"
@@ -574,15 +575,15 @@ def main():
     
     # Apply filters if specified
     if args.filter_model:
-        df = df[df["ability_model"] == args.filter_model]
+        df = df[df["ability_model"] == args.filter_model].copy()  # Create copy to avoid warnings
         print(f"Filtered to {len(df)} records for model: {args.filter_model}")
     
     if args.filter_scenario:
-        df = df[df["ability_scenario"] == args.filter_scenario]
+        df = df[df["ability_scenario"] == args.filter_scenario].copy()  # Create copy 
         print(f"Filtered to {len(df)} records for scenario: {args.filter_scenario}")
         
     if args.filter_cost:
-        df = df[df["cost_model"] == args.filter_cost]
+        df = df[df["cost_model"] == args.filter_cost].copy()  # Create copy
         print(f"Filtered to {len(df)} records for cost model: {args.filter_cost}")
     
     # Create output directory
