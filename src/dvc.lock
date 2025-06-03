@@ -197,3 +197,21 @@ stages:
       hash: md5
       md5: a8aff41b069bd0481ba0965f342763ab
       size: 53344
+  analyze_bias:
+    cmd: python -m src.tools.analyze_bias --input output/forecast_detection/simulation_results.csv
+      --output reports/bias_analysis
+    deps:
+    - path: output/forecast_detection/simulation_results.csv
+      hash: md5
+      md5: a8aff41b069bd0481ba0965f342763ab
+      size: 53344
+    - path: src/tools/analyze_bias.py
+      hash: md5
+      md5: fe3bae838f95b0182096cafc59fffe8c
+      size: 25495
+    outs:
+    - path: reports/bias_analysis
+      hash: md5
+      md5: 51a2e9dbdb1ad63ede82bf98f6c68f3e.dir
+      size: 1228059
+      nfiles: 15
