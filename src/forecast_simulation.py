@@ -534,15 +534,15 @@ def run_simulations(
                 # Calculate statistics
                 stats = calculate_stats(sim_results, estimator, true_value)
                 
-                # Create additional fields dictionary with all necessary metadata for analysis
+                # --- build metadata for CSV output ---
                 additional_fields = {
                     "ability_id": forecast.ability_id,
                     "cost_id": forecast.cost_id,
+                    "constraint_id": forecast.constraint_id,
                     "design_id": forecast.design_id,
                     "budget_fraction": forecast.budget_fraction,
                 }
-                
-                # Add variant information if available
+                # include variants if present
                 if hasattr(forecast, "ability_variant"):
                     additional_fields["ability_variant"] = forecast.ability_variant
                 if hasattr(forecast, "cost_variant"):
@@ -551,8 +551,8 @@ def run_simulations(
                     additional_fields["base_ability_id"] = forecast.base_ability_id
                 if hasattr(forecast, "base_cost_id"):
                     additional_fields["base_cost_id"] = forecast.base_cost_id
-                
-                # Create sensitivity result with additional fields
+
+                # Create result with additional fields
                 sensitivity_result = SensitivityResult(
                     ability_scenario=forecast.ability.scenario,
                     budget_scenario=forecast.budget_scenario,
@@ -560,20 +560,21 @@ def run_simulations(
                     estimator=estimator,
                     bias=float(stats["bias"]),
                     variance=float(stats["variance"]),
+                    mean=float(stats["mean"]),               
+                    true_value=true_value,                   
                     ci_lower=float(stats["lower_ci"]),
                     ci_upper=float(stats["upper_ci"]),
                     contains_true=bool(stats["contains_true"]),
                     **additional_fields
                 )
-                
                 results.append(sensitivity_result)
-                
+
                 # Save raw results to HDF5 file if provided and configured
                 if raw_file is not None and config_data.get("output", {}).get("save_individual_simulations", False):
                     create_nested_hdf5_structure(
                         raw_file, forecast, estimator, sim_results, stats, simulation_config
                     )
-                
+
                 # Store in memory
                 raw_results[sim_id] = {
                     'results': sim_results,
@@ -583,27 +584,29 @@ def run_simulations(
                         'budget_scenario': forecast.budget_scenario,
                         'date': forecast.ability.date,
                         'true_value': true_value,
+                        'mean': stats["mean"],
                         'window_lower': forecast.window_lower,
                         'window_upper': forecast.window_upper,
                         'total_samples': forecast.total_samples,
                         'threshold': forecast.ability.threshold,
                         'slope': forecast.ability.slope,
                         'sampler_type': forecast.sampler_type,
-                        # Add the same additional fields here
                         'ability_id': forecast.ability_id,
                         'cost_id': forecast.cost_id,
+                        'constraint_id': forecast.constraint_id,
                         'design_id': forecast.design_id,
                         'budget_fraction': forecast.budget_fraction
                     },
                     'stats': stats
                 }
-                
-                # Add variant information to metadata if available
-                if hasattr(forecast, "ability_variant") and hasattr(forecast, "cost_variant"):
+                # add variants into raw_results as well
+                if hasattr(forecast, "ability_variant"):
                     raw_results[sim_id]['metadata']['ability_variant'] = forecast.ability_variant
+                if hasattr(forecast, "cost_variant"):
                     raw_results[sim_id]['metadata']['cost_variant'] = forecast.cost_variant
-                if hasattr(forecast, "base_ability_id") and hasattr(forecast, "base_cost_id"):
+                if hasattr(forecast, "base_ability_id"):
                     raw_results[sim_id]['metadata']['base_ability_id'] = forecast.base_ability_id
+                if hasattr(forecast, "base_cost_id"):
                     raw_results[sim_id]['metadata']['base_cost_id'] = forecast.base_cost_id
     finally:
         # Close the HDF5 file if it was opened

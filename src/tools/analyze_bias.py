@@ -14,6 +14,17 @@ from typing import Dict, List, Optional, Tuple, Any, Set
 from datetime import datetime
 from collections import defaultdict
 
+def remove_outliers(df: pd.DataFrame, quantile: float = 0.99) -> pd.DataFrame:
+    """Drop extreme bias, variance, mse beyond given quantile."""
+    thresh_b = df['bias'].abs().quantile(quantile)
+    thresh_v = df['variance'].quantile(quantile)
+    thresh_m = df['mse'].quantile(quantile) if 'mse' in df.columns else np.inf
+    return df[
+        (df['bias'].abs() <= thresh_b) &
+        (df['variance'] <= thresh_v) &
+        (df.get('mse', df['variance']) <= thresh_m)
+    ]
+
 def parse_args():
     """Parse command line arguments."""
     parser = argparse.ArgumentParser(description="Analyze bias results from CSV data")
@@ -37,6 +48,10 @@ def parse_args():
     parser.add_argument("--max-lines", type=int, default=8, 
                         help="Maximum number of lines per plot before splitting")
     parser.add_argument("--debug", action="store_true", help="Enable debug mode for detailed output")
+    parser.add_argument("--remove-outliers", action="store_true",
+                        help="Drop extreme outliers before plotting")
+    parser.add_argument("--outlier-quantile", type=float, default=0.99,
+                        help="Quantile threshold for outlier removal")
     return parser.parse_args()
 
 def load_and_preprocess_data(csv_path: str) -> pd.DataFrame:
@@ -838,6 +853,60 @@ def plot_ci_width_vs_budget(df: pd.DataFrame, output_dir: str, fmt: str = "png",
         plt.close()
         print(f"Saved CI width vs. budget plot to {path}")
 
+def plot_mean_vs_true_scatter(df: pd.DataFrame, output_dir: str, fmt: str = "png"):
+    """Scatter estimated mean vs true value with identity line."""
+    if not all(c in df.columns for c in ('mean','true_value','estimator')):
+        return
+    for est, sub in df.groupby('estimator'):
+        plt.figure(figsize=(6,6))
+        plt.scatter(sub['true_value'], sub['mean'], c=sub['budget_fraction'],
+                    cmap='viridis', alpha=0.7)
+        mx = np.nanmax([sub['true_value'].max(), sub['mean'].max()])
+        mn = np.nanmin([sub['true_value'].min(), sub['mean'].min()])
+        plt.plot([mn,mx], [mn,mx], 'k--', linewidth=1)
+        plt.colorbar(label='Budget Fraction')
+        plt.xlabel('True Value')
+        plt.ylabel('Estimated Mean')
+        plt.title(f'Mean vs True ({est})')
+        plt.grid(True, alpha=0.3)
+        path = os.path.join(output_dir, est, f"mean_vs_true.{fmt}")
+        os.makedirs(os.path.dirname(path), exist_ok=True)
+        plt.tight_layout()
+        plt.savefig(path, dpi=150)
+        plt.close()
+        print(f"Saved mean vs true scatter to {path}")
+
+def plot_bias_variance_by_date(df: pd.DataFrame, output_dir: str, fmt: str = "png"):
+    """Small multiples of bias vs variance: one subplot per date, one line per budget."""
+    if not all(c in df.columns for c in ('date','bias','variance','budget_fraction','estimator')):
+        return
+    for est, sub in df.groupby('estimator'):
+        dates = sorted(sub['date'].unique())
+        n = len(dates)
+        cols = int(np.ceil(np.sqrt(n)))
+        rows = int(np.ceil(n/cols))
+        fig, axes = plt.subplots(rows, cols, figsize=(cols*4, rows*3), sharex=True, sharey=True)
+        axes = axes.flatten()
+        for ax, d in zip(axes, dates):
+            ddf = sub[sub['date']==d]
+            for bf, bf_df in ddf.groupby('budget_fraction'):
+                bf_df = bf_df.sort_values('bias')
+                ax.plot(bf_df['bias'], bf_df['variance'], marker='o', label=f"bf={bf}")
+            ax.set_title(str(d.date()))
+            ax.grid(True, alpha=0.3)
+            ax.legend(fontsize='x-small')
+        # turn off unused axes
+        for unused in axes[len(dates):]:
+            unused.set_visible(False)
+        fig.suptitle(f'Bias-Variance by Date ({est})')
+        plt.tight_layout(rect=[0,0.03,1,0.95])
+        out_dir = os.path.join(output_dir, est)
+        os.makedirs(out_dir, exist_ok=True)
+        path = os.path.join(out_dir, f"bias_variance_by_date.{fmt}")
+        fig.savefig(path, dpi=150)
+        plt.close(fig)
+        print(f"Saved bias-variance by date grid to {path}")
+
 def create_summary_table(df: pd.DataFrame, output_dir: str):
     """
     Create CSV summary of bias, variance, MSE and coverage by estimator and budget.
@@ -902,6 +971,9 @@ def main():
     # Apply filters
     filtered_df = apply_filters(df, args)
     print(f"After filtering: {len(filtered_df)} records")
+    if args.remove_outliers:
+        filtered_df = remove_outliers(filtered_df, args.outlier_quantile)
+        print(f"After outlier removal: {len(filtered_df)} records")
     
     if len(filtered_df) == 0:
         print("No records left after filtering, exiting.")
@@ -916,7 +988,10 @@ def main():
     plot_bias_variance_tradeoff(filtered_df, args.output, args.format)
     plot_coverage_vs_budget(filtered_df, args.output, args.format, args.max_lines)
     plot_ci_width_vs_budget(filtered_df, args.output, args.format, args.max_lines)
-    create_summary_table(filtered_df, args.output)
+    
+    # --- new plots ---
+    plot_mean_vs_true_scatter(filtered_df, args.output, args.format)
+    plot_bias_variance_by_date(filtered_df, args.output, args.format)
     
     print(f"All visualizations saved to {args.output}")
 
