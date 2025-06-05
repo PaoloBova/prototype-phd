@@ -106,7 +106,7 @@ stages:
     cmd: python -m src.tools.explore_simulations --raw output/forecast_detection/raw_simulation_results.h5 --output reports/forecast_detection/exploration_results.csv --debug
     deps:
       - output/forecast_detection/raw_simulation_results.h5
-      - src/explore_simulations.py
+      - src/tools/explore_simulations.py
     outs:
       - reports/forecast_detection/exploration_results.csv
 

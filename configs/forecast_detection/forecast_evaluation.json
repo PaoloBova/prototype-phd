@@ -1,6 +1,6 @@
 {
   "resource_constraints": {
-    "static_budgets": [1.0, 0.75, 0.5, 0.25],
+    "static_budgets": [1.0, 0.75, 0.5, 0.25, 0.1],
     "include_dynamic_scenarios": false,
     "dynamic_start_date": "2025-01-01T00:00:00",
     "dynamic_end_date": "2030-12-31T00:00:00",

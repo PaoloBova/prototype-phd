@@ -10,7 +10,7 @@ import os
 import pandas as pd
 import json
 import logging
-from typing import Dict, List, Optional, Tuple, Any
+from typing import Dict, List, Optional, Tuple, Any, Union
 import seaborn as sns
 
 def parse_args():
@@ -590,6 +590,63 @@ def plot_bias_variance_tradeoff(h5_file: h5py.File, output_dir: str) -> None:
         
         print(f"Saved bias-variance by budget plot to {output_path}")
 
+def calculate_exceedance_probability(results: np.ndarray, threshold: float) -> float:
+    """Return fraction of non-NaN estimates above the given threshold."""
+    valid = results[~np.isnan(results)]
+    if len(valid) == 0:
+        return 0.0
+    return float((valid > threshold).sum() / len(valid))
+
+def plot_exceedance_probability(
+    h5_file: h5py.File,
+    output_dir: str,
+    risk_thresholds: Union[List[float], Dict[str, List[float]]]
+) -> None:
+    """Plot P(estimate > risk_threshold) vs true_value for each estimator."""
+    import pandas as pd
+    data = []
+    for path in get_simulation_paths(h5_file):
+        results, metadata, stats = load_simulation_results(h5_file, path)
+        true_value = metadata.get('true_value')
+        estimator = metadata.get('estimator', 'unknown')
+        if true_value is None:
+            continue
+        # pick thresholds for this estimator
+        if isinstance(risk_thresholds, dict):
+            thr_list = risk_thresholds.get(estimator, [])
+        else:
+            thr_list = risk_thresholds
+        for rt in thr_list:
+            p = calculate_exceedance_probability(results, rt)
+            data.append({
+                'estimator': estimator,
+                'true_value': true_value,
+                'risk_threshold': rt,
+                'exceedance_prob': p
+            })
+    if not data:
+        print("No data for exceedance analysis")
+        return
+    df = pd.DataFrame(data)
+    for estimator, grp in df.groupby('estimator'):
+        plt.figure(figsize=(8, 6))
+        used = sorted(grp['risk_threshold'].unique())
+        for rt in used:
+            sub = grp[grp['risk_threshold'] == rt].sort_values('true_value')
+            plt.plot(sub['true_value'], sub['exceedance_prob'],
+                     marker='o', label=f"Risk > {rt}")
+        plt.xlabel('True Value')
+        plt.ylabel('P(Estimate > Threshold)')
+        plt.title(f'Exceedance Probability vs True Value ({estimator})')
+        plt.legend()
+        plt.grid(True, alpha=0.3)
+        out_path = os.path.join(output_dir, f"exceedance_{estimator}.png")
+        os.makedirs(os.path.dirname(out_path), exist_ok=True)
+        plt.tight_layout()
+        plt.savefig(out_path, dpi=150)
+        plt.close()
+        print(f"Saved exceedance plot to {out_path}")
+
 def main():
     """Main entry point."""
     args = parse_args()
@@ -696,6 +753,11 @@ def main():
         # Generate additional plots
         plot_bias_variance_tradeoff(h5_file, args.output)
         
+        # get per-estimator or flat thresholds from config
+        rt_cfg = config.get("risk_thresholds") if config else None
+        if not rt_cfg:
+            rt_cfg = [20]  # fallback
+        plot_exceedance_probability(h5_file, args.output, rt_cfg)
         print(f"All visualizations saved to {args.output}")
 
 if __name__ == "__main__":

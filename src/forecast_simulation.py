@@ -165,15 +165,12 @@ def calculate_true_weighted_score(threshold: float, slope: float, config: Dict[s
     bin_centers = (bin_edges[:-1] + bin_edges[1:]) / 2
     idx = np.minimum(np.digitize(diff_grid, bin_edges) - 1, n_bins - 1)
     tasks_disc = bin_centers[idx]
-    print(f"Difficulty range: {range_min} to {range_max}")
-    print(f"Threshold: {threshold}, Slope: {slope}")
     # use weighted_score_estimator to combine levels
     normalize = config.get("normalize", False)
     weighted_score = weighted_score_estimator(tasks_disc,
                                               probs,
                                               level_weight_fn=weight_fn,
                                               normalize=normalize)
-    print(f"Calculated true weighted score: {weighted_score}")
     return weighted_score
 
 
@@ -413,7 +410,8 @@ def create_nested_hdf5_structure(
     estimator: str,
     sim_results: np.ndarray,
     stats_data: Dict[str, Any],
-    sim_config: SimulationConfig
+    sim_config: SimulationConfig,
+    true_value: float
 ) -> None:
     """
     Create a nested hierarchical structure in the HDF5 file for storing simulation results.
@@ -481,7 +479,7 @@ def create_nested_hdf5_structure(
     sim_group.create_dataset('results', data=sim_results)
     
     # Store metadata as attributes
-    sim_group.attrs['true_value'] = forecast.ability.threshold if estimator == "threshold" else calculate_true_weighted_score(forecast.ability.threshold, forecast.ability.slope)
+    sim_group.attrs['true_value'] = true_value
     sim_group.attrs['window_lower'] = forecast.window_lower
     sim_group.attrs['window_upper'] = forecast.window_upper
     sim_group.attrs['total_samples'] = forecast.total_samples
@@ -628,7 +626,7 @@ def run_simulations(
                 # Save raw results to HDF5 file if provided and configured
                 if raw_file is not None and config_data.get("output", {}).get("save_individual_simulations", False):
                     create_nested_hdf5_structure(
-                        raw_file, forecast, estimator, sim_results, stats, simulation_config
+                        raw_file, forecast, estimator, sim_results, stats, simulation_config, true_value
                     )
 
                 # Store in memory
