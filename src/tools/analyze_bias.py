@@ -861,7 +861,7 @@ def plot_mean_vs_true_scatter(df: pd.DataFrame, output_dir: str, fmt: str = "png
         plt.figure(figsize=(6,6))
         plt.scatter(sub['true_value'], sub['mean'], c=sub['budget_fraction'],
                     cmap='viridis', alpha=0.7)
-        mx = np.nanmapx([sub['true_value'].max(), sub['mean'].max()])
+        mx = np.nanmax([sub['true_value'].max(), sub['mean'].max()])
         mn = np.nanmin([sub['true_value'].min(), sub['mean'].min()])
         plt.plot([mn,mx], [mn,mx], 'k--', linewidth=1)
         plt.colorbar(label='Budget Fraction')
