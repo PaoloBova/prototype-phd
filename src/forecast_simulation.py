@@ -165,12 +165,15 @@ def calculate_true_weighted_score(threshold: float, slope: float, config: Dict[s
     bin_centers = (bin_edges[:-1] + bin_edges[1:]) / 2
     idx = np.minimum(np.digitize(diff_grid, bin_edges) - 1, n_bins - 1)
     tasks_disc = bin_centers[idx]
+    print(f"Difficulty range: {range_min} to {range_max}")
+    print(f"Threshold: {threshold}, Slope: {slope}")
     # use weighted_score_estimator to combine levels
     normalize = config.get("normalize", False)
     weighted_score = weighted_score_estimator(tasks_disc,
                                               probs,
                                               level_weight_fn=weight_fn,
                                               normalize=normalize)
+    print(f"Calculated true weighted score: {weighted_score}")
     return weighted_score
 
 

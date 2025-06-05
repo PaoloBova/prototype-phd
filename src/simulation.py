@@ -295,38 +295,29 @@ def weighted_score_estimator(
     if len(tasks) == 0:
         return float('nan')
 
-    # unique difficulty levels
+    # 1) unique levels, sorted
     levels = np.unique(tasks)
-    estimates = []
-    counts = []
+    # 2) compute bin‐widths for a trapezoid rule
+    diffs = np.diff(levels)
+    widths = np.empty_like(levels)
+    widths[1:-1] = (diffs[:-1] + diffs[1:]) / 2
+    widths[0]    = diffs[0]
+    widths[-1]   = diffs[-1]
 
-    # compute success rate and count per level
-    for lev in levels:
-        mask = tasks == lev
-        cnt = mask.sum()
-        counts.append(cnt)
-        estimates.append(outcomes[mask].mean() if cnt > 0 else np.nan)
+    # 3) per‐level success rates
+    rates = np.array([outcomes[tasks==lev].mean() for lev in levels])
+    # 4) weights
+    lvl_w  = np.array([level_weight_fn(lev) for lev in levels])
+    info_w = (np.ones_like(rates)
+              if info_weight_fn is None
+              else np.array([info_weight_fn(lev, (tasks==lev).sum())
+                              for lev in levels]))
 
-    estimates = np.array(estimates, dtype=float)
-    counts = np.array(counts, dtype=float)
+    # 5) area approximation
+    area = np.nansum(rates * lvl_w * info_w * widths)
 
-    # level weights
-    lvl_w = np.array([level_weight_fn(lev) for lev in levels], dtype=float)
-
-    # info weights
-    if info_weight_fn is None:
-        info_w = np.ones_like(counts)
-    else:
-        info_w = np.array([info_weight_fn(lev, cnt) for lev, cnt in zip(levels, counts)], dtype=float)
-
-    # final weighted sum
-    weighted_sum = np.nansum(estimates * info_w * lvl_w)
-    
     if normalize:
-        # Normalize by total weight
-        total_weight = np.nansum(info_w * lvl_w)
-        if total_weight == 0:
-            return float('nan')
-        weighted_sum /= total_weight
-    return float(weighted_sum)
+        norm = np.nansum(lvl_w * info_w * widths)
+        return float(area / (norm or np.nan))
+    return float(area)
 
