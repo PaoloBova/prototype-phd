@@ -861,7 +861,7 @@ def plot_mean_vs_true_scatter(df: pd.DataFrame, output_dir: str, fmt: str = "png
         plt.figure(figsize=(6,6))
         plt.scatter(sub['true_value'], sub['mean'], c=sub['budget_fraction'],
                     cmap='viridis', alpha=0.7)
-        mx = np.nanmax([sub['true_value'].max(), sub['mean'].max()])
+        mx = np.nanmapx([sub['true_value'].max(), sub['mean'].max()])
         mn = np.nanmin([sub['true_value'].min(), sub['mean'].min()])
         plt.plot([mn,mx], [mn,mx], 'k--', linewidth=1)
         plt.colorbar(label='Budget Fraction')
@@ -930,6 +930,37 @@ def create_summary_table(df: pd.DataFrame, output_dir: str):
     summary.to_csv(path, index=False)
     print(f"Saved analysis summary to {path}")
 
+def plot_window_size_vs_budget(df: pd.DataFrame, output_dir: str, fmt: str = "png", max_lines: int = 8):
+    """
+    Plot evaluation window size (upper−lower) vs. budget fraction,
+    one line per scenario_key (up to max_lines).
+    """
+    if not all(c in df.columns for c in ('window_lower','window_upper','budget_fraction','estimator','scenario_key')):
+        print("Cannot plot window size vs budget: missing required columns")
+        return
+
+    df['window_size'] = df['window_upper'] - df['window_lower']
+    for est, sub in df.groupby('estimator'):
+        out_dir = os.path.join(output_dir, est)
+        os.makedirs(out_dir, exist_ok=True)
+        plt.figure(figsize=(10,6))
+        keys = sub['scenario_key'].unique()
+        # limit number of lines
+        keys = keys if len(keys) <= max_lines else keys[:max_lines]
+        for key in keys:
+            series = sub[sub['scenario_key']==key].sort_values('budget_fraction')
+            plt.plot(series['budget_fraction'], series['window_size'], marker='o', label=key)
+        plt.xlabel('Budget Fraction')
+        plt.ylabel('Window Size')
+        plt.title(f'Window Size vs Budget ({est})')
+        plt.legend(fontsize='small', ncol=2)
+        plt.grid(True, alpha=0.3)
+        path = os.path.join(out_dir, f"window_size_vs_budget.{fmt}")
+        plt.tight_layout()
+        plt.savefig(path, dpi=150)
+        plt.close()
+        print(f"Saved window size vs budget plot to {path}")
+
 def main():
     """Main entry point."""
     args = parse_args()
@@ -992,6 +1023,7 @@ def main():
     # --- new plots ---
     plot_mean_vs_true_scatter(filtered_df, args.output, args.format)
     plot_bias_variance_by_date(filtered_df, args.output, args.format)
+    plot_window_size_vs_budget(filtered_df, args.output, args.format, args.max_lines)
     
     print(f"All visualizations saved to {args.output}")
 

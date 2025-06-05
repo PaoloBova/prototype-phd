@@ -147,23 +147,32 @@ def calculate_true_weighted_score(threshold: float, slope: float, config: Dict[s
     Returns:
         True weighted score
     """
-    range_min = config.get("range_min", -5)
-    range_max = config.get("range_max", 20)
+    # Throw a warning if no range provided
+    if "range_min" not in config or "range_max" not in config:
+        logging.warning("No range provided in config, using default range [-1000, 1000]")
+    range_min = config.get("range_min", -1000)
+    range_max = config.get("range_max", 1000)
     weight_fn = create_weight_function(config.get("weight_function", {"type": "linear"}))
-    
     # Create a fine grid of difficulties
+    
     diff_grid = np.linspace(range_min, range_max, 1000)
-    
-    # Calculate success probabilities
+    # Delegates to weighted_score_estimator by treating the logistic
+    # probability curve as “outcomes” on a fine difficulty grid.
     probs = logistic_function(diff_grid, threshold, slope)
-    
-    # Calculate weights
-    weights = np.array([weight_fn(x) for x in diff_grid])
-    
-    # Calculate weighted average
-    weighted_score = np.sum(probs * weights) / np.sum(weights)
-    
+    # discretize continuous tasks into bins for per‐level estimates
+    n_bins = config.get("n_bins", 10)
+    bin_edges = np.linspace(range_min, range_max, n_bins + 1)
+    bin_centers = (bin_edges[:-1] + bin_edges[1:]) / 2
+    idx = np.minimum(np.digitize(diff_grid, bin_edges) - 1, n_bins - 1)
+    tasks_disc = bin_centers[idx]
+    # use weighted_score_estimator to combine levels
+    normalize = config.get("normalize", False)
+    weighted_score = weighted_score_estimator(tasks_disc,
+                                              probs,
+                                              level_weight_fn=weight_fn,
+                                              normalize=normalize)
     return weighted_score
+
 
 def simulate_estimator(
     forecast: EvaluationForecast,
@@ -186,17 +195,45 @@ def simulate_estimator(
     # Set up the analysis function based on the specified estimator
     if estimator == "threshold":
         threshold_config = config.get("threshold_estimator", {})
-        logreg_config = prototype_phd.stats.LogRegConfig(**threshold_config)
-        analysis_fn = lambda tasks, outcomes: prototype_phd.stats.compute_threshold(
-            tasks[:, None], outcomes,
-            config=logreg_config,
-        )
+        # if using scikit-learn with warm_start, reuse one classifier for all samples
+        if threshold_config.get("engine") == "scikit-learn" and threshold_config.get("warm_start", False):
+            from sklearn.linear_model import LogisticRegression
+            lr_conf = prototype_phd.stats.LogRegConfig(**threshold_config)
+            clf = LogisticRegression(
+                C=lr_conf.C,
+                solver=lr_conf.solver,
+                max_iter=lr_conf.max_iter,
+                tol=lr_conf.tol,
+                warm_start=lr_conf.warm_start,
+                random_state=lr_conf.random_state
+            )
+            def analysis_fn(tasks, outcomes):
+                X = tasks[:, None]
+                clf.fit(X, outcomes)                     # warm start uses previous coef
+                b0 = clf.intercept_[0]
+                b1 = clf.coef_[0][0]
+                return -b0 / b1                          # threshold = –intercept/coefficient
+        else:
+            logreg_config = prototype_phd.stats.LogRegConfig(**threshold_config)
+            analysis_fn = lambda tasks, outcomes: prototype_phd.stats.compute_threshold(
+                tasks[:, None], outcomes,
+                config=logreg_config,
+            )
     elif estimator == "weighted_score":
-        weighted_score_config = config.get("weighted_score", {})
-        weight_fn = create_weight_function(weighted_score_config.get("weight_function", {"type": "linear"}))
-        analysis_fn = lambda tasks, outcomes: weighted_score_estimator(
-            tasks, outcomes, weight_fn
-        )
+        ws_cfg = config.get("weighted_score", {})
+        weight_fn = create_weight_function(ws_cfg.get("weight_function", {"type": "linear"}))
+        # discretize continuous tasks into bins for per‐level estimates
+        n_bins = ws_cfg.get("n_bins", 10)
+        bin_edges = np.linspace(forecast.window_lower, forecast.window_upper, n_bins + 1)
+        bin_centers = (bin_edges[:-1] + bin_edges[1:]) / 2
+        def analysis_fn(tasks, outcomes):
+            # assign each task to a bin center
+            idx = np.minimum(np.digitize(tasks, bin_edges) - 1, n_bins - 1)
+            tasks_disc = bin_centers[idx]
+            return weighted_score_estimator(tasks_disc,
+                                            outcomes,
+                                            level_weight_fn=weight_fn,
+                                            normalize=ws_cfg.get("normalize", False))
     else:
         raise ValueError(f"Unsupported estimator: {estimator}")
     
@@ -229,11 +266,17 @@ def calculate_true_value(estimator: str, forecast: EvaluationForecast, config: D
     if estimator == "threshold":
         return forecast.ability.threshold
     elif estimator == "weighted_score":
-        weighted_score_config = config.get("weighted_score", {})
+        ws_cfg = config.get("weighted_score", {})
+        # inject the *same* window used for simulation:
+        ws_cfg = {
+            **ws_cfg,
+            "range_min": forecast.window_lower,
+            "range_max": forecast.window_upper,
+        }
         return calculate_true_weighted_score(
             forecast.ability.threshold,
             forecast.ability.slope,
-            weighted_score_config
+            ws_cfg
         )
     else:
         raise ValueError(f"Unsupported estimator: {estimator}")
@@ -541,6 +584,11 @@ def run_simulations(
                     "constraint_id": forecast.constraint_id,
                     "design_id": forecast.design_id,
                     "budget_fraction": forecast.budget_fraction,
+                    "window_lower": forecast.window_lower,
+                    "window_upper": forecast.window_upper,
+                    "original_window_lower": forecast.original_window_lower,
+                    "original_window_upper": forecast.original_window_upper,
+                    "total_samples": forecast.total_samples
                 }
                 # include variants if present
                 if hasattr(forecast, "ability_variant"):
@@ -552,7 +600,6 @@ def run_simulations(
                 if hasattr(forecast, "base_cost_id"):
                     additional_fields["base_cost_id"] = forecast.base_cost_id
 
-                # Create result with additional fields
                 sensitivity_result = SensitivityResult(
                     ability_scenario=forecast.ability.scenario,
                     budget_scenario=forecast.budget_scenario,

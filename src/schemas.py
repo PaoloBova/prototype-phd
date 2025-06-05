@@ -70,6 +70,8 @@ class SensitivityResult(BaseModel):
     budget_scenario: str = Field(..., description="Budget scenario name")
     date: datetime = Field(..., description="Forecast date")
     estimator: str = Field(..., description="Type of estimator used")
+    mean: float = Field(..., description="Mean estimate of the parameter")
+    true_value: float = Field(..., description="True value of the parameter being estimated")
     bias: float = Field(..., description="Mean difference between estimate and true value")
     variance: float = Field(..., description="Variance of estimate")
     ci_lower: float = Field(..., description="Lower bound of confidence interval")
@@ -83,6 +85,11 @@ class SensitivityResult(BaseModel):
     cost_variant: Optional[str] = Field(None, description="Variant of cost model (base, lower, upper)")
     base_ability_id: Optional[str] = Field(None, description="Base ability ID without variant suffix")
     base_cost_id: Optional[str] = Field(None, description="Base cost ID without variant suffix")
+    window_lower: float = Field(..., description="Lower bound of evaluation window")
+    window_upper: float = Field(..., description="Upper bound of evaluation window")
+    original_window_lower: float = Field(..., description="Original lower bound of evaluation window")
+    original_window_upper: float = Field(..., description="Original upper bound of evaluation window")
+    total_samples: int = Field(..., description="Total number of tasks to sample")
     
     class Config:
         arbitrary_types_allowed = True

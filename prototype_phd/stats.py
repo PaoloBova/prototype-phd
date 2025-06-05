@@ -148,8 +148,13 @@ def prepare_binned_data(
 class LogRegConfig(BaseModel):
     engine: str = Field("statsmodels", description="Engine: 'statsmodels' or 'scikit-learn'.")
     C: float = Field(1.0, description="Inverse of regularization strength (for scikit-learn).")
-    solver: str = Field("lbfgs", description="Solver to use (scikit-learn).")
-    max_iter: int = Field(1000, description="Maximum iterations for convergence (scikit-learn).")
+    solver: str = Field("liblinear",
+                        description="Solver to use (scikit-learn). 'liblinear' is faster for 1-D problems.")
+    max_iter: int = Field(100, description="Max iterations for convergence (scikit-learn). Reduced for speed.")
+    tol: float = Field(1e-3,
+                       description="Convergence tolerance (higher = faster, less precise).")
+    warm_start: bool = Field(True,
+                             description="Reuse coefficients as init for next fit (scikit-learn).")
     random_state: int = Field(42, description="Random seed (scikit-learn).")
     sample_weight: Optional[np.ndarray] = Field(None, description="Sample weights (scikit-learn).")
     standardize_data: bool = Field(
@@ -382,9 +387,11 @@ def fit_logistic(
         X_scaled = X
     
     clf = LogisticRegression(
-        C=config.C, 
-        solver=config.solver, 
-        max_iter=config.max_iter, 
+        C=config.C,
+        solver=config.solver,
+        max_iter=config.max_iter,
+        tol=config.tol,
+        warm_start=config.warm_start,
         random_state=config.random_state,
     )
     conv_flag = True

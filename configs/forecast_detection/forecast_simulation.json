@@ -16,12 +16,16 @@
   },
   "threshold_estimator": {
     "engine": "scikit-learn",
-    "max_iter": 1000,
-    "C": 1.0
+    "max_iter": 100,
+    "C": 1.0,
+    "tol": 0.001,
+    "solver": "lbfgs",
+    "warm_start": false
   },
   "weighted_score": {
     "range_min": -5,
     "range_max": 20,
+    "normalize": true,
     "weight_function": {
       "type": "linear",
       "base": 1.0,

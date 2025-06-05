@@ -274,27 +274,59 @@ def calculate_simulation_statistics(results: np.ndarray) -> Dict[str, float]:
     }
 
 def weighted_score_estimator(
-    tasks: np.ndarray, 
-    outcomes: np.ndarray, 
-    weight_fn: Callable[[float], float] = lambda x: 1.0 + 0.5 * x
+    tasks: np.ndarray,
+    outcomes: np.ndarray,
+    level_weight_fn: Callable[[float], float] = lambda x: 1.0 + 0.5 * x,
+    info_weight_fn: Optional[Callable[[float,int], float]] = None,
+    normalize: bool = False
 ) -> float:
     """
-    Calculate weighted average of success rates.
-    
+    Compute weighted sum of success rates per difficulty level.
+
     Args:
         tasks: Array of task difficulties
-        outcomes: Array of binary success outcomes
-        weight_fn: Function that maps difficulty to weight
-        
+        outcomes: Binary outcomes array
+        level_weight_fn: Weight for each difficulty level
+        info_weight_fn: Weight based on information (e.g., counts) per level
+
     Returns:
-        Weighted score
+        Weighted sum of success rates across unique difficulty levels.
     """
-    # Calculate weights
-    weights = np.array([weight_fn(diff) for diff in tasks])
-    
-    # Handle empty samples or all zero weights
-    if len(outcomes) == 0 or np.sum(weights) == 0:
+    if len(tasks) == 0:
         return float('nan')
-        
-    # Calculate weighted score
-    return float(np.sum(outcomes * weights) / np.sum(weights))
+
+    # unique difficulty levels
+    levels = np.unique(tasks)
+    estimates = []
+    counts = []
+
+    # compute success rate and count per level
+    for lev in levels:
+        mask = tasks == lev
+        cnt = mask.sum()
+        counts.append(cnt)
+        estimates.append(outcomes[mask].mean() if cnt > 0 else np.nan)
+
+    estimates = np.array(estimates, dtype=float)
+    counts = np.array(counts, dtype=float)
+
+    # level weights
+    lvl_w = np.array([level_weight_fn(lev) for lev in levels], dtype=float)
+
+    # info weights
+    if info_weight_fn is None:
+        info_w = np.ones_like(counts)
+    else:
+        info_w = np.array([info_weight_fn(lev, cnt) for lev, cnt in zip(levels, counts)], dtype=float)
+
+    # final weighted sum
+    weighted_sum = np.nansum(estimates * info_w * lvl_w)
+    
+    if normalize:
+        # Normalize by total weight
+        total_weight = np.nansum(info_w * lvl_w)
+        if total_weight == 0:
+            return float('nan')
+        weighted_sum /= total_weight
+    return float(weighted_sum)
+

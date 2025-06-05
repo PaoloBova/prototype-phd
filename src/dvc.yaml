@@ -58,6 +58,7 @@ stages:
       - src/forecast_simulation.py
       - configs/forecast_detection/forecast_simulation.json
       - src/simulation.py
+      - src/schemas.py
     outs:
       - output/forecast_detection/simulation_results.csv
       - output/forecast_detection/raw_simulation_results.h5
@@ -111,7 +112,7 @@ stages:
 
   analyze_bias:
     wdir: ..
-    cmd: python -m src.tools.analyze_bias --input output/forecast_detection/simulation_results.csv --output reports/bias_analysis --remove_outliers
+    cmd: python -m src.tools.analyze_bias --input output/forecast_detection/simulation_results.csv --output reports/bias_analysis --remove-outliers
     deps:
       - output/forecast_detection/simulation_results.csv
       - src/tools/analyze_bias.py
