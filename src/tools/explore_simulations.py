@@ -599,53 +599,73 @@ def calculate_exceedance_probability(results: np.ndarray, threshold: float) -> f
 
 def plot_exceedance_probability(
     h5_file: h5py.File,
-    output_dir: str,
-    risk_thresholds: Union[List[float], Dict[str, List[float]]]
+    output_path: str,
+    risk_thresholds: List[float],
+    estimator_type: Optional[str] = None,
+    ability_variant: Optional[str] = None,
+    cost_variant: Optional[str] = None,
+    budget_fraction: Optional[float] = None,
+    group_by: str = "true_value"
 ) -> None:
-    """Plot P(estimate > risk_threshold) vs true_value for each estimator."""
-    import pandas as pd
-    data = []
-    for path in get_simulation_paths(h5_file):
-        results, metadata, stats = load_simulation_results(h5_file, path)
-        true_value = metadata.get('true_value')
-        estimator = metadata.get('estimator', 'unknown')
-        if true_value is None:
-            continue
-        # pick thresholds for this estimator
-        if isinstance(risk_thresholds, dict):
-            thr_list = risk_thresholds.get(estimator, [])
-        else:
-            thr_list = risk_thresholds
-        for rt in thr_list:
-            p = calculate_exceedance_probability(results, rt)
-            data.append({
-                'estimator': estimator,
-                'true_value': true_value,
-                'risk_threshold': rt,
-                'exceedance_prob': p
+    """Plot exceedance probabilities for different risk thresholds."""
+    paths = get_simulation_paths(
+        h5_file,
+        estimator=estimator_type,
+        ability_variant=ability_variant,
+        cost_variant=cost_variant,
+        budget=budget_fraction
+    )
+    plot_data = []
+    
+    for path in paths:
+        results, metadata, _ = load_simulation_results(h5_file, path)
+        group_value = metadata.get(group_by, None)
+        bf = metadata.get('budget_fraction', None)
+        for threshold in risk_thresholds:
+            exceedance_prob = calculate_exceedance_probability(results, threshold)
+            plot_data.append({
+                'group_value': group_value,
+                'threshold': threshold,
+                'exceedance_probability': exceedance_prob,
+                'estimator': metadata.get('estimator', 'unknown'),
+                'ability_variant': metadata.get('ability_variant', 'unknown'),
+                'cost_variant': metadata.get('cost_variant', 'unknown'),
+                'budget_fraction': bf,
+                'total_samples': len(results)
             })
-    if not data:
+    
+    if not plot_data:
         print("No data for exceedance analysis")
         return
-    df = pd.DataFrame(data)
+    
+    df = pd.DataFrame(plot_data)
     for estimator, grp in df.groupby('estimator'):
-        plt.figure(figsize=(8, 6))
-        used = sorted(grp['risk_threshold'].unique())
-        for rt in used:
-            sub = grp[grp['risk_threshold'] == rt].sort_values('true_value')
-            plt.plot(sub['true_value'], sub['exceedance_prob'],
-                     marker='o', label=f"Risk > {rt}")
-        plt.xlabel('True Value')
-        plt.ylabel('P(Estimate > Threshold)')
-        plt.title(f'Exceedance Probability vs True Value ({estimator})')
-        plt.legend()
+        plt.figure(figsize=(10, 6))
+        budgets = sorted(grp['budget_fraction'].dropna().unique())
+        risks = sorted(grp['threshold'].unique())
+        for threshold in risks:
+            for bf in budgets:
+                sub = grp[
+                    (grp['threshold'] == threshold) &
+                    (grp['budget_fraction'] == bf)
+                ].sort_values('group_value')
+                if sub.empty:
+                    continue
+                plt.plot(
+                    sub['group_value'], sub['exceedance_probability'],
+                    marker='o',
+                    label=f"RT>{threshold}, BF={bf:.2f}"
+                )
+        plt.xlabel(f"{group_by.replace('_', ' ').title()}")
+        plt.ylabel("Exceedance Probability")
+        plt.title(f"Exceedance Probability vs {group_by.replace('_', ' ').title()} ({estimator})")
+        plt.legend(bbox_to_anchor=(1.02, 1), loc='upper left', ncol=1)
         plt.grid(True, alpha=0.3)
-        out_path = os.path.join(output_dir, f"exceedance_{estimator}.png")
-        os.makedirs(os.path.dirname(out_path), exist_ok=True)
-        plt.tight_layout()
-        plt.savefig(out_path, dpi=150)
+        os.makedirs(os.path.dirname(output_path), exist_ok=True)
+        plt.tight_layout(rect=[0, 0, 0.85, 1])
+        plt.savefig(output_path, dpi=150)
         plt.close()
-        print(f"Saved exceedance plot to {out_path}")
+        print(f"Saved exceedance probability plot to {output_path}")
 
 def main():
     """Main entry point."""
@@ -747,8 +767,8 @@ def main():
             safe_filename = "".join(c if c.isalnum() or c in "_-." else "_" for c in filename)
             output_path = os.path.join(args.output, f"{safe_filename}.png")
             
-            visualize_simulation_distribution(results, metadata, stats, output_path, config)
-            print(f"Created visualization: {output_path}")
+            # visualize_simulation_distribution(results, metadata, stats, output_path, config)
+            # print(f"Created visualization: {output_path}")
         
         # Generate additional plots
         plot_bias_variance_tradeoff(h5_file, args.output)
@@ -757,7 +777,7 @@ def main():
         rt_cfg = config.get("risk_thresholds") if config else None
         if not rt_cfg:
             rt_cfg = [20]  # fallback
-        plot_exceedance_probability(h5_file, args.output, rt_cfg)
+        plot_exceedance_probability(h5_file, os.path.join(args.output, "exceedance_probability.png"), rt_cfg)
         print(f"All visualizations saved to {args.output}")
 
 if __name__ == "__main__":
