@@ -25,7 +25,7 @@
   "weighted_score": {
     "range_min": -5,
     "range_max": 20,
-    "normalize": true,
+    "normalize": false,
     "weight_function": {
       "type": "linear",
       "base": 1.0,

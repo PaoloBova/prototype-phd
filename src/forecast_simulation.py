@@ -221,7 +221,13 @@ def simulate_estimator(
             )
     elif estimator == "weighted_score":
         ws_cfg = config.get("weighted_score", {})
+        ws_cfg = {
+            **ws_cfg,
+            "range_min": forecast.window_lower,
+            "range_max": forecast.window_upper,
+        }
         weight_fn = create_weight_function(ws_cfg.get("weight_function", {"type": "linear"}))
+        
         # discretize continuous tasks into bins for per‐level estimates
         n_bins = ws_cfg.get("n_bins", 10)
         bin_edges = np.linspace(forecast.window_lower, forecast.window_upper, n_bins + 1)
@@ -270,8 +276,8 @@ def calculate_true_value(estimator: str, forecast: EvaluationForecast, config: D
         # inject the *same* window used for simulation:
         ws_cfg = {
             **ws_cfg,
-            "range_min": forecast.window_lower,
-            "range_max": forecast.window_upper,
+            "range_min": forecast.original_window_lower,
+            "range_max": forecast.original_window_upper,
         }
         return calculate_true_weighted_score(
             forecast.ability.threshold,
