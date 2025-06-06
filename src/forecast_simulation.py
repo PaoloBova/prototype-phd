@@ -240,6 +240,48 @@ def simulate_estimator(
                                             outcomes,
                                             level_weight_fn=weight_fn,
                                             normalize=ws_cfg.get("normalize", False))
+    elif estimator == "max_success":
+        # 1) Most difficult single successful task
+        def analysis_fn(tasks, outcomes):
+            succ = tasks[outcomes == 1]
+            return float(np.max(succ)) if succ.size > 0 else np.nan
+
+    elif estimator == "bin_threshold":
+        # 2) Most difficult bin with >50% success
+        # reuse number of bins from weighted_score config (fallback 10)
+        n_bins = config.get("weighted_score", {}).get("n_bins", 10)
+        def analysis_fn(tasks, outcomes):
+            edges = np.linspace(tasks.min(), tasks.max(), n_bins + 1)
+            bins = np.digitize(tasks, edges) - 1
+            centers = (edges[:-1] + edges[1:]) / 2
+            # compute success rate per bin
+            rates = [
+                outcomes[bins == i].mean() if np.any(bins == i) else 0.0
+                for i in range(n_bins)
+            ]
+            valid = [centers[i] for i, r in enumerate(rates) if r > 0.5]
+            return float(max(valid)) if valid else np.nan
+
+    elif estimator == "logistic_weighted":
+        # 3) Fit logistic, then weighted‐sum over its predicted curve
+        lr_cfg = prototype_phd.stats.LogRegConfig(**config.get("threshold_estimator", {}))
+        ws_cfg = config.get("weighted_score", {})
+        weight_fn = create_weight_function(ws_cfg.get("weight_function", {"type":"linear"}))
+        normalize = ws_cfg.get("normalize", False)
+        def analysis_fn(tasks, outcomes):
+            X = tasks.reshape(-1, 1)
+            res = prototype_phd.stats.fit_logistic(X, outcomes, lr_cfg)
+            b0, b1 = res.coeffs
+            # build predicted probs over a fine grid
+            grid = np.linspace(tasks.min(), tasks.max(), 200)
+            probs = 1.0 / (1.0 + np.exp(-b1 * (grid - (-b0 / b1))))
+            # weighted‐sum under estimated logistic curve
+            return weighted_score_estimator(
+                grid, probs,
+                level_weight_fn=weight_fn,
+                normalize=normalize
+            )
+
     else:
         raise ValueError(f"Unsupported estimator: {estimator}")
     
