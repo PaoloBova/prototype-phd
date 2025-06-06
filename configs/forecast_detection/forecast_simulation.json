@@ -6,7 +6,13 @@
     "correlation_strength": 0.0,
     "seed": 42
   },
-  "methods_to_run": ["threshold", "weighted_score"],
+  "methods_to_run": [
+    "threshold",
+    "weighted_score",
+    "max_success",
+    "bin_threshold", 
+    "logistic_weighted"
+  ],
   "filters": {
     "ability_variants": ["base", "lower", "upper"],
     "cost_variants": ["base"],

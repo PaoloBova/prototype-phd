@@ -272,8 +272,8 @@ def simulate_estimator(
             X = tasks.reshape(-1, 1)
             res = prototype_phd.stats.fit_logistic(X, outcomes, lr_cfg)
             b0, b1 = res.coeffs
-            # build predicted probs over a fine grid
-            grid = np.linspace(tasks.min(), tasks.max(), 200)
+            # build predicted probs over the full evaluation window, not just the sampled tasks
+            grid = np.linspace(forecast.window_lower, forecast.window_upper, 200)
             probs = 1.0 / (1.0 + np.exp(-b1 * (grid - (-b0 / b1))))
             # weighted‐sum under estimated logistic curve
             return weighted_score_estimator(
