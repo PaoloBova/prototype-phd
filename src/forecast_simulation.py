@@ -304,16 +304,19 @@ def calculate_true_value(estimator: str, forecast: EvaluationForecast, config: D
     Calculate the true value for a given estimator and forecast.
     
     Args:
-        estimator: Type of estimator ("threshold" or "weighted_score")
+        estimator: Type of estimator (threshold, weighted_score, logistic_weighted, bin_threshold, max_success)
         forecast: Evaluation forecast
         config: Configuration for calculation
         
     Returns:
         True value for the estimator
     """
-    if estimator == "threshold":
+    if estimator in ["threshold", "bin_threshold", "max_success"]:
+        # All these estimators use the threshold as the true value
+        # For max_success, we use the 50% threshold as an approximation
         return forecast.ability.threshold
-    elif estimator == "weighted_score":
+    elif estimator in ["weighted_score", "logistic_weighted"]:
+        # Both weighted score estimators use the same calculation
         ws_cfg = config.get("weighted_score", {})
         # inject the *same* window used for simulation:
         ws_cfg = {
