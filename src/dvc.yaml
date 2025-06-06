@@ -103,7 +103,7 @@ stages:
 
   explore_simulations:
     wdir: ..
-    cmd: python -m src.tools.explore_simulations --raw output/forecast_detection/raw_simulation_results.h5 --output reports/forecast_detection/exploration_results.csv --debug
+    cmd: python -m src.tools.explore_simulations --raw output/forecast_detection/raw_simulation_results.h5 --output reports/forecast_detection/exploration_results.csv --debug --config configs/forecast_detection/forecast_simulation.json
     deps:
       - output/forecast_detection/raw_simulation_results.h5
       - src/tools/explore_simulations.py
