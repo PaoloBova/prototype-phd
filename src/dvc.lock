@@ -222,7 +222,7 @@ stages:
   explore_simulations:
     cmd: python -m src.tools.explore_simulations --raw output/forecast_detection/raw_simulation_results.h5
       --output reports/forecast_detection/exploration_results.csv --debug --config
-      configs/forecast_detection/forecast_simulation.json
+      configs/forecast_detection/explore_simulations.json
     deps:
     - path: output/forecast_detection/raw_simulation_results.h5
       hash: md5
@@ -230,11 +230,11 @@ stages:
       size: 8352472
     - path: src/tools/explore_simulations.py
       hash: md5
-      md5: 293f45b495c973d5405a188c6534ebca
-      size: 30424
+      md5: 6ffdc646fa222b6498d84b37abd780c9
+      size: 43736
     outs:
     - path: reports/forecast_detection/exploration_results.csv
       hash: md5
-      md5: 6c833d314c63ccce762068aea489e613.dir
-      size: 1043777
-      nfiles: 11
+      md5: 8ef57844258f6391d0dfa28961e77388.dir
+      size: 4716605
+      nfiles: 34

@@ -679,22 +679,52 @@ def plot_exceedance_probability(
         for threshold, thresh_group in est_group.groupby('threshold'):
             plt.figure(figsize=(10, 6))
             
+            # Get colorblind-friendly palette from seaborn
+            budget_fractions = sorted(thresh_group['budget_fraction'].dropna().unique())
+            palette = sns.color_palette("colorblind", n_colors=len(budget_fractions))
+            
+            # Use different line styles to enhance differentiation in grayscale
+            line_styles = ['-', '--', '-.', ':']
+            markers = ['o', 's', '^', 'D', 'v']
+            
             # For each budget fraction, create a line
-            for bf in sorted(thresh_group['budget_fraction'].dropna().unique()):
+            for i, bf in enumerate(sorted(thresh_group['budget_fraction'].dropna().unique())):
+                
+                                    
+                # Cycle through line styles and markers for better distinction
+                line_style = line_styles[i % len(line_styles)]
+                marker = markers[i % len(markers)]
+                
                 sub = thresh_group[thresh_group['budget_fraction'] == bf].sort_values('group_value')
                 if sub.empty:
                     continue
                 plt.plot(
                     sub['group_value'], sub['exceedance_probability'],
-                    marker='o',
+                    marker=marker, color=palette[i], linestyle=line_style,
                     label=f"Budget={bf:.2f}"
                 )
+            
+            # Add vertical line for threshold
+            plt.axvline(x=threshold, color='black', linestyle='-', linewidth=1,
+                      label=f"Threshold={threshold}")
             
             plt.xlabel(f"{group_by.replace('_', ' ').title()}")
             plt.ylabel("Exceedance Probability")
             plt.title(f"Exceedance Probability vs {group_by.replace('_', ' ').title()}\n(Estimator: {estimator}, Threshold: {threshold})")
-            plt.legend(loc='best')
+            # Improve legend with better placement
+            if len(budget_fractions) > 4:
+                plt.legend(bbox_to_anchor=(1.02, 1), loc='upper left')
+            else:
+                plt.legend(loc='best')
             plt.grid(True, alpha=0.3)
+            
+            # Add reference line at 50% probability
+            plt.axhline(y=0.5, color='gray', linestyle='--', linewidth=0.8,
+                      alpha=0.7)
+            
+            # Fix y-axis range for consistency
+            plt.ylim(min(-0.05, np.min(sub['exceedance_probability'])), 1.05)
+            
             
             # Create a unique filename for this plot
             filename_params = {
@@ -708,9 +738,278 @@ def plot_exceedance_probability(
             output_path = os.path.join(output_dir, f"{safe_filename}.png")
             
             plt.tight_layout()
-            plt.savefig(output_path, dpi=150)
+            plt.savefig(output_path, dpi=300, bbox_inches='tight')
             plt.close()
             print(f"Saved exceedance probability plot to {output_path}")
+
+def calculate_detection_lag_via_interpolation(
+    df: pd.DataFrame, 
+    probability_levels: List[float] = [0.5, 0.9]
+) -> pd.DataFrame:
+    """
+    Calculate detection lag metrics by interpolating the exceedance probability curve.
+    
+    Args:
+        df: DataFrame with 'true_value', 'threshold', and 'exceedance_probability' columns
+        probability_levels: Target probability levels for detection
+        
+    Returns:
+        DataFrame with detection lag metrics
+    """
+    results = []
+    
+    # Process each threshold and estimator separately
+    for (estimator, threshold), group in df.groupby(['estimator', 'threshold']):
+        # Skip if insufficient data
+        if len(group) < 3:
+            continue
+            
+        # Sort by true value for interpolation
+        sorted_group = group.sort_values('true_value')
+        
+        true_values = sorted_group['true_value'].values
+        exceedance_probs = sorted_group['exceedance_probability'].values
+        
+        # Calculate metrics
+        max_detection_prob = exceedance_probs.max()
+        no_detection_prob = 1.0 - max_detection_prob
+        
+        # Find threshold index (where true_value = threshold)
+        threshold_idx = np.argmin(np.abs(true_values - threshold))
+        # Get false/early detection rate
+        early_detection_rate = exceedance_probs[threshold_idx]
+        
+        # Calculate conditional detection metrics
+        if max_detection_prob > 0:
+            # Normalize exceedance probabilities to create CDF conditional on detection
+            norm_probs = exceedance_probs / max_detection_prob
+            
+            # For each target probability level (conditional)
+            for prob in probability_levels:
+                try:
+                    # Only proceed if we have points on both sides of target probability
+                    if min(norm_probs) <= prob <= max(norm_probs):
+                        # Since we have a CDF, the function is invertible and so
+                        # it makes sense to think about plotting the true value at each probability.
+                        # Interpolate to find true value at target conditional probability
+                        conditional_value = np.interp(
+                            prob,  # target probability 
+                            norm_probs,  # x-values (normalized detection probabilities)
+                            true_values  # y-values (true values)
+                        )
+                        
+                        # Calculate lag as difference between this value and threshold
+                        detection_lag = conditional_value - threshold
+                        
+                        results.append({
+                            'estimator': estimator,
+                            'threshold': threshold,
+                            'detection_probability': prob,
+                            'true_value_at_detection': conditional_value,
+                            'detection_lag': detection_lag,
+                            'conditional': True,
+                            'no_detection_probability': no_detection_prob,
+                            'early_detection_rate': early_detection_rate,
+                            'max_detection_probability': max_detection_prob
+                        })
+                except Exception as e:
+                    print(f"Error calculating conditional lag for {estimator}, threshold {threshold}: {e}")
+        
+        # Also calculate unconditional detection values
+        for prob in probability_levels:
+            try:
+                # Only proceed if we have points on both sides of the target probability
+                if min(exceedance_probs) <= prob <= max(exceedance_probs):
+                    # Interpolate to find true value at target probability (unconditional)
+                    unconditional_value = np.interp(
+                        prob,  # target probability 
+                        exceedance_probs,  # x-values (exceedance probabilities)
+                        true_values  # y-values (true values)
+                    )
+                    
+                    # Calculate lag as difference between this value and threshold
+                    detection_lag = unconditional_value - threshold
+                    
+                    results.append({
+                        'estimator': estimator,
+                        'threshold': threshold,
+                        'detection_probability': prob,
+                        'true_value_at_detection': unconditional_value,
+                        'detection_lag': detection_lag,
+                        'conditional': False,
+                        'no_detection_probability': no_detection_prob,
+                        'early_detection_rate': early_detection_rate,
+                        'max_detection_probability': max_detection_prob
+                    })
+            except Exception as e:
+                print(f"Error calculating unconditional lag for {estimator}, threshold {threshold}: {e}")
+    
+    return pd.DataFrame(results)
+
+def plot_enhanced_detection_metrics(
+    h5_file: h5py.File, 
+    output_dir: str, 
+    thresholds: Dict[str, List[float]],
+    probability_levels: List[float] = [0.5, 0.9]
+) -> None:
+    """
+    Create enhanced detection metric plots including conditional detection lag,
+    probability of no detection, and early detection rates.
+    
+    Args:
+        h5_file: Open HDF5 file
+        output_dir: Directory to save plots
+        thresholds: Dictionary mapping estimator names to lists of thresholds
+        probability_levels: Target probability levels for detection metrics
+    """
+    # Gather exceedance probability data
+    exceedance_data = []
+    all_paths = get_simulation_paths(h5_file)
+    
+    for path in all_paths:
+        results, metadata, _ = load_simulation_results(h5_file, path)
+        
+        # Skip empty results
+        if len(results) == 0:
+            continue
+        
+        estimator = metadata.get('estimator', 'unknown')
+        true_value = metadata.get('true_value', np.nan)
+        budget_fraction = metadata.get('budget_fraction', np.nan)
+        
+        # Skip if key information is missing
+        if np.isnan(true_value) or np.isnan(budget_fraction) or estimator == 'unknown':
+            continue
+            
+        # Use appropriate thresholds for this estimator
+        est_thresholds = thresholds.get(estimator, [])
+        if not est_thresholds:
+            continue
+            
+        # Calculate exceedance probability for each threshold
+        for threshold in est_thresholds:
+            exceedance_prob = calculate_exceedance_probability(results, threshold)
+            
+            exceedance_data.append({
+                'estimator': estimator,
+                'threshold': threshold,
+                'true_value': true_value,
+                'budget_fraction': budget_fraction,
+                'exceedance_probability': exceedance_prob,
+                'ability_variant': metadata.get('ability_variant', 'unknown'),
+                'cost_variant': metadata.get('cost_variant', 'unknown')
+            })
+    
+    if not exceedance_data:
+        print("No data available for detection metrics analysis")
+        return
+    
+    # Convert to DataFrame
+    exceedance_df = pd.DataFrame(exceedance_data)
+    
+    # Create output directory
+    os.makedirs(output_dir, exist_ok=True)
+    
+    # Calculate detection metrics for each budget fraction separately
+    all_metrics = []
+    
+    for (estimator, budget_fraction), budget_group in exceedance_df.groupby(['estimator', 'budget_fraction']):
+        # Calculate detection lag metrics
+        metrics = calculate_detection_lag_via_interpolation(budget_group, probability_levels)
+        
+        if not metrics.empty:
+            metrics['budget_fraction'] = budget_fraction
+            all_metrics.append(metrics)
+    
+    if not all_metrics:
+        print("Couldn't compute any detection metrics")
+        return
+        
+    metrics_df = pd.concat(all_metrics, ignore_index=True)
+    
+    # Plot metrics
+    for estimator, est_group in metrics_df.groupby('estimator'):
+        # 1. Plot conditional median detection lag vs budget
+        plt.figure(figsize=(10, 6))
+        
+        for threshold, thresh_group in est_group[est_group['conditional'] == True].groupby('threshold'):
+            median_group = thresh_group[thresh_group['detection_probability'] == 0.5]
+            
+            if not median_group.empty:
+                plt.plot(
+                    median_group['budget_fraction'],
+                    median_group['detection_lag'],
+                    marker='o',
+                    label=f"Threshold={threshold}"
+                )
+        
+        plt.axhline(y=0, color='k', linestyle='--', alpha=0.5)
+        plt.xlabel('Budget Fraction')
+        plt.ylabel('Conditional Median Detection Lag (capability units)')
+        plt.title(f'Conditional Median Detection Lag vs Budget Fraction ({estimator})\nTrue Value at 50% of Successful Detections')
+        plt.grid(True, alpha=0.3)
+        plt.legend()
+        
+        filename = create_safe_filename('conditional_median_lag', {'estimator': estimator})
+        output_path = os.path.join(output_dir, f"{filename}.png")
+        plt.tight_layout()
+        plt.savefig(output_path, dpi=150)
+        plt.close()
+        print(f"Saved conditional median detection lag plot to {output_path}")
+        
+        # 2. Plot probability of no detection vs budget
+        plt.figure(figsize=(10, 6))
+        
+        for threshold, thresh_group in est_group.groupby('threshold'):
+            # Take the first occurrence for each budget fraction (they should all be the same)
+            no_detect_group = thresh_group.drop_duplicates(subset=['budget_fraction'])
+            
+            plt.plot(
+                no_detect_group['budget_fraction'],
+                no_detect_group['no_detection_probability'] * 100,  # Convert to percentage
+                marker='o',
+                label=f"Threshold={threshold}"
+            )
+        
+        plt.xlabel('Budget Fraction')
+        plt.ylabel('Probability of No Detection (%)')
+        plt.title(f'Probability of No Detection vs Budget Fraction ({estimator})')
+        plt.grid(True, alpha=0.3)
+        plt.legend()
+        
+        filename = create_safe_filename('no_detection_prob', {'estimator': estimator})
+        output_path = os.path.join(output_dir, f"{filename}.png")
+        plt.tight_layout()
+        plt.savefig(output_path, dpi=150)
+        plt.close()
+        print(f"Saved no detection probability plot to {output_path}")
+        
+        # 3. Plot early detection rate vs budget
+        plt.figure(figsize=(10, 6))
+        
+        for threshold, thresh_group in est_group.groupby('threshold'):
+            # Take the first occurrence for each budget fraction (they should all be the same)
+            early_detect_group = thresh_group.drop_duplicates(subset=['budget_fraction'])
+            
+            plt.plot(
+                early_detect_group['budget_fraction'],
+                early_detect_group['early_detection_rate'] * 100,  # Convert to percentage
+                marker='o',
+                label=f"Threshold={threshold}"
+            )
+        
+        plt.xlabel('Budget Fraction')
+        plt.ylabel('Early Detection Rate (%)')
+        plt.title(f'Detection Rate at Threshold vs Budget Fraction ({estimator})')
+        plt.grid(True, alpha=0.3)
+        plt.legend()
+        
+        filename = create_safe_filename('early_detection_rate', {'estimator': estimator})
+        output_path = os.path.join(output_dir, f"{filename}.png")
+        plt.tight_layout()
+        plt.savefig(output_path, dpi=150)
+        plt.close()
+        print(f"Saved early detection rate plot to {output_path}")
 
 def main():
     """Main entry point."""
@@ -834,6 +1133,10 @@ def main():
                     thresholds, 
                     estimator_type=estimator
                 )
+        
+        # Create detection metrics plots
+        detection_dir = os.path.join(args.output, "detection_metrics")
+        plot_enhanced_detection_metrics(h5_file, detection_dir, rt_cfg)
         
         print(f"All visualizations saved to {args.output}")
 
