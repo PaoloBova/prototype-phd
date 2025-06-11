@@ -1,0 +1,53 @@
+{
+    "simulation": {
+      "n_samples": 1000,
+      "method": "monte_carlo",
+      "correlation_model": "none",
+      "correlation_strength": 0.0,
+      "seed": 42
+    },
+    "methods_to_run": [
+      "threshold",
+      "weighted_score",
+      "max_success",
+      "bin_threshold", 
+      "logistic_weighted"
+    ],
+    "filters": {
+      "ability_variants": ["base", "lower", "upper"],
+      "cost_variants": ["base"],
+      "min_samples": 10,
+      "max_samples": null,
+      "sampler_types": ["uniform"]
+    },
+    "threshold_estimator": {
+      "engine": "scikit-learn",
+      "max_iter": 100,
+      "C": 1.0,
+      "tol": 0.001,
+      "solver": "lbfgs",
+      "warm_start": false
+    },
+    "weighted_score": {
+      "range_min": -5,
+      "range_max": 20,
+      "normalize": false,
+      "weight_function": {
+        "type": "linear",
+        "base": 1.0,
+        "slope": 0.5
+      }
+    },
+    "output": {
+      "save_individual_simulations": true,
+      "save_convergence_stats": true
+    },
+    "risk_thresholds": {
+    "threshold": [16, 18, 20, 22, 24],
+    "weighted_score": [20, 22, 24, 26, 28, 30, 32, 34],
+    "max_success": [20,30,40,50,60],
+    "bin_threshold": [20,30,40],
+    "logistic_weighted": [20, 22, 24, 26, 28, 30, 32, 34]
+    }
+  }
+  
