@@ -406,6 +406,61 @@ def plot_cost_allocation(df: pd.DataFrame, output_dir: str, fmt: str = "png"):
             
             print(f"Saved cost allocation plot to {output_path}")
 
+def plot_costs_over_time(df: pd.DataFrame, output_dir: str, fmt: str = "png"):
+    """
+    Plot total evaluation costs over time for each budget constraint in a series.
+    For each group of forecasts that share all hyperparameters except date and constraint,
+    draw available_budget and gold_standard_cost as lines over time.
+    """
+    if "ability_date" not in df or "constraint_id" not in df:
+        print("Insufficient data for cost-over-time plots")
+        return
+    df["ability_date"] = pd.to_datetime(df["ability_date"])
+
+    # Determine grouping columns: use ability_scenario (no date) and other stable keys
+    key_cols = [
+        c for c in (
+            "ability_scenario",",
+            "cost_model",",
+            "design_id",
+            "ability_variant",
+            "cost_variant"
+        )
+        if c in df.columns
+    ]
+    print(f"Using grouping keys: {key_cols}")
+    if not key_cols:
+        print("No suitable grouping keys found; cannot plot cost-over-time.")
+        return
+
+    groups = df.groupby(key_cols)
+    for key, grp in groups:
+        if grp["ability_date"].nunique() < 2:
+            continue
+        grp = grp.sort_values("ability_date")
+        plt.figure(figsize=(10,6))
+        # plot gold standard
+        gold = grp.groupby("ability_date")["gold_standard_cost"].first()
+        plt.plot(gold.index, gold.values, "k-o", label="Gold Standard")
+        # plot each constraint
+        for cid, sub in grp.groupby("constraint_id"):
+            sub = sub.sort_values("ability_date")
+            bf = sub["budget_fraction"].iloc[0]
+            label = f"{cid} ({bf*100:.0f}%)"
+            plt.plot(sub["ability_date"], sub["available_budget"], "-o", label=label)
+        title_parts = [f"{col}={key[i]}" for i, col in enumerate(key_cols)]
+        plt.title("Evaluation Cost Over Time\n" + ", ".join(title_parts))
+        plt.xlabel("Date")
+        plt.ylabel("Cost")
+        plt.legend(loc="best")
+        plt.grid(alpha=0.3)
+        outdir = os.path.join(output_dir, "costs_over_time")
+        os.makedirs(outdir, exist_ok=True)
+        fname = "__".join(str(k) for k in key) + f".{fmt}"
+        plt.savefig(os.path.join(outdir, fname), dpi=150, bbox_inches="tight")
+        plt.close()
+        print(f"Saved cost-over-time plot to {outdir}/{fname}")
+
 def plot_ability_scenario_comparison(plot_df: pd.DataFrame, output_dir: str, fmt: str = "png"):
     """
     Plot comparison between ability scenarios (base, lower, upper CI).
@@ -940,13 +995,14 @@ def main():
     os.makedirs(args.output, exist_ok=True)
     
     # Generate visualizations
-    plot_evaluation_windows(df, args.output, args.format)
-    plot_window_adjustments(df, args.output, args.format)
-    plot_task_density(df, args.output, args.format)
-    plot_sample_counts(df, args.output, args.format)
-    plot_cost_allocation(df, args.output, args.format)
-    plot_scenario_comparison(df, args.output, args.format)
-    create_summary_stats(df, args.output)
+    # plot_evaluation_windows(df, args.output, args.format)
+    # plot_window_adjustments(df, args.output, args.format)
+    # plot_task_density(df, args.output, args.format)
+    # plot_sample_counts(df, args.output, args.format)
+    # plot_cost_allocation(df, args.output, args.format)
+    # plot_scenario_comparison(df, args.output, args.format)
+    plot_costs_over_time(df, args.output, args.format)
+    # create_summary_stats(df, args.output)
     
     print(f"All visualizations saved to {args.output}")
 

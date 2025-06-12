@@ -35,7 +35,7 @@
       "weight_function": {
         "type": "linear",
         "base": 1.0,
-        "slope": 0.5
+        "slope": 2.0
       }
     },
     "output": {
@@ -45,8 +45,8 @@
     "risk_thresholds": {
     "threshold": [16, 18, 20, 22, 24],
     "weighted_score": [20, 22, 24, 26, 28, 30, 32, 34],
-    "max_success": [20,30,40,50,60],
-    "bin_threshold": [20,30,40],
+    "max_success": [20, 25, 30],
+    "bin_threshold": [16, 18, 20, 22, 24],
     "logistic_weighted": [20, 22, 24, 26, 28, 30, 32, 34]
     }
   }
