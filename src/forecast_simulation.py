@@ -230,7 +230,16 @@ def simulate_estimator(
         
         # discretize continuous tasks into bins for per‐level estimates
         n_bins = ws_cfg.get("n_bins", 10)
-        bin_edges = np.linspace(forecast.window_lower, forecast.window_upper, n_bins + 1)
+        if ws_cfg.get("use_original_window", False):
+            # use the original gold standard window from the eval forecast
+            window_lower = forecast.original_window_lower
+            window_upper = forecast.original_window_upper
+        else:
+            # use the current evaulation window
+            # Should give similar results as long the binds are chosen well
+            window_lower = forecast.window_lower
+            window_upper = forecast.window_upper
+        bin_edges = np.linspace(window_lower, window_upper, n_bins + 1)
         bin_centers = (bin_edges[:-1] + bin_edges[1:]) / 2
         def analysis_fn(tasks, outcomes):
             # assign each task to a bin center
@@ -272,8 +281,11 @@ def simulate_estimator(
             X = tasks.reshape(-1, 1)
             res = prototype_phd.stats.fit_logistic(X, outcomes, lr_cfg)
             b0, b1 = res.coeffs
-            # build predicted probs over the full evaluation window, not just the sampled tasks
-            grid = np.linspace(forecast.window_lower, forecast.window_upper, 200)
+            # We use the original gold standard evaluation window to ensure the
+            # logistic curve is estimated over the full range of possible
+            # difficulties, not just the sampled tasks.
+            grid = np.linspace(forecast.original_window_lower, forecast.original_window_upper, 200)
+            # Use logistic function to estimate probabilities
             probs = 1.0 / (1.0 + np.exp(-b1 * (grid - (-b0 / b1))))
             # weighted‐sum under estimated logistic curve
             return weighted_score_estimator(

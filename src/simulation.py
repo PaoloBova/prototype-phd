@@ -284,7 +284,7 @@ def weighted_score_estimator(
     Compute weighted sum of success rates per difficulty level.
 
     Args:
-        tasks: Array of task difficulties
+        tasks: Array of task difficulties (usually these are bin levels)
         outcomes: Binary outcomes array
         level_weight_fn: Weight for each difficulty level
         info_weight_fn: Weight based on information (e.g., counts) per level
