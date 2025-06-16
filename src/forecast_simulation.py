@@ -49,7 +49,7 @@ def logistic_function(x: np.ndarray, threshold: float, slope: float) -> np.ndarr
     Returns:
         Array of logistic function values
     """
-    return 1.0 / (1.0 + np.exp(-slope * (x - threshold)))
+    return 1.0 / (1.0 + np.exp(slope * (x - threshold)))
 
 def create_evaluation_forecast_from_row(row: pd.Series) -> EvaluationForecast:
     """
