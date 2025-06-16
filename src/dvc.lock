@@ -174,8 +174,8 @@ stages:
     deps:
     - path: configs/forecast_detection/forecast_simulation.json
       hash: md5
-      md5: 397ea76965efa79cc5f10723a7d492fa
-      size: 1008
+      md5: 06359cbd5a38ec62f677a2bbe02cfa50
+      size: 1006
     - path: output/forecast_detection/evaluation_forecasts.csv
       hash: md5
       md5: 1d98ec2dfa3164aeb5729c3883833f3e
@@ -195,12 +195,12 @@ stages:
     outs:
     - path: output/forecast_detection/raw_simulation_results.h5
       hash: md5
-      md5: f2eb2a391dffa34ed92f42c4a620b0af
+      md5: d6abbcdd217d884625b6de508cf09b4d
       size: 1889000
     - path: output/forecast_detection/simulation_results.csv
       hash: md5
-      md5: 7a327a18db63b56dbf38c2b92a1154a2
-      size: 60733
+      md5: cea1253d9b8ea15ecd0af8e2fa08987b
+      size: 60728
   analyze_bias:
     cmd: python -m src.tools.analyze_bias --input output/forecast_detection/simulation_results.csv
       --output reports/bias_analysis --remove-outliers
@@ -230,7 +230,7 @@ stages:
       size: 1147
     - path: output/forecast_detection/raw_simulation_results.h5
       hash: md5
-      md5: f2eb2a391dffa34ed92f42c4a620b0af
+      md5: d6abbcdd217d884625b6de508cf09b4d
       size: 1889000
     - path: src/tools/explore_simulations.py
       hash: md5
@@ -239,6 +239,6 @@ stages:
     outs:
     - path: reports/forecast_detection/exploration_results.csv
       hash: md5
-      md5: 2a0b395bf931ad780dd82eaeca220250.dir
-      size: 680832
+      md5: 3aba799c4b1e2a8b0a07f6b19300d9ed.dir
+      size: 686379
       nfiles: 6
