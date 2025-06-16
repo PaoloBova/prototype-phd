@@ -236,19 +236,34 @@ def simulate_estimator(
             window_upper = forecast.original_window_upper
         else:
             # use the current evaulation window
-            # Should give similar results as long the binds are chosen well
+            # Should give similar results as long the bins are chosen well
             window_lower = forecast.window_lower
             window_upper = forecast.window_upper
         bin_edges = np.linspace(window_lower, window_upper, n_bins + 1)
-        bin_centers = (bin_edges[:-1] + bin_edges[1:]) / 2
-        def analysis_fn(tasks, outcomes):
-            # assign each task to a bin center
-            idx = np.minimum(np.digitize(tasks, bin_edges) - 1, n_bins - 1)
-            tasks_disc = bin_centers[idx]
-            return weighted_score_estimator(tasks_disc,
-                                            outcomes,
-                                            level_weight_fn=weight_fn,
-                                            normalize=ws_cfg.get("normalize", False))
+        if ws_cfg.get("truncate_bins", False):
+            # truncate the bin edges to the evaluation window
+            # Remove bins outside the evaluation window
+            bin_edges = np.clip(bin_edges, forecast.window_lower, forecast.window_upper)
+            bin_edges = np.unique(bin_edges)  # ensure unique edges after clipping
+            # recalculate number of bins
+            n_bins = len(bin_edges) - 1
+            # log info if no bins left
+        if n_bins <= 0:
+            logging.info("No bins left after truncation, estimator will return 0!")
+            def analysis_fn(_tasks, _outcomes):
+                # return a constant value of 0
+                return 0
+        else:
+            bin_centers = (bin_edges[:-1] + bin_edges[1:]) / 2
+            def analysis_fn(tasks, outcomes):
+                # assign each task to a bin center
+                idx = np.minimum(np.digitize(tasks, bin_edges) - 1, n_bins - 1)
+                tasks_disc = bin_centers[idx]
+                return weighted_score_estimator(tasks_disc,
+                                                outcomes,
+                                                level_weight_fn=weight_fn,
+                                                normalize=ws_cfg.get("normalize", False))
+        
     elif estimator == "max_success":
         # 1) Most difficult single successful task
         def analysis_fn(tasks, outcomes):
