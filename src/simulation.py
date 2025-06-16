@@ -276,6 +276,7 @@ def calculate_simulation_statistics(results: np.ndarray) -> Dict[str, float]:
 def weighted_score_estimator(
     tasks: np.ndarray,
     outcomes: np.ndarray,
+    bin_edges: np.ndarray,
     level_weight_fn: Callable[[float], float] = lambda x: 1.0 + 0.5 * x,
     info_weight_fn: Optional[Callable[[float,int], float]] = None,
     normalize: bool = False
@@ -284,40 +285,43 @@ def weighted_score_estimator(
     Compute weighted sum of success rates per difficulty level.
 
     Args:
-        tasks: Array of task difficulties (usually these are bin levels)
+        tasks: Array of task difficulties
         outcomes: Binary outcomes array
+        bin_edges: array of bin edges
         level_weight_fn: Weight for each difficulty level
         info_weight_fn: Weight based on information (e.g., counts) per level
 
     Returns:
         Weighted sum of success rates across unique difficulty levels.
     """
-    if len(tasks) == 0:
-        return float('nan')
 
     # 1) unique levels, sorted
-    levels = np.unique(tasks)
+    if len(bin_edges) < 2:
+        return float('nan')
+    # assign each task to a bin center
+    n_bins = len(bin_edges) - 1
+    idx = np.minimum(np.digitize(tasks, bin_edges) - 1, n_bins - 1)
+    bin_centers = (bin_edges[:-1] + bin_edges[1:]) / 2
+    tasks_disc = bin_centers[idx]
+    levels = bin_centers
+
     # 2) compute bin‐widths for a trapezoid rule
-    diffs = np.diff(levels)
-    widths = np.empty_like(levels)
-    widths[1:-1] = (diffs[:-1] + diffs[1:]) / 2
-    widths[0]    = diffs[0]
-    widths[-1]   = diffs[-1]
+    bin_widths = np.diff(bin_edges)
 
     # 3) per‐level success rates
-    rates = np.array([outcomes[tasks==lev].mean() for lev in levels])
+    rates = np.array([outcomes[tasks_disc==lev].mean() for lev in levels])
     # 4) weights
     lvl_w  = np.array([level_weight_fn(lev) for lev in levels])
     info_w = (np.ones_like(rates)
               if info_weight_fn is None
-              else np.array([info_weight_fn(lev, (tasks==lev).sum())
+              else np.array([info_weight_fn(lev, (tasks_disc==lev).sum())
                               for lev in levels]))
 
     # 5) area approximation
-    area = np.nansum(rates * lvl_w * info_w * widths)
+    area = np.nansum(rates * lvl_w * info_w * bin_widths)
 
     if normalize:
-        norm = np.nansum(lvl_w * info_w * widths)
+        norm = np.nansum(lvl_w * info_w * bin_widths)
         return float(area / (norm or np.nan))
     return float(area)
 

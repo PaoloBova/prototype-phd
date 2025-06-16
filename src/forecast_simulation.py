@@ -162,13 +162,11 @@ def calculate_true_weighted_score(threshold: float, slope: float, config: Dict[s
     # discretize continuous tasks into bins for per‐level estimates
     n_bins = config.get("n_bins", 10)
     bin_edges = np.linspace(range_min, range_max, n_bins + 1)
-    bin_centers = (bin_edges[:-1] + bin_edges[1:]) / 2
-    idx = np.minimum(np.digitize(diff_grid, bin_edges) - 1, n_bins - 1)
-    tasks_disc = bin_centers[idx]
     # use weighted_score_estimator to combine levels
     normalize = config.get("normalize", False)
-    weighted_score = weighted_score_estimator(tasks_disc,
+    weighted_score = weighted_score_estimator(diff_grid,
                                               probs,
+                                              bin_edges=bin_edges,
                                               level_weight_fn=weight_fn,
                                               normalize=normalize)
     return weighted_score
@@ -254,13 +252,10 @@ def simulate_estimator(
                 # return a constant value of 0
                 return 0
         else:
-            bin_centers = (bin_edges[:-1] + bin_edges[1:]) / 2
             def analysis_fn(tasks, outcomes):
-                # assign each task to a bin center
-                idx = np.minimum(np.digitize(tasks, bin_edges) - 1, n_bins - 1)
-                tasks_disc = bin_centers[idx]
-                return weighted_score_estimator(tasks_disc,
+                return weighted_score_estimator(tasks,
                                                 outcomes,
+                                                bin_edges=bin_edges,
                                                 level_weight_fn=weight_fn,
                                                 normalize=ws_cfg.get("normalize", False))
         
@@ -305,6 +300,7 @@ def simulate_estimator(
             # weighted‐sum under estimated logistic curve
             return weighted_score_estimator(
                 grid, probs,
+                bin_edges=grid,
                 level_weight_fn=weight_fn,
                 normalize=normalize
             )
