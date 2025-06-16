@@ -296,7 +296,7 @@ def simulate_estimator(
             # difficulties, not just the sampled tasks.
             grid = np.linspace(forecast.original_window_lower, forecast.original_window_upper, 200)
             # Use logistic function to estimate probabilities
-            probs = 1.0 / (1.0 + np.exp(-b1 * (grid - (-b0 / b1))))
+            probs = 1.0 / (1.0 + np.exp(b1 * (grid - (-b0 / b1))))
             # weighted‐sum under estimated logistic curve
             return weighted_score_estimator(
                 grid, probs,
