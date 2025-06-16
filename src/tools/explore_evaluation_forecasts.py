@@ -417,11 +417,12 @@ def plot_costs_over_time(df: pd.DataFrame, output_dir: str, fmt: str = "png"):
         return
     df["ability_date"] = pd.to_datetime(df["ability_date"])
 
-    # Determine grouping columns: use ability_scenario (no date) and other stable keys
+    # Determine grouping columns: use ability_model (no date) and other keys
     key_cols = [
         c for c in (
-            "ability_scenario",",
-            "cost_model",",
+            # "ability_model",
+            # "ability_scenario",
+            "cost_model",
             "design_id",
             "ability_variant",
             "cost_variant"
