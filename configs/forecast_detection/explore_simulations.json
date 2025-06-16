@@ -44,9 +44,9 @@
     },
     "risk_thresholds": {
     "threshold": [20],
-    "weighted_score": [80],
+    "weighted_score": [80, 120],
     "bin_threshold": [20],
-    "logistic_weighted": [80]
+    "logistic_weighted": [80, 120]
     }
   }
   
