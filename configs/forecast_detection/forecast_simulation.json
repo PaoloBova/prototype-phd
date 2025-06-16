@@ -28,13 +28,13 @@
     "range_min": -5,
     "range_max": 20,
     "normalize": false,
-    "n_bins": 1,
-    "use_original_window": false,
-    "truncate_bins": false,
+    "n_bins": 5,
+    "use_original_window": true,
+    "truncate_bins": true,
     "weight_function": {
       "type": "linear",
-      "base": 0.0,
-      "slope": 1.0
+      "base": 1.0,
+      "slope": 2.0
     }
   },
   "output": {
