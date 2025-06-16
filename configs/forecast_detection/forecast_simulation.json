@@ -7,11 +7,7 @@
     "seed": 42
   },
   "methods_to_run": [
-    "threshold",
-    "weighted_score",
-    "max_success",
-    "bin_threshold", 
-    "logistic_weighted"
+    "weighted_score"
   ],
   "filters": {
     "ability_variants": ["base", "lower", "upper"],
