@@ -49,7 +49,7 @@ def logistic_function(x: np.ndarray, threshold: float, slope: float) -> np.ndarr
     Returns:
         Array of logistic function values
     """
-    return 1.0 / (1.0 + np.exp(slope * (x - threshold)))
+    return 1.0 / (1.0 + np.exp(-slope * (x - threshold)))
 
 def create_evaluation_forecast_from_row(row: pd.Series) -> EvaluationForecast:
     """
@@ -296,7 +296,7 @@ def simulate_estimator(
             # difficulties, not just the sampled tasks.
             grid = np.linspace(forecast.original_window_lower, forecast.original_window_upper, 200)
             # Use logistic function to estimate probabilities
-            probs = 1.0 / (1.0 + np.exp(b1 * (grid - (-b0 / b1))))
+            probs = 1.0 / (1.0 + np.exp(-b1 * (grid - (-b0 / b1))))
             # weighted‐sum under estimated logistic curve
             return weighted_score_estimator(
                 grid, probs,
