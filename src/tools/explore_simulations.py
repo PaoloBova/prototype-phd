@@ -1111,8 +1111,8 @@ def main():
             safe_filename = "".join(c if c.isalnum() or c in "_-." else "_" for c in filename)
             output_path = os.path.join(args.output, f"{safe_filename}.png")
             
-            # visualize_simulation_distribution(results, metadata, stats, output_path, config)
-            # print(f"Created visualization: {output_path}")
+            visualize_simulation_distribution(results, metadata, stats, output_path, config)
+            print(f"Created visualization: {output_path}")
         
         # Generate additional plots
         plot_bias_variance_tradeoff(h5_file, args.output)
