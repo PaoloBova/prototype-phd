@@ -8,6 +8,8 @@
   },
   "methods_to_run": [
     "weighted_score",
+    "threshold",
+    "bin_threshold",
     "logistic_weighted"
   ],
   "filters": {
@@ -34,8 +36,8 @@
     "truncate_bins": false,
     "weight_function": {
       "type": "linear",
-      "base": 1.0,
-      "slope": 2.0
+      "base": 0.0,
+      "slope": 1.0
     }
   },
   "output": {

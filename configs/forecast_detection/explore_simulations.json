@@ -43,10 +43,10 @@
       "save_convergence_stats": true
     },
     "risk_thresholds": {
-    "threshold": [20],
-    "weighted_score": [80, 120],
-    "bin_threshold": [20],
-    "logistic_weighted": [80, 120]
+    "threshold": [19, 20, 21, 22],
+    "weighted_score": [65, 70, 75],
+    "bin_threshold": [19, 20, 21, 22],
+    "logistic_weighted": [65, 70, 75]
     }
   }
   
