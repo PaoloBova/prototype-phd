@@ -174,16 +174,16 @@ stages:
     deps:
     - path: configs/forecast_detection/forecast_simulation.json
       hash: md5
-      md5: 6e7ecfa629e68f9e778de0e34da1243d
-      size: 1034
+      md5: ac762740712d254a4324133a33431579
+      size: 1072
     - path: output/forecast_detection/evaluation_forecasts.csv
       hash: md5
       md5: 1d98ec2dfa3164aeb5729c3883833f3e
       size: 212957
     - path: src/forecast_simulation.py
       hash: md5
-      md5: 92776efb24539f5e413bb6382c641a21
-      size: 33059
+      md5: c915921903b78c442be284a4bcdac880
+      size: 33058
     - path: src/schemas.py
       hash: md5
       md5: d2eb04e89f81db25aceaf891964ce566
@@ -195,12 +195,12 @@ stages:
     outs:
     - path: output/forecast_detection/raw_simulation_results.h5
       hash: md5
-      md5: 0294942685ebffa6ba3084b13cfa403c
-      size: 3501000
+      md5: adf715218f8d5d4d04abc578657666e5
+      size: 6740736
     - path: output/forecast_detection/simulation_results.csv
       hash: md5
-      md5: cdacfe39c90bbd28a5e5517725ab1e58
-      size: 121604
+      md5: 0adf0200459f16a87b44e08afda6dec0
+      size: 242281
   analyze_bias:
     cmd: python -m src.tools.analyze_bias --input output/forecast_detection/simulation_results.csv
       --output reports/bias_analysis --remove-outliers
@@ -226,12 +226,12 @@ stages:
     deps:
     - path: configs/forecast_detection/explore_simulations.json
       hash: md5
-      md5: bc15566a8ff5134cb507bf57ba5d4765
-      size: 1157
+      md5: ea2e2b469783e595471e36fadd0bf6a5
+      size: 1187
     - path: output/forecast_detection/raw_simulation_results.h5
       hash: md5
-      md5: 0294942685ebffa6ba3084b13cfa403c
-      size: 3501000
+      md5: adf715218f8d5d4d04abc578657666e5
+      size: 6740736
     - path: src/tools/explore_simulations.py
       hash: md5
       md5: c294a1f010c7626c91238d227dd9b70d
@@ -239,6 +239,6 @@ stages:
     outs:
     - path: reports/forecast_detection/exploration_results.csv
       hash: md5
-      md5: c658bced766d8b82554ba4a33b3458d9.dir
-      size: 1753999
-      nfiles: 12
+      md5: fc170854caf6fc4bdbb9fe80fcabf023.dir
+      size: 4448242
+      nfiles: 28
