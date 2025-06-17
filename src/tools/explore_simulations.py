@@ -1030,13 +1030,16 @@ def main():
         # Load metadata
         metadata = load_simulation_metadata(h5_file)
         print("Simulation Configuration:")
-        for key, value in metadata.items():
-            if isinstance(value, dict):
-                print(f"  {key}:")
-                for k, v in value.items():
-                    print(f"    {k}: {v}")
-            else:
-                print(f"  {key}: {value}")
+        # Print metadata in a structured way
+        if args.debug:
+            print("  Metadata:")
+            for key, value in metadata.items():
+                if isinstance(value, dict):
+                    print(f"  {key}:")
+                    for k, v in value.items():
+                        print(f"    {k}: {v}")
+                else:
+                    print(f"  {key}: {value}")
         
         # List all groups for debugging if requested
         if args.debug:
@@ -1047,14 +1050,15 @@ def main():
         
         # List available scenarios
         scenarios = list_available_scenarios(h5_file)
-        print("\nAvailable Scenarios:")
-        for scenario, budgets in scenarios.items():
-            if scenario == 'metadata':
-                continue
-            print(f"  {scenario}:")
-            for budget in budgets:
-                print(f"    {budget}")
-        
+        if args.debug:
+            print("\nAvailable Scenarios:")
+            for scenario, budgets in scenarios.items():
+                if scenario == 'metadata':
+                    continue
+                print(f"  {scenario}:")
+                for budget in budgets:
+                    print(f"    {budget}")
+            
         # If CSV export is requested
         if args.csv:
             csv_path = args.output if args.output.endswith('.csv') else os.path.join(args.output, "simulation_summary.csv")
@@ -1111,8 +1115,9 @@ def main():
             safe_filename = "".join(c if c.isalnum() or c in "_-." else "_" for c in filename)
             output_path = os.path.join(args.output, f"{safe_filename}.png")
             
-            visualize_simulation_distribution(results, metadata, stats, output_path, config)
-            print(f"Created visualization: {output_path}")
+            if args.debug:
+                visualize_simulation_distribution(results, metadata, stats, output_path, config)
+                print(f"Created visualization: {output_path}")
         
         # Generate additional plots
         plot_bias_variance_tradeoff(h5_file, args.output)
