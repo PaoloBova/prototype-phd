@@ -56,6 +56,18 @@ class SimulationConfig(BaseModel):
         ge=0.0,
         le=1.0
     )
+    elicitation_enabled: bool = Field(
+        False,
+        description="Enable elicitation impact on successes"
+    )
+    elicitation_threshold: float = Field(
+        0.0,
+        description="Difficulty at which elicitation begins to decline"
+    )
+    elicitation_slope: float = Field(
+        1.0,
+        description="Steepness of the elicitation impact curve"
+    )
     
     class Config:
         arbitrary_types_allowed = True
@@ -124,10 +136,14 @@ def generate_success_outcomes(
     slope: float,
     correlation_model: CorrelationModel = CorrelationModel.NONE,
     correlation_strength: float = 0.0,
-    random_seed: Optional[int] = None
+    random_seed: Optional[int] = None,
+    elicitation_enabled: bool = False,
+    elicitation_threshold: float = 0.0,
+    elicitation_slope: float = 1.0
 ) -> np.ndarray:
     """
-    Generate success/failure outcomes for tasks based on a logistic model.
+    Generate success/failure outcomes for tasks based on a logistic model,
+    optional correlation, and then apply elicitation impact.
     
     Args:
         task_difficulties: Array of task difficulties
@@ -136,6 +152,9 @@ def generate_success_outcomes(
         correlation_model: Model for task success correlation
         correlation_strength: Strength of correlation (0 = independent, 1 = perfect)
         random_seed: Optional random seed for reproducibility
+        elicitation_enabled: Enable elicitation impact on successes
+        elicitation_threshold: Difficulty at which elicitation begins to decline
+        elicitation_slope: Steepness of the elicitation impact curve
         
     Returns:
         Binary array of success (1) or failure (0) outcomes
@@ -148,18 +167,18 @@ def generate_success_outcomes(
     
     if correlation_model == CorrelationModel.NONE or correlation_strength <= 0.0:
         # Independent successes - standard binomial sampling
-        return rng.binomial(1, probs)
+        success = rng.binomial(1, probs)
     
     elif correlation_model == CorrelationModel.FIXED_ORDER:
         if correlation_strength >= 1.0:
             # Perfect correlation - deterministic cutoff based on threshold
-            return (task_difficulties <= threshold).astype(int)
+            success = (task_difficulties <= threshold).astype(int)
         else:
             # Mixture of fixed order and independence
             deterministic = (task_difficulties <= threshold).astype(int)
             independent = rng.binomial(1, probs)
             mask = rng.random(n_tasks) < correlation_strength
-            return np.where(mask, deterministic, independent)
+            success = np.where(mask, deterministic, independent)
     
     elif correlation_model == CorrelationModel.MIXTURE:
         # Generate a correlated random component
@@ -167,10 +186,18 @@ def generate_success_outcomes(
         # Higher correlation_strength = more threshold shifting
         threshold_shift = rng.normal(0, correlation_strength / slope)
         adjusted_probs = logistic_function(task_difficulties, threshold + threshold_shift, slope)
-        return rng.binomial(1, adjusted_probs)
+        success = rng.binomial(1, adjusted_probs)
     
     else:
         raise ValueError(f"Unsupported correlation model: {correlation_model}")
+    
+    # Apply elicitation impact if enabled
+    if elicitation_enabled and n_tasks > 0:
+        p_imp = 1.0 / (1.0 + np.exp(elicitation_slope * (task_difficulties - elicitation_threshold)))
+        keep = rng.binomial(1, p_imp, size=n_tasks)
+        success = success * keep
+
+    return success
 
 
 def run_simulation(
@@ -211,7 +238,10 @@ def run_simulation(
         base_outcomes = generate_success_outcomes(
             base_tasks, threshold, slope, 
             config.correlation_model, config.correlation_strength,
-            random_seed=config.random_seed
+            random_seed=config.random_seed,
+            elicitation_enabled=config.elicitation_enabled,
+            elicitation_threshold=config.elicitation_threshold,
+            elicitation_slope=config.elicitation_slope
         )
         
         # Bootstrap from this fixed set
@@ -236,7 +266,10 @@ def run_simulation(
             outcomes = generate_success_outcomes(
                 tasks, threshold, slope, 
                 config.correlation_model, config.correlation_strength,
-                random_seed=seed_i
+                random_seed=seed_i,
+                elicitation_enabled=config.elicitation_enabled,
+                elicitation_threshold=config.elicitation_threshold,
+                elicitation_slope=config.elicitation_slope
             )
             
             if analysis_fn is not None:

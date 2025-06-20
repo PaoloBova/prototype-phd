@@ -334,7 +334,7 @@ def individual_plots(df: pd.DataFrame, key_column: str, output_dir: str, fmt: st
         
         # Save the plot
         output_path = os.path.join(output_dir, f"{name_prefix}_{safe_key}.{fmt}")
-        plt.savefig(output_path, dpi=150)
+        plt.savefig(output_path, dpi=300)
         plt.close()
         
         print(f"  Saved {name_prefix} plot for scenario: {safe_key}")
@@ -429,7 +429,7 @@ def grouped_variant_plots(df: pd.DataFrame, group_column: str, variant_column: s
         
         # Save the plot
         output_path = os.path.join(output_dir, f"{name_prefix}_{safe_key}.{fmt}")
-        plt.savefig(output_path, dpi=150)
+        plt.savefig(output_path, dpi=300)
         plt.close()
         
         print(f"  Saved {name_prefix} plot for group: {safe_key}")
@@ -771,7 +771,7 @@ def plot_mse_overview(df: pd.DataFrame, output_dir: str, fmt: str = "png"):
     
     # Save the plot
     output_path = os.path.join(output_dir, f"mse_overview.{fmt}")
-    plt.savefig(output_path, dpi=150)
+    plt.savefig(output_path, dpi=300)
     plt.close()
     
     print(f"Saved MSE overview plot to {output_path}")
@@ -799,7 +799,7 @@ def plot_coverage_vs_budget(df: pd.DataFrame, output_dir: str, fmt: str = "png",
         plt.grid(True, alpha=0.3)
         path = os.path.join(out_dir, f"coverage_vs_budget.{fmt}")
         plt.tight_layout()
-        plt.savefig(path, dpi=150)
+        plt.savefig(path, dpi=300)
         plt.close()
         print(f"Saved coverage vs. budget plot to {path}")
 
@@ -824,7 +824,7 @@ def plot_bias_variance_tradeoff(df: pd.DataFrame, output_dir: str, fmt: str = "p
         plt.grid(True, alpha=0.3)
         path = os.path.join(out_dir, f"bias_variance_tradeoff.{fmt}")
         plt.tight_layout()
-        plt.savefig(path, dpi=150)
+        plt.savefig(path, dpi=300)
         plt.close()
         print(f"Saved bias-variance tradeoff plot to {path}")
 
@@ -849,7 +849,7 @@ def plot_ci_width_vs_budget(df: pd.DataFrame, output_dir: str, fmt: str = "png",
         plt.grid(True, alpha=0.3)
         path = os.path.join(out_dir, f"ci_width_vs_budget.{fmt}")
         plt.tight_layout()
-        plt.savefig(path, dpi=150)
+        plt.savefig(path, dpi=300)
         plt.close()
         print(f"Saved CI width vs. budget plot to {path}")
 
@@ -872,7 +872,7 @@ def plot_mean_vs_true_scatter(df: pd.DataFrame, output_dir: str, fmt: str = "png
         path = os.path.join(output_dir, est, f"mean_vs_true.{fmt}")
         os.makedirs(os.path.dirname(path), exist_ok=True)
         plt.tight_layout()
-        plt.savefig(path, dpi=150)
+        plt.savefig(path, dpi=300)
         plt.close()
         print(f"Saved mean vs true scatter to {path}")
 
@@ -903,7 +903,7 @@ def plot_bias_variance_by_date(df: pd.DataFrame, output_dir: str, fmt: str = "pn
         out_dir = os.path.join(output_dir, est)
         os.makedirs(out_dir, exist_ok=True)
         path = os.path.join(out_dir, f"bias_variance_by_date.{fmt}")
-        fig.savefig(path, dpi=150)
+        fig.savefig(path, dpi=300)
         plt.close(fig)
         print(f"Saved bias-variance by date grid to {path}")
 
@@ -957,7 +957,7 @@ def plot_window_size_vs_budget(df: pd.DataFrame, output_dir: str, fmt: str = "pn
         plt.grid(True, alpha=0.3)
         path = os.path.join(out_dir, f"window_size_vs_budget.{fmt}")
         plt.tight_layout()
-        plt.savefig(path, dpi=150)
+        plt.savefig(path, dpi=300)
         plt.close()
         print(f"Saved window size vs budget plot to {path}")
 

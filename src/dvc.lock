@@ -60,22 +60,22 @@ stages:
       size: 2520
   explore_ability_forecasts:
     cmd: python -m src.tools.explore_ability_forecasts --input output/forecast_detection/ability_forecasts.csv
-      --output reports/forecast_detection/ability_visualizations
+      --output reports/forecast_detection/ability_visualizations --font-size 24 --disable-titles
     deps:
     - path: output/forecast_detection/ability_forecasts.csv
       hash: md5
-      md5: 06807c429c453d6bea4f4fae6e5d5b70
-      size: 11896
+      md5: 6687806c0540c305bfecb28abf017f77
+      size: 2520
     - path: src/tools/explore_ability_forecasts.py
       hash: md5
-      md5: 24c07edb44ea0aa60fc8f4b67519506c
-      size: 20723
+      md5: 62a84e9d2a3edc6075de79116618a354
+      size: 23870
     outs:
     - path: reports/forecast_detection/ability_visualizations
       hash: md5
-      md5: 6beeb4d206c2d2613b1b679a24a83b40.dir
-      size: 1549071
-      nfiles: 13
+      md5: adcd7be7dd05d20c2d7adbcc15ad72c1.dir
+      size: 981395
+      nfiles: 10
   forecast_cost:
     cmd: python -m src.forecast_cost --input output/forecast_detection/processed_data.csv
       --out output/forecast_detection/cost_trends.csv --config configs/forecast_detection/forecast_cost.json
@@ -151,7 +151,8 @@ stages:
       size: 212957
   explore_evaluation_forecasts:
     cmd: python -m src.tools.explore_evaluation_forecasts --input output/forecast_detection/evaluation_forecasts.csv
-      --output reports/forecast_detection/evaluation_visualizations
+      --output reports/forecast_detection/evaluation_visualizations --font-size 24
+      --disable-titles
     deps:
     - path: output/forecast_detection/evaluation_forecasts.csv
       hash: md5
@@ -159,8 +160,8 @@ stages:
       size: 212957
     - path: src/tools/explore_evaluation_forecasts.py
       hash: md5
-      md5: 7d5a4d9e161d572e63c33c750de8c9b1
-      size: 46513
+      md5: f121fc5252c6edcb87c89ef86477e28b
+      size: 47723
     outs:
     - path: reports/forecast_detection/evaluation_visualizations
       hash: md5
@@ -174,8 +175,8 @@ stages:
     deps:
     - path: configs/forecast_detection/forecast_simulation.json
       hash: md5
-      md5: 73f78f910abdc2d558854a791e504162
-      size: 1011
+      md5: 29b77807725fb2af21159ab820cb49ca
+      size: 1121
     - path: output/forecast_detection/evaluation_forecasts.csv
       hash: md5
       md5: 1d98ec2dfa3164aeb5729c3883833f3e
@@ -190,17 +191,17 @@ stages:
       size: 12561
     - path: src/simulation.py
       hash: md5
-      md5: b3baf07d19152f07cb9cf3f262545745
-      size: 11612
+      md5: c2f457862a2724897b05e2af6c8ad8b2
+      size: 13063
     outs:
     - path: output/forecast_detection/raw_simulation_results.h5
       hash: md5
-      md5: 379a6a2702b7a27a78a680e0d276625c
-      size: 1889000
+      md5: 0a670f8c041bb566a2b59e8c38c07d0a
+      size: 3501256
     - path: output/forecast_detection/simulation_results.csv
       hash: md5
-      md5: 3630f29c00a152b8c09de739cea5247f
-      size: 60707
+      md5: 563d4849fede26fd2ba3ccf25e57dbcd
+      size: 120925
   analyze_bias:
     cmd: python -m src.tools.analyze_bias --input output/forecast_detection/simulation_results.csv
       --output reports/bias_analysis --remove-outliers
@@ -221,7 +222,8 @@ stages:
       nfiles: 275
   explore_simulations:
     cmd: python -m src.tools.explore_simulations --raw output/forecast_detection/raw_simulation_results.h5
-      --output reports/forecast_detection/exploration_results.csv --config configs/forecast_detection/explore_simulations.json
+      --output reports/forecast_detection/exploration_results.csv --font-size 24 --disable-titles
+      --config configs/forecast_detection/explore_simulations.json
     deps:
     - path: configs/forecast_detection/explore_simulations.json
       hash: md5
@@ -229,15 +231,15 @@ stages:
       size: 1191
     - path: output/forecast_detection/raw_simulation_results.h5
       hash: md5
-      md5: 379a6a2702b7a27a78a680e0d276625c
-      size: 1889000
+      md5: 0a670f8c041bb566a2b59e8c38c07d0a
+      size: 3501256
     - path: src/tools/explore_simulations.py
       hash: md5
-      md5: a2ac6d51ad2e8289b2f0c40a2cc6dc71
-      size: 44102
+      md5: 4690ebfd1421f3e41e0b6c2c0af01178
+      size: 45667
     outs:
     - path: reports/forecast_detection/exploration_results.csv
       hash: md5
-      md5: b35ed4cfaf67c8d4e48050d248cb9cec.dir
-      size: 1223745
-      nfiles: 8
+      md5: af59af56ebf939c01478157471b734e5.dir
+      size: 3805836
+      nfiles: 15

@@ -4,11 +4,33 @@ Utilities for exploring and visualizing ability forecasts.
 
 import argparse
 import matplotlib.pyplot as plt
+import matplotlib as mpl
 import numpy as np
 import os
 import pandas as pd
 from datetime import datetime
 from typing import Dict, List, Optional, Tuple
+
+# Global plotting style parameters
+FONT_SIZE = 12  # Default font size
+TITLE_ENABLED = True  # Whether to show titles in plots
+
+def _style_plots():
+    """Apply font size settings and optionally remove titles from plots."""
+    mpl.rcParams.update({
+        'axes.labelsize': FONT_SIZE,
+        'axes.titlesize': FONT_SIZE,
+        'xtick.labelsize': FONT_SIZE * 0.8,
+        'ytick.labelsize': FONT_SIZE * 0.8,
+        'legend.fontsize': FONT_SIZE * 0.8
+    })
+    
+    if not TITLE_ENABLED:
+        # Remove titles from the current figure
+        fig = plt.gcf()
+        fig.suptitle("")  # Remove figure suptitle
+        for ax in fig.axes:
+            ax.set_title("")  # Remove axis title
 
 def parse_args():
     """Parse command line arguments."""
@@ -17,6 +39,10 @@ def parse_args():
     parser.add_argument("--output", default="reports/ability_forecast_visualizations",
                         help="Output directory for visualizations")
     parser.add_argument("--format", default="png", help="Output format (png, pdf, svg)")
+    parser.add_argument("--font-size", type=int, default=12,
+                        help="Base font size for all plot text")
+    parser.add_argument("--disable-titles", action="store_true",
+                        help="Strip all titles from plots for publication style")
     return parser.parse_args()
 
 def logistic_function(x: np.ndarray, threshold: float, slope: float) -> np.ndarray:
@@ -64,7 +90,8 @@ def plot_threshold_timeline(df: pd.DataFrame, output_dir: str, fmt: str = "png")
     # Save figure
     output_path = os.path.join(output_dir, f"threshold_timeline.{fmt}")
     os.makedirs(os.path.dirname(output_path), exist_ok=True)
-    plt.savefig(output_path, dpi=150)
+    _style_plots()  # Apply font and title settings
+    plt.savefig(output_path, dpi=300)
     plt.close()
     
     print(f"Saved threshold timeline to {output_path}")
@@ -110,7 +137,8 @@ def plot_slope_timeline(df: pd.DataFrame, output_dir: str, fmt: str = "png"):
     # Save figure
     output_path = os.path.join(output_dir, f"slope_timeline.{fmt}")
     os.makedirs(os.path.dirname(output_path), exist_ok=True)
-    plt.savefig(output_path, dpi=150)
+    _style_plots()  # Apply font and title settings
+    plt.savefig(output_path, dpi=300)
     plt.close()
     
     print(f"Saved slope timeline to {output_path}")
@@ -191,10 +219,48 @@ def plot_logistic_curves_grid(df: pd.DataFrame, output_dir: str, fmt: str = "png
         # Save figure
         output_path = os.path.join(output_dir, f"logistic_curves_{scenario}.{fmt}")
         os.makedirs(os.path.dirname(output_path), exist_ok=True)
-        plt.savefig(output_path, dpi=150)
+        _style_plots()  # Apply font and title settings
+        plt.savefig(output_path, dpi=300)
         plt.close()
         
         print(f"Saved logistic curves for {scenario} to {output_path}")
+
+def plot_logistic_curves_overlay(df: pd.DataFrame, output_dir: str, fmt: str = "png"):
+    """
+    Plot sampled logistic curves for all scenarios on a single plot.
+    """
+    plt.figure(figsize=(12, 8))
+    cmap = plt.cm.get_cmap("tab20")
+    idx = 0
+    for scenario, scenario_df in df.groupby("scenario"):
+        dates = sorted(scenario_df["date"].unique())
+        n = min(6, len(dates))
+        if n < 1:
+            continue
+        step = max(1, len(dates) // n) if n > 1 else 1
+        sample = dates if n == 1 else dates[::step][:n]
+        for dt in sample:
+            row = scenario_df[scenario_df["date"] == dt].iloc[0]
+            thr, sl = row["threshold"], row["slope"]
+            x = np.linspace(thr - 5, thr + 5, 1000)
+            y = logistic_function(x, thr, sl)
+            plt.plot(x, y, color=cmap(idx), alpha=0.7,
+                     label=f"{scenario} {dt.strftime('%Y-%m-%d')}")
+            idx += 1
+
+    plt.xlabel("Task Difficulty")
+    plt.ylabel("Success Probability")
+    plt.title("Overlayed Logistic Curves for All Scenarios/Dates")
+    plt.legend(bbox_to_anchor=(1.05, 1), loc="upper left", fontsize="small")
+    plt.grid(True, alpha=0.3)
+    plt.tight_layout()
+
+    output_path = os.path.join(output_dir, f"logistic_curves_overlay.{fmt}")
+    os.makedirs(os.path.dirname(output_path), exist_ok=True)
+    _style_plots()  # Apply font and title settings
+    plt.savefig(output_path, dpi=300)
+    plt.close()
+    print(f"Saved overlay logistic curves to {output_path}")
 
 def plot_model_parameters(df: pd.DataFrame, output_dir: str, fmt: str = "png"):
     """
@@ -221,7 +287,8 @@ def plot_model_parameters(df: pd.DataFrame, output_dir: str, fmt: str = "png"):
     # Save figure
     output_path = os.path.join(output_dir, f"model_parameters.{fmt}")
     os.makedirs(os.path.dirname(output_path), exist_ok=True)
-    plt.savefig(output_path, dpi=150)
+    _style_plots()  # Apply font and title settings
+    plt.savefig(output_path, dpi=300)
     plt.close()
     
     print(f"Saved model parameters plot to {output_path}")
@@ -317,7 +384,8 @@ def validate_slope_trends(df: pd.DataFrame, output_dir: str, fmt: str = "png"):
     # Save figure
     output_path = os.path.join(output_dir, f"slope_validation.{fmt}")
     os.makedirs(os.path.dirname(output_path), exist_ok=True)
-    plt.savefig(output_path, dpi=150)
+    _style_plots()  # Apply font and title settings
+    plt.savefig(output_path, dpi=300)
     plt.close()
     
     print(f"Saved slope validation plot to {output_path}")
@@ -388,7 +456,8 @@ def generate_frequency_comparison(df: pd.DataFrame, output_dir: str, fmt: str = 
         # Save figure
         output_path = os.path.join(output_dir, f"frequency_comparison_{trend}.{fmt}")
         os.makedirs(os.path.dirname(output_path), exist_ok=True)
-        plt.savefig(output_path, dpi=150)
+        _style_plots()  # Apply font and title settings
+        plt.savefig(output_path, dpi=300)
         plt.close()
         
         print(f"Saved frequency comparison for {trend} to {output_path}")
@@ -437,7 +506,8 @@ def generate_frequency_comparison(df: pd.DataFrame, output_dir: str, fmt: str = 
         # Save figure
         output_path = os.path.join(output_dir, f"trend_comparison_{freq}.{fmt}")
         os.makedirs(os.path.dirname(output_path), exist_ok=True)
-        plt.savefig(output_path, dpi=150)
+        _style_plots()  # Apply font and title settings
+        plt.savefig(output_path, dpi=300)
         plt.close()
         
         print(f"Saved trend comparison for {freq} frequency to {output_path}")
@@ -521,7 +591,8 @@ def plot_confidence_intervals(df: pd.DataFrame, output_dir: str, fmt: str = "png
         # Save figure
         output_path = os.path.join(output_dir, f"confidence_intervals_{scenario_type}.{fmt}")
         os.makedirs(os.path.dirname(output_path), exist_ok=True)
-        plt.savefig(output_path, dpi=150)
+        _style_plots()  # Apply font and title settings
+        plt.savefig(output_path, dpi=300)
         plt.close()
         
         print(f"Saved confidence interval plot for {scenario_type} to {output_path}")
@@ -529,6 +600,11 @@ def plot_confidence_intervals(df: pd.DataFrame, output_dir: str, fmt: str = "png
 def main():
     """Main entry point."""
     args = parse_args()
+    
+    # Set global plotting parameters
+    global FONT_SIZE, TITLE_ENABLED
+    FONT_SIZE = args.font_size
+    TITLE_ENABLED = not args.disable_titles
     
     print(f"Loading ability forecasts from {args.input}")
     df = pd.read_csv(args.input)
@@ -546,6 +622,7 @@ def main():
     plot_threshold_timeline(df, args.output, args.format)
     plot_slope_timeline(df, args.output, args.format)
     plot_logistic_curves_grid(df, args.output, args.format)
+    plot_logistic_curves_overlay(df, args.output, args.format)
     plot_model_parameters(df, args.output, args.format)
     create_summary_stats(df, args.output)
     validate_slope_trends(df, args.output, args.format)

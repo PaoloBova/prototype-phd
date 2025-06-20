@@ -75,7 +75,7 @@ stages:
 
   explore_ability_forecasts:
     wdir: ..
-    cmd: python -m src.tools.explore_ability_forecasts --input output/forecast_detection/ability_forecasts.csv --output reports/forecast_detection/ability_visualizations
+    cmd: python -m src.tools.explore_ability_forecasts --input output/forecast_detection/ability_forecasts.csv --output reports/forecast_detection/ability_visualizations --font-size 24 --disable-titles
     deps:
       - output/forecast_detection/ability_forecasts.csv
       - src/tools/explore_ability_forecasts.py
@@ -94,7 +94,7 @@ stages:
 
   explore_evaluation_forecasts:
     wdir: ..
-    cmd: python -m src.tools.explore_evaluation_forecasts --input output/forecast_detection/evaluation_forecasts.csv --output reports/forecast_detection/evaluation_visualizations
+    cmd: python -m src.tools.explore_evaluation_forecasts --input output/forecast_detection/evaluation_forecasts.csv --output reports/forecast_detection/evaluation_visualizations --font-size 24 --disable-titles
     deps:
       - output/forecast_detection/evaluation_forecasts.csv
       - src/tools/explore_evaluation_forecasts.py
@@ -103,7 +103,7 @@ stages:
 
   explore_simulations:
     wdir: ..
-    cmd: python -m src.tools.explore_simulations --raw output/forecast_detection/raw_simulation_results.h5 --output reports/forecast_detection/exploration_results.csv --config configs/forecast_detection/explore_simulations.json
+    cmd: python -m src.tools.explore_simulations --raw output/forecast_detection/raw_simulation_results.h5 --output reports/forecast_detection/exploration_results.csv --font-size 24 --disable-titles --config configs/forecast_detection/explore_simulations.json
     deps:
       - output/forecast_detection/raw_simulation_results.h5
       - src/tools/explore_simulations.py

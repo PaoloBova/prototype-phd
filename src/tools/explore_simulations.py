@@ -5,6 +5,7 @@ Utilities for exploring and visualizing simulation results from HDF5 files.
 import argparse
 import h5py
 import matplotlib.pyplot as plt
+import matplotlib as mpl
 import numpy as np
 import os
 import pandas as pd
@@ -12,6 +13,27 @@ import json
 import logging
 from typing import Dict, List, Optional, Tuple, Any, Union
 import seaborn as sns
+
+# Global plotting style parameters
+FONT_SIZE = 12  # Default font size
+TITLE_ENABLED = True  # Whether to show titles in plots
+
+def _style_plots():
+    """Apply font size settings and optionally remove titles from plots."""
+    mpl.rcParams.update({
+        'axes.labelsize': FONT_SIZE,
+        'axes.titlesize': FONT_SIZE,
+        'xtick.labelsize': FONT_SIZE * 0.8,
+        'ytick.labelsize': FONT_SIZE * 0.8,
+        'legend.fontsize': FONT_SIZE * 0.8
+    })
+    
+    if not TITLE_ENABLED:
+        # Remove titles from the current figure
+        fig = plt.gcf()
+        fig.suptitle("")  # Remove figure suptitle
+        for ax in fig.axes:
+            ax.set_title("")  # Remove axis title
 
 def parse_args():
     """Parse command line arguments."""
@@ -29,6 +51,10 @@ def parse_args():
                         help="Filter by estimator type")
     parser.add_argument("--filter-budget", type=float, help="Filter by specific budget fraction")
     parser.add_argument("--debug", action="store_true", help="Print debug information")
+    parser.add_argument("--font-size", type=int, default=12,
+                        help="Base font size for all plot text")
+    parser.add_argument("--disable-titles", action="store_true",
+                        help="Strip all titles from plots for publication style")
     return parser.parse_args()
 
 def load_simulation_metadata(h5_file: h5py.File) -> Dict[str, Any]:
@@ -428,7 +454,8 @@ def visualize_simulation_distribution(
     # Save figure
     os.makedirs(os.path.dirname(output_path), exist_ok=True)
     plt.tight_layout()
-    plt.savefig(output_path, dpi=150)
+    _style_plots()  # Apply font and title settings
+    plt.savefig(output_path, dpi=300)
     plt.close()
 
 def export_summary_csv(h5_file: h5py.File, output_path: str) -> None:
@@ -560,7 +587,8 @@ def plot_bias_variance_tradeoff(h5_file: h5py.File, output_dir: str) -> None:
     output_path = os.path.join(output_dir, "bias_variance_tradeoff.png")
     os.makedirs(os.path.dirname(output_path), exist_ok=True)
     plt.tight_layout()
-    plt.savefig(output_path, dpi=150)
+    _style_plots()  # Apply font and title settings
+    plt.savefig(output_path, dpi=300)
     plt.close()
     
     print(f"Saved bias-variance trade-off plot to {output_path}")
@@ -585,7 +613,8 @@ def plot_bias_variance_tradeoff(h5_file: h5py.File, output_dir: str) -> None:
         output_path = os.path.join(output_dir, "bias_variance_by_budget.png")
         os.makedirs(os.path.dirname(output_path), exist_ok=True)
         plt.tight_layout()
-        plt.savefig(output_path, dpi=150)
+        _style_plots()  # Apply font and title settings
+        plt.savefig(output_path, dpi=300)
         plt.close()
         
         print(f"Saved bias-variance by budget plot to {output_path}")
@@ -712,7 +741,7 @@ def plot_exceedance_probability(
             plt.ylabel("Exceedance Probability")
             plt.title(f"Exceedance Probability vs {group_by.replace('_', ' ').title()}\n(Estimator: {estimator}, Threshold: {threshold})")
             # Improve legend with better placement
-            if len(budget_fractions) > 4:
+            if len(budget_fractions) > 5:
                 plt.legend(bbox_to_anchor=(1.02, 1), loc='upper left')
             else:
                 plt.legend(loc='best')
@@ -738,6 +767,7 @@ def plot_exceedance_probability(
             output_path = os.path.join(output_dir, f"{safe_filename}.png")
             
             plt.tight_layout()
+            _style_plots()  # Apply font and title settings
             plt.savefig(output_path, dpi=300, bbox_inches='tight')
             plt.close()
             print(f"Saved exceedance probability plot to {output_path}")
@@ -953,7 +983,8 @@ def plot_enhanced_detection_metrics(
         filename = create_safe_filename('conditional_median_lag', {'estimator': estimator})
         output_path = os.path.join(output_dir, f"{filename}.png")
         plt.tight_layout()
-        plt.savefig(output_path, dpi=150)
+        _style_plots()  # Apply font and title settings
+        plt.savefig(output_path, dpi=300)
         plt.close()
         print(f"Saved conditional median detection lag plot to {output_path}")
         
@@ -980,7 +1011,8 @@ def plot_enhanced_detection_metrics(
         filename = create_safe_filename('no_detection_prob', {'estimator': estimator})
         output_path = os.path.join(output_dir, f"{filename}.png")
         plt.tight_layout()
-        plt.savefig(output_path, dpi=150)
+        _style_plots()  # Apply font and title settings
+        plt.savefig(output_path, dpi=300)
         plt.close()
         print(f"Saved no detection probability plot to {output_path}")
         
@@ -1007,13 +1039,19 @@ def plot_enhanced_detection_metrics(
         filename = create_safe_filename('early_detection_rate', {'estimator': estimator})
         output_path = os.path.join(output_dir, f"{filename}.png")
         plt.tight_layout()
-        plt.savefig(output_path, dpi=150)
+        _style_plots()  # Apply font and title settings
+        plt.savefig(output_path, dpi=300)
         plt.close()
         print(f"Saved early detection rate plot to {output_path}")
 
 def main():
     """Main entry point."""
     args = parse_args()
+    
+    # Set global plotting parameters
+    global FONT_SIZE, TITLE_ENABLED
+    FONT_SIZE = args.font_size
+    TITLE_ENABLED = not args.disable_titles
     
     # Load configuration if provided
     config = None

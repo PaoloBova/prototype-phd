@@ -4,10 +4,14 @@
     "method": "monte_carlo",
     "correlation_model": "none",
     "correlation_strength": 0.0,
-    "seed": 42
+    "seed": 42,
+    "elicitation_enabled": false,
+    "elicitation_threshold": 0.0,
+    "elicitation_slope": 1.0
   },
   "methods_to_run": [
-    "weighted_score"  
+    "weighted_score",
+    "threshold"
   ],
   "filters": {
     "ability_variants": ["base", "lower", "upper"],
@@ -28,9 +32,9 @@
     "range_min": -5,
     "range_max": 20,
     "normalize": false,
-    "n_bins": 10,
-    "use_original_window": false,
-    "truncate_bins": false,
+    "n_bins": 5,
+    "use_original_window": true,
+    "truncate_bins": true,
     "weight_function": {
       "type": "linear",
       "base": 0.0,

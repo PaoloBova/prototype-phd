@@ -82,7 +82,7 @@ def plot_doubling_rates(df: pd.DataFrame, output_dir: str, fmt: str = "png"):
     # Save figure
     output_path = os.path.join(output_dir, f"doubling_rates.{fmt}")
     os.makedirs(os.path.dirname(output_path), exist_ok=True)
-    plt.savefig(output_path, dpi=150)
+    plt.savefig(output_path, dpi=300)
     plt.close()
     
     print(f"Saved doubling rates plot to {output_path}")
@@ -117,7 +117,7 @@ def plot_doubling_rates_vs_r_squared(df: pd.DataFrame, output_dir: str, fmt: str
     # Save figure
     output_path = os.path.join(output_dir, f"doubling_rates_vs_r_squared.{fmt}")
     os.makedirs(os.path.dirname(output_path), exist_ok=True)
-    plt.savefig(output_path, dpi=150)
+    plt.savefig(output_path, dpi=300)
     plt.close()
     
     print(f"Saved doubling rates vs. r-squared plot to {output_path}")
@@ -194,7 +194,7 @@ def plot_cost_growth_comparison(df: pd.DataFrame, output_dir: str, fmt: str = "p
     # Save figure
     output_path = os.path.join(output_dir, f"cost_growth_comparison.{fmt}")
     os.makedirs(os.path.dirname(output_path), exist_ok=True)
-    plt.savefig(output_path, dpi=150)
+    plt.savefig(output_path, dpi=300)
     plt.close()
     
     print(f"Saved cost growth comparison plot to {output_path}")
@@ -269,7 +269,7 @@ def plot_cost_forecasts(forecasts_df: pd.DataFrame, output_dir: str, fmt: str = 
     # Save figure
     output_path = os.path.join(output_dir, f"cost_forecasts.{fmt}")
     os.makedirs(os.path.dirname(output_path), exist_ok=True)
-    plt.savefig(output_path, dpi=150)
+    plt.savefig(output_path, dpi=300)
     plt.close()
     
     print(f"Saved cost forecasts plot to {output_path}")
@@ -396,7 +396,7 @@ def plot_doubling_rates_by_aggregation(df: pd.DataFrame, output_dir: str, fmt: s
     # Save figure
     output_path = os.path.join(output_dir, f"doubling_rates_by_aggregation.{fmt}")
     os.makedirs(os.path.dirname(output_path), exist_ok=True)
-    plt.savefig(output_path, dpi=150)
+    plt.savefig(output_path, dpi=300)
     plt.close()
     
     print(f"Saved doubling rates by aggregation plot to {output_path}")
@@ -497,7 +497,7 @@ def plot_cost_trends_by_aggregation(df: pd.DataFrame, output_dir: str, fmt: str 
         
     output_path = os.path.join(output_dir, f"{filename}.{fmt}")
     os.makedirs(os.path.dirname(output_path), exist_ok=True)
-    plt.savefig(output_path, dpi=150)
+    plt.savefig(output_path, dpi=300)
     plt.close()
     
     print(f"Saved cost growth by aggregation plot to {output_path}")
@@ -590,7 +590,7 @@ def plot_forecast_comparison_by_aggregation(forecasts_df: pd.DataFrame, output_d
         
     output_path = os.path.join(output_dir, f"{filename}.{fmt}")
     os.makedirs(os.path.dirname(output_path), exist_ok=True)
-    plt.savefig(output_path, dpi=150)
+    plt.savefig(output_path, dpi=300)
     plt.close()
     
     print(f"Saved cost forecasts by aggregation plot to {output_path}")

@@ -97,7 +97,7 @@ def plot_model_curves(fits: Dict, output_dir: str, fmt: str = "png"):
     # Save figure
     output_path = os.path.join(output_dir, f"logistic_curves.{fmt}")
     os.makedirs(os.path.dirname(output_path), exist_ok=True)
-    plt.savefig(output_path, dpi=150)
+    plt.savefig(output_path, dpi=300)
     plt.close()
     
     print(f"Saved logistic curves plot to {output_path}")
@@ -141,7 +141,7 @@ def plot_model_parameters(fits: Dict, output_dir: str, fmt: str = "png"):
     # Save figure
     output_path = os.path.join(output_dir, f"model_parameters.{fmt}")
     os.makedirs(os.path.dirname(output_path), exist_ok=True)
-    plt.savefig(output_path, dpi=150)
+    plt.savefig(output_path, dpi=300)
     plt.close()
     
     print(f"Saved model parameters plot to {output_path}")
@@ -211,7 +211,7 @@ def plot_timeline(fits: Dict, output_dir: str, fmt: str = "png"):
     # Save figure
     output_path = os.path.join(output_dir, f"capability_timeline.{fmt}")
     os.makedirs(os.path.dirname(output_path), exist_ok=True)
-    plt.savefig(output_path, dpi=150)
+    plt.savefig(output_path, dpi=300)
     plt.close()
     
     print(f"Saved capability timeline to {output_path}")
@@ -281,7 +281,7 @@ def validate_fits_with_data(fits: Dict, data_df: pd.DataFrame, output_dir: str, 
         # Save figure
         safe_model_name = model.replace("/", "_").replace(" ", "_")
         output_path = os.path.join(validation_dir, f"validation_{safe_model_name}.{fmt}")
-        plt.savefig(output_path, dpi=150)
+        plt.savefig(output_path, dpi=300)
         plt.close()
         
         print(f"Saved validation plot for {model} to {output_path}")

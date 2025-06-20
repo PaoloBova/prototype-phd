@@ -4,11 +4,33 @@ Utilities for exploring and visualizing evaluation forecast data.
 
 import argparse
 import matplotlib.pyplot as plt
+import matplotlib as mpl
 import numpy as np
 import os
 import pandas as pd
 import seaborn as sns
 from typing import Dict, List, Optional, Tuple, Set
+
+# Global plotting style parameters
+FONT_SIZE = 12  # Default font size
+TITLE_ENABLED = True  # Whether to show titles in plots
+
+def _style_plots():
+    """Apply font size settings and optionally remove titles from plots."""
+    mpl.rcParams.update({
+        'axes.labelsize': FONT_SIZE,
+        'axes.titlesize': FONT_SIZE,
+        'xtick.labelsize': FONT_SIZE * 0.8,
+        'ytick.labelsize': FONT_SIZE * 0.8,
+        'legend.fontsize': FONT_SIZE * 0.8
+    })
+    
+    if not TITLE_ENABLED:
+        # Remove titles from the current figure
+        fig = plt.gcf()
+        fig.suptitle("")  # Remove figure suptitle
+        for ax in fig.axes:
+            ax.set_title("")  # Remove axis title
 
 def parse_args():
     """Parse command line arguments."""
@@ -23,6 +45,10 @@ def parse_args():
     parser.add_argument("--filter-design", help="Filter by design_id")
     parser.add_argument("--filter-model", help="Filter by specific ability model (legacy)")
     parser.add_argument("--filter-scenario", help="Filter by specific scenario (legacy)")
+    parser.add_argument("--font-size", type=int, default=12,
+                        help="Base font size for all plot text")
+    parser.add_argument("--disable-titles", action="store_true",
+                        help="Strip all titles from plots for publication style")
     return parser.parse_args()
 
 def get_unique_values(df: pd.DataFrame, column: str) -> List:
@@ -110,7 +136,8 @@ def plot_evaluation_windows(df: pd.DataFrame, output_dir: str, fmt: str = "png")
                 safe_filename = f"windows_ability_{ability_id}_cost_{cost_id}_design_{design_id}.{fmt}".replace(" ", "_")
                 output_path = os.path.join(output_dir, "windows", safe_filename)
                 os.makedirs(os.path.dirname(output_path), exist_ok=True)
-                plt.savefig(output_path, dpi=150)
+                _style_plots()  # Apply font and title settings
+                plt.savefig(output_path, dpi=300)
                 plt.close()
                 
                 print(f"Saved evaluation windows plot to {output_path}")
@@ -176,7 +203,7 @@ def plot_window_adjustments(df: pd.DataFrame, output_dir: str, fmt: str = "png")
         safe_filename = safe_filename.replace(" ", "_")
         output_path = os.path.join(output_dir, "window_adjustments", safe_filename)
         os.makedirs(os.path.dirname(output_path), exist_ok=True)
-        plt.savefig(output_path, dpi=150)
+        plt.savefig(output_path, dpi=300)
         plt.close()
         
         print(f"Saved window adjustment plot to {output_path}")
@@ -277,7 +304,7 @@ def plot_task_density(df: pd.DataFrame, output_dir: str, fmt: str = "png"):
                 safe_filename = safe_filename.replace(" ", "_")
                 output_path = os.path.join(output_dir, "density", safe_filename)
                 os.makedirs(os.path.dirname(output_path), exist_ok=True)
-                plt.savefig(output_path, dpi=150)
+                plt.savefig(output_path, dpi=300)
                 plt.close()
                 
                 print(f"Saved task density plot to {output_path}")
@@ -339,7 +366,7 @@ def plot_sample_counts(df: pd.DataFrame, output_dir: str, fmt: str = "png"):
             safe_filename = f"sample_counts_ability_{ability_id}_cost_{cost_id}.{fmt}".replace(" ", "_")
             output_path = os.path.join(output_dir, "samples", safe_filename)
             os.makedirs(os.path.dirname(output_path), exist_ok=True)
-            plt.savefig(output_path, dpi=150)
+            plt.savefig(output_path, dpi=300)
             plt.close()
             
             print(f"Saved sample counts plot to {output_path}")
@@ -401,7 +428,7 @@ def plot_cost_allocation(df: pd.DataFrame, output_dir: str, fmt: str = "png"):
             safe_filename = f"cost_allocation_ability_{ability_id}_cost_{cost_id}.{fmt}".replace(" ", "_")
             output_path = os.path.join(output_dir, "costs", safe_filename)
             os.makedirs(os.path.dirname(output_path), exist_ok=True)
-            plt.savefig(output_path, dpi=150)
+            plt.savefig(output_path, dpi=300)
             plt.close()
             
             print(f"Saved cost allocation plot to {output_path}")
@@ -458,7 +485,8 @@ def plot_costs_over_time(df: pd.DataFrame, output_dir: str, fmt: str = "png"):
         outdir = os.path.join(output_dir, "costs_over_time")
         os.makedirs(outdir, exist_ok=True)
         fname = "__".join(str(k) for k in key) + f".{fmt}"
-        plt.savefig(os.path.join(outdir, fname), dpi=150, bbox_inches="tight")
+        _style_plots()
+        plt.savefig(os.path.join(outdir, fname), dpi=300, bbox_inches="tight")
         plt.close()
         print(f"Saved cost-over-time plot to {outdir}/{fname}")
 
@@ -576,7 +604,7 @@ def plot_ability_scenario_comparison(plot_df: pd.DataFrame, output_dir: str, fmt
             safe_filename = safe_filename.replace(" ", "_")
             output_path = os.path.join(output_dir, "scenario_comparison", safe_filename)
             os.makedirs(os.path.dirname(output_path), exist_ok=True)
-            plt.savefig(output_path, dpi=150)
+            plt.savefig(output_path, dpi=300)
             plt.close()
             
             print(f"Saved ability scenario comparison plot to {output_path}")
@@ -704,7 +732,7 @@ def plot_cost_scenario_comparison(plot_df: pd.DataFrame, output_dir: str, fmt: s
             safe_filename = safe_filename.replace(" ", "_")
             output_path = os.path.join(output_dir, "scenario_comparison", safe_filename)
             os.makedirs(os.path.dirname(output_path), exist_ok=True)
-            plt.savefig(output_path, dpi=150)
+            plt.savefig(output_path, dpi=300)
             plt.close()
             
             print(f"Saved cost scenario comparison plot to {output_path}")
@@ -854,7 +882,7 @@ def plot_combined_scenario_comparison(plot_df: pd.DataFrame, output_dir: str, fm
             safe_filename = safe_filename.replace(" ", "_")
             output_path = os.path.join(output_dir, "scenario_comparison", safe_filename)
             os.makedirs(os.path.dirname(output_path), exist_ok=True)
-            plt.savefig(output_path, dpi=150)
+            plt.savefig(output_path, dpi=300)
             plt.close()
             
             print(f"Saved combined scenario comparison plot to {output_path}")
@@ -953,6 +981,11 @@ def create_summary_stats(df: pd.DataFrame, output_dir: str):
 def main():
     """Main entry point."""
     args = parse_args()
+    
+    # Set global plotting parameters
+    global FONT_SIZE, TITLE_ENABLED
+    FONT_SIZE = args.font_size
+    TITLE_ENABLED = not args.disable_titles
     
     print(f"Loading evaluation forecasts from {args.input}")
     df = pd.read_csv(args.input)
