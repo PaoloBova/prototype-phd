@@ -13,7 +13,7 @@ import numpy as np
 from enum import Enum
 from typing import Callable, Dict, List, Optional, Tuple, Union
 from pydantic import BaseModel, Field
-from .schemas import TaskSamplerType
+from .schemas import TaskSamplerType, EvaluationForecast
 import prototype_phd.stats as stats
 
 class SimulationMethod(str, Enum):
@@ -75,29 +75,28 @@ class SimulationConfig(BaseModel):
 
 
 def generate_task_samples(
-    n_tasks: int,
-    window_lower: float,
-    window_upper: float,
-    sampler_type: TaskSamplerType = TaskSamplerType.UNIFORM,
-    random_seed: Optional[int] = None
+    forecast: EvaluationForecast,
+    seed: Optional[int] = None
 ) -> np.ndarray:
     """
     Generate task difficulty samples.
     
     Args:
-        n_tasks: Number of tasks to generate
-        window_lower: Lower bound of difficulty window
-        window_upper: Upper bound of difficulty window
-        sampler_type: Type of sampling distribution
-        random_seed: Optional random seed for reproducibility
+        forecast: Evaluation forecast containing parameters for task generation
+        seed: Optional random seed for reproducibility
         
     Returns:
         Array of task difficulties
     """
+    rng = np.random.RandomState(seed)
+    
+    n_tasks = forecast.total_samples
+    window_lower = forecast.window_lower
+    window_upper = forecast.window_upper
+    sampler_type = forecast.sampler_type
+    
     if n_tasks <= 0:
         return np.array([])
-        
-    rng = np.random.RandomState(random_seed)
     
     if sampler_type == TaskSamplerType.UNIFORM:
         return rng.uniform(window_lower, window_upper, n_tasks)
@@ -132,14 +131,9 @@ def logistic_function(x: np.ndarray, threshold: float, slope: float) -> np.ndarr
 
 def generate_success_outcomes(
     task_difficulties: np.ndarray,
-    threshold: float,
-    slope: float,
-    correlation_model: CorrelationModel = CorrelationModel.NONE,
-    correlation_strength: float = 0.0,
-    random_seed: Optional[int] = None,
-    elicitation_enabled: bool = False,
-    elicitation_threshold: float = 0.0,
-    elicitation_slope: float = 1.0
+    config: SimulationConfig,
+    forecast: EvaluationForecast,
+    seed: Optional[int] = None,
 ) -> np.ndarray:
     """
     Generate success/failure outcomes for tasks based on a logistic model,
@@ -147,20 +141,23 @@ def generate_success_outcomes(
     
     Args:
         task_difficulties: Array of task difficulties
-        threshold: Threshold parameter (difficulty where success rate = 0.5)
-        slope: Slope parameter (steepness of the logistic curve)
-        correlation_model: Model for task success correlation
-        correlation_strength: Strength of correlation (0 = independent, 1 = perfect)
-        random_seed: Optional random seed for reproducibility
-        elicitation_enabled: Enable elicitation impact on successes
-        elicitation_threshold: Difficulty at which elicitation begins to decline
-        elicitation_slope: Steepness of the elicitation impact curve
+        forecast: Evaluation forecast containing parameters for success generation
+        seed: Optional random seed for reproducibility
         
     Returns:
         Binary array of success (1) or failure (0) outcomes
     """
-    rng = np.random.RandomState(random_seed)
+    rng = np.random.RandomState(seed)
     n_tasks = len(task_difficulties)
+    
+    threshold = forecast.threshold
+    slope = forecast.slope
+    
+    correlation_model = forecast.correlation_model
+    correlation_strength = forecast.correlation_strength
+    elicitation_enabled = forecast.elicitation_enabled
+    elicitation_threshold = forecast.elicitation_threshold
+    elicitation_slope = forecast.elicitation_slope
     
     # Calculate success probabilities using logistic function
     probs = logistic_function(task_difficulties, threshold, slope)
@@ -202,12 +199,7 @@ def generate_success_outcomes(
 
 def run_simulation(
     config: SimulationConfig,
-    n_tasks: int,
-    window_lower: float,
-    window_upper: float,
-    threshold: float,
-    slope: float,
-    sampler_type: TaskSamplerType = TaskSamplerType.UNIFORM,
+    forecast: EvaluationForecast,
     analysis_fn: Optional[Callable[[np.ndarray, np.ndarray], float]] = None
 ) -> np.ndarray:
     """
@@ -215,12 +207,7 @@ def run_simulation(
     
     Args:
         config: Simulation configuration
-        n_tasks: Number of tasks in the evaluation
-        window_lower: Lower bound of difficulty window
-        window_upper: Upper bound of difficulty window
-        threshold: Threshold parameter of the logistic curve
-        slope: Slope parameter of the logistic curve
-        sampler_type: Type of task sampling distribution
+        forecast: Evaluation forecast
         analysis_fn: Function that takes (tasks, outcomes) and returns a metric
         
     Returns:
@@ -231,24 +218,14 @@ def run_simulation(
     
     if config.method == SimulationMethod.BOOTSTRAP:
         # Generate a single set of tasks and outcomes
-        base_tasks = generate_task_samples(
-            n_tasks, window_lower, window_upper, sampler_type, 
-            random_seed=config.random_seed
-        )
-        base_outcomes = generate_success_outcomes(
-            base_tasks, threshold, slope, 
-            config.correlation_model, config.correlation_strength,
-            random_seed=config.random_seed,
-            elicitation_enabled=config.elicitation_enabled,
-            elicitation_threshold=config.elicitation_threshold,
-            elicitation_slope=config.elicitation_slope
-        )
+        base_tasks = generate_task_samples(forecast, seed=config.random_seed)
+        base_outcomes = generate_success_outcomes(base_tasks, config, forecast)
         
         # Bootstrap from this fixed set
-        sample_size = config.sample_size if config.sample_size is not None else n_tasks
+        sample_size = config.sample_size if config.sample_size is not None else forecast.n_tasks
         
         for i in range(config.n_samples):
-            indices = rng.choice(n_tasks, size=sample_size, replace=True)
+            indices = rng.choice(forecast.n_tasks, size=sample_size, replace=True)
             tasks = base_tasks[indices]
             outcomes = base_outcomes[indices]
             
@@ -259,18 +236,8 @@ def run_simulation(
         # Generate new tasks and outcomes for each sample
         for i in range(config.n_samples):
             seed_i = None if config.random_seed is None else config.random_seed + i
-            tasks = generate_task_samples(
-                n_tasks, window_lower, window_upper, sampler_type, 
-                random_seed=seed_i
-            )
-            outcomes = generate_success_outcomes(
-                tasks, threshold, slope, 
-                config.correlation_model, config.correlation_strength,
-                random_seed=seed_i,
-                elicitation_enabled=config.elicitation_enabled,
-                elicitation_threshold=config.elicitation_threshold,
-                elicitation_slope=config.elicitation_slope
-            )
+            tasks = generate_task_samples(forecast, seed=seed_i)
+            outcomes = generate_success_outcomes(tasks, config, forecast, seed=seed_i)
             
             if analysis_fn is not None:
                 results[i] = analysis_fn(tasks, outcomes)
