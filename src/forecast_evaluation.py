@@ -499,6 +499,14 @@ def calculate_evaluation_forecast(
     elif scenario.cost_id.endswith("_upper"):
         cost_variant = "upper"
         base_cost_id = scenario.cost_id[:-6]  # Remove "_upper" suffix
+    
+    # Determine elicitation bias parameters
+    elicitation_params = {}
+    
+    # Determine if we are using an alternative function to represent the
+    # true ability, i.e. even though we forecast a logistic curve, what if
+    # the true ability is instead a different function.
+    alternate_ability_params = {}
 
     # Create the evaluation forecast with all parameters for complete tracking
     forecast_data = {
@@ -531,6 +539,11 @@ def calculate_evaluation_forecast(
         "base_ability_id": base_ability_id,
         "base_cost_id": base_cost_id
     }
+    
+    # Add additional parameters if available
+    forecast_data = {**forecast_data,
+                     **alternate_ability_params,
+                     **elicitation_params}
     
     return EvaluationForecast(**forecast_data)
 
