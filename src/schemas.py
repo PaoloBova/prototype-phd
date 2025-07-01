@@ -217,6 +217,15 @@ class EvaluationForecast(BaseModel):
     elicitation_slope: Optional[float] = Field(
         None, description="Slope of the elicitation curve (if enabled)"
     )
+    alternate_ability_enabled: bool = Field(
+        False, description="Whether an alternate ability function is used"
+    )
+    alternate_ability_type: Optional[str] = Field(
+        None, description="Type of alternate ability function (e.g., exponential, power law, cubic, tangent)"
+    )
+    alternate_ability_args: Optional[List[float]] = Field(
+        None, description="Additional parameters for alternate ability functions"
+    )
 
     class Config:
         arbitrary_types_allowed = True

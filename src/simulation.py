@@ -158,10 +158,53 @@ def generate_success_outcomes(
     elicitation_enabled = forecast.elicitation_enabled
     elicitation_threshold = forecast.elicitation_threshold
     elicitation_slope = forecast.elicitation_slope
+    alternate_ability_enabled = forecast.alternate_ability_enabled
+    alternate_ability_type = forecast.alternate_ability_type
+    alternate_ability_args = forecast.alternate_ability_args # A vector of additional parameters for alternate ability functions
     
-    # Calculate success probabilities using logistic function
-    probs = logistic_function(task_difficulties, threshold, slope)
-    
+    # Calculate success probabilities
+    if alternate_ability_enabled:
+        # If alternate ability function is enabled, apply it to modify probabilities
+        if alternate_ability_type == "exponential":
+            # Exponential decay function
+            decay_rate = alternate_ability_args[0] if len(alternate_ability_args) > 0 else 1.0
+            probs = np.exp(-decay_rate * (task_difficulties - threshold))
+        
+        elif alternate_ability_type == "power_law":
+            # Power law function
+            exponent = alternate_ability_args[0] if len(alternate_ability_args) > 0 else 1.0
+            probs = (task_difficulties / threshold) ** (-exponent)
+            probs = np.clip(probs, 0, 1)
+        elif alternate_ability_type == "cubic_spline":
+            # Cubic spline interpolation (requires scipy)
+            from scipy.interpolate import CubicSpline
+            if len(alternate_ability_args) < 2:
+                raise ValueError("Cubic spline requires at least two points for interpolation.")
+            x_points = np.array(alternate_ability_args[:-1])
+            y_points = np.array(alternate_ability_args[-1])
+            cs = CubicSpline(x_points, y_points)
+            probs = cs(task_difficulties)
+            probs = np.clip(probs, 0, 1)
+        elif alternate_ability_type == "tangent":
+            # Tangent function
+            slope = alternate_ability_args[0] if len(alternate_ability_args) > 0 else 1.0
+            intercept = alternate_ability_args[1] if len(alternate_ability_args) > 1 else 0.0
+            probs = np.tan(slope * (task_difficulties - threshold)) + intercept
+            probs = np.clip(probs, 0, 1)
+        elif alternate_ability_type == "logistic":
+            # Logistic function with custom parameters
+            if len(alternate_ability_args) < 2:
+                raise ValueError("Logistic function requires threshold and slope parameters.")
+            alt_threshold = alternate_ability_args[0]
+            alt_slope = alternate_ability_args[1]
+            probs = logistic_function(task_difficulties, alt_threshold, alt_slope)
+            probs = np.clip(probs, 0, 1)
+        else:
+            raise ValueError(f"Unsupported alternate ability function: {alternate_ability_type}")
+    else:
+        # Default logistic function probabilities
+        probs = logistic_function(task_difficulties, threshold, slope)
+
     if correlation_model == CorrelationModel.NONE or correlation_strength <= 0.0:
         # Independent successes - standard binomial sampling
         success = rng.binomial(1, probs)
