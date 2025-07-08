@@ -155,12 +155,12 @@ def generate_success_outcomes(
     
     correlation_model = forecast.correlation_model
     correlation_strength = forecast.correlation_strength
-    elicitation_enabled = forecast.elicitation_enabled
-    elicitation_threshold = forecast.elicitation_threshold
-    elicitation_slope = forecast.elicitation_slope
+    elicitation_bias_enabled = forecast.elicitation_bias_enabled
+    elicitation_bias_type = forecast.elicitation_bias_type
+    elicitation_bias_args = forecast.elicitation_bias_args
     alternate_ability_enabled = forecast.alternate_ability_enabled
     alternate_ability_type = forecast.alternate_ability_type
-    alternate_ability_args = forecast.alternate_ability_args # A vector of additional parameters for alternate ability functions
+    alternate_ability_args = forecast.alternate_ability_args
     
     # Calculate success probabilities
     if alternate_ability_enabled:
@@ -232,9 +232,23 @@ def generate_success_outcomes(
         raise ValueError(f"Unsupported correlation model: {correlation_model}")
     
     # Apply elicitation impact if enabled
-    if elicitation_enabled and n_tasks > 0:
-        p_imp = 1.0 / (1.0 + np.exp(elicitation_slope * (task_difficulties - elicitation_threshold)))
-        keep = rng.binomial(1, p_imp, size=n_tasks)
+    if elicitation_bias_enabled and n_tasks > 0:
+        if elicitation_bias_type == "fall_past_threshold":
+            # Sensitivity rate falls from 1 to new rate past ability threshold
+            sensitvity_rate = elicitation_bias_args[0] if len(elicitation_bias_args) > 0 else 0.0
+            keep = np.where(task_difficulties <= threshold, 1.0, sensitvity_rate)
+        elif elicitation_bias_type == "linear":
+            # Linear decline based on task difficulty
+            elicitation_threshold = elicitation_bias_args[0] if len(elicitation_bias_args) > 0 else 0.0
+            elicitation_slope = elicitation_bias_args[1] if len(elicitation_bias_args) > 1 else 1.0
+            keep = np.clip(1 - elicitation_slope * (task_difficulties - elicitation_threshold) / (forecast.window_upper - elicitation_threshold), 0, 1)
+        elif elicitation_bias_type == "logistic":
+            # Logistic decline based on task difficulty
+            elicitation_threshold = elicitation_bias_args[0] if len(elicitation_bias_args) > 0 else 0.0
+            elicitation_slope = elicitation_bias_args[1] if len(elicitation_bias_args) > 1 else 1.0
+            keep = logistic_function(task_difficulties, elicitation_threshold, elicitation_slope)
+        else:
+            raise ValueError(f"Unsupported elicitation bias type: {elicitation_bias_type}")
         success = success * keep
 
     return success

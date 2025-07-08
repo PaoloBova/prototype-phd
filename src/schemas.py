@@ -210,12 +210,12 @@ class EvaluationForecast(BaseModel):
     base_cost_id: str = Field("", description="Base ID of cost trend without variant suffix")
     correlation_model: Optional[str] = Field(None, description="Name of the correlation model used")
     correlation_strength: Optional[float] = Field(None, description="Strength of the correlation model")
-    elicitation_enabled: bool = Field(False, description="Whether elicitation is enabled for this forecast")
-    elicitation_threshold: Optional[float] = Field(
-        None, description="Threshold for elicitation activation (if enabled)"
+    elicitation_bias_enabled: bool = Field(False, description="Whether elicitation bias is enabled for this forecast")
+    elicitation_bias_type: Optional[float] = Field(
+        None, description="Type of elicitation bias (e.g., fall_past_threshold, linear, logistic)"
     )
-    elicitation_slope: Optional[float] = Field(
-        None, description="Slope of the elicitation curve (if enabled)"
+    elicitation_bias_args: Optional[float] = Field(
+        None, description="Additional parameters for elicitation bias functions (e.g., threshold, slope)"
     )
     alternate_ability_enabled: bool = Field(
         False, description="Whether an alternate ability function is used"

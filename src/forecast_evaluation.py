@@ -366,6 +366,78 @@ def create_task_sampler(sampler_type: TaskSamplerType = TaskSamplerType.UNIFORM,
     else:
         raise ValueError(f"Unsupported sampler type: {sampler_type}")
 
+def define_elicitation_bias(config: EvaluationConfig) -> Dict[str, Any]:
+    """
+    Define elicitation bias parameters based on configuration.
+    
+    Args:
+        config: Evaluation configuration
+        
+    Returns:
+        Dictionary with elicitation bias parameters
+    """
+    # Placeholder for actual elicitation bias logic
+    
+    # Recall that the elicitation bias if a function of the budget fraction,
+    # and the ability parameters.
+    
+    # Past the ability threshold, the sensitivity rate of our test falls.
+    # For now, we assume it falls linearly until zero (or until the upper
+    # window is reached).
+    # The slope of this line is defined by the
+    # elicitation_slope parameter which is itself a function of the
+    # budget fraction.
+    
+    # When there is no gap between the resources needed for a gold standard
+    # evaluation and the resources available, the slope is 0 such that the
+    # the sensitivity rate is always 1.
+    # As soon as we have a gap, the slope decreases linearly until it reaches
+    # the minimum elicitation slope.
+    
+    # Ideally, we'd have some way of calibrating this.
+    # We know from RE-bench public results that they experimened on two different
+    # scaffolds for Claude 3.5 Sonnet (AIDE and MODULAR), where MODULAR achieved
+    # an average normalized score 0.2 points higher than AIDE when given between
+    # 2 and 8hrs to complete the tasks. 3 iteration stages with many specifications
+    # and implementations thrown out. Assume 50% of researcher resources used to
+    # create the best scaffold.
+    # To finish the calibration, we need to translate the shift in normalized score
+    # to a shift in success rates. So, consider that success means scoring above
+    # the reference solution which is 1. And assume that scores are normally distributed
+    # across tasks with given mean (0.2 and 0.4 respectively for 8hrs with standard
+    # errors which are roughly 0.05 in width on both sides) and standard deviation
+    # unknown. We will assume it is 0.5 for now, so that we have non-zero success
+    # rates.
+    # From here, we can compute the success rates for both scaffolds on 8hr tasks.
+    # Success rate for AIDE: 0.0548. Success rate for MODULAR: 0.1151.
+    # In other words, the sensitivity rate fell from 1 to 0.5.
+    # We will treat the 8hr mark for when these experiments were conducted as the
+    # upper bound of the evaluation window. We compute the sensitivity at this
+    # point, then assume a linear interpolation from the threshold to the upper
+    # evaluation window that matches this.
+    # Moreover, we also linearly interpolate due to the budget fraction. If
+    # the gap in resources is less than 50%, then we linearly interpolate the
+    # fall in sensitivity at 8hr mark, and recompute the slope. If the gap
+    # in resources is above 50%, then we linearly extrapolate the fall in
+    # sensitivity, not letting the sensitivity fall below 0.
+    
+    # In practise, what we would ideally do, is measure the success rates with
+    # various levels of scaffolding across the different task difficulties. We
+    # could do this for models with different release dataes. Then, we could
+    # fit a functional form to the elicitation bias or sensitivity rate. We
+    # would not be constrained to a linear function either.
+    
+    # For now, we will do something even simpler and just assume that the
+    # sensitivity rate is constant past the ability threhsold and depends
+    # linearly on the resource gap.
+    
+    
+    return {
+        "elicitation_bias_enabled": True,
+        "elicitation_bias_type": "fall_past_threshold",
+        "elicitation_bias_args": [0.5],
+    }
+
 def calculate_evaluation_forecast(
     scenario: EvaluationScenario,
     design: EvaluationDesign
@@ -502,6 +574,7 @@ def calculate_evaluation_forecast(
     
     # Determine elicitation bias parameters
     elicitation_params = {}
+    elicitation_params = define_elicitation_bias(scenario.config)
     
     # Determine if we are using an alternative function to represent the
     # true ability, i.e. even though we forecast a logistic curve, what if
@@ -744,6 +817,15 @@ def calculate_forecasts_for_all_combinations(
     
     return all_forecasts
 
+def extract_unnested_dict(record:dict, key:str) -> Dict[str, Any]:
+    """Extract an unnested dictionary and flatten."""
+    if isinstance(record, dict) and key in record:
+        record = record.copy()
+        for k, v in record[key].items():
+            record[f"{key}_{k}"] = v
+        record.pop(key)
+    return record
+        
 def save_forecasts(forecasts: List[EvaluationForecast],
                    output_path: str,
                    config: EvaluationConfig):
@@ -760,15 +842,10 @@ def save_forecasts(forecasts: List[EvaluationForecast],
     for forecast in forecasts:
         # Convert the forecast to a dictionary
         record = forecast.model_dump()
-        
-        # Extract the ability object and flatten it
-        ability = record.pop("ability")
-        
-        # First add all the ability fields with ability_ prefix
-        for key, value in ability.items():
-            record[f"ability_{key}"] = value
-        
-        # Add other fields directly
+        # Extract simple nested objects and flatten them
+        record = extract_unnested_dict(record, "ability")
+        record = extract_unnested_dict(record, "elicitation_bias_args")
+        record = extract_unnested_dict(record, "alternative_ability_args")
         flat_records.append(record)
     
     # Convert to DataFrame
