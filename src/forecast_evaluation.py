@@ -453,12 +453,35 @@ def define_elicitation_bias(config: EvaluationConfig) -> Dict[str, Any]:
         try:
             with open(config.elicitation_bias.source, 'r') as f:
                 source_config = json.load(f)
+                
+            # Validate required fields for file-based config
+            if "type" not in source_config:
+                raise ValueError(f"Elicitation bias config missing required 'type' field in {config.elicitation_bias.source}")
+            if "args" not in source_config:
+                raise ValueError(f"Elicitation bias config missing required 'args' field in {config.elicitation_bias.source}")
+                
         except (FileNotFoundError, json.JSONDecodeError) as e:
             logging.warning(f"Could not load elicitation bias config from {config.elicitation_bias.source}: {e}")
             # Fall back to default
             source_config = {"type": "fall_past_threshold", "args": [0.5]}
     else:
         source_config = config.elicitation_bias.source
+    
+    # Validate bias type
+    from .schemas import ElicitationBiasType
+    valid_types = [e.value for e in ElicitationBiasType]
+    bias_type = source_config.get("type")
+    if bias_type not in valid_types:
+        raise ValueError(f"Invalid elicitation bias type: {bias_type}. Must be one of {valid_types}")
+    
+    # Validate argument counts for each bias type
+    args = source_config.get("args", [])
+    if bias_type == "fall_past_threshold" and len(args) != 1:
+        raise ValueError(f"fall_past_threshold bias type requires exactly 1 argument, got {len(args)}")
+    elif bias_type == "linear" and len(args) != 2:
+        raise ValueError(f"linear bias type requires exactly 2 arguments, got {len(args)}")
+    elif bias_type == "logistic" and len(args) != 2:
+        raise ValueError(f"logistic bias type requires exactly 2 arguments, got {len(args)}")
     
     return {
         "elicitation_bias_enabled": True,
