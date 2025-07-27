@@ -23,7 +23,9 @@ from .schemas import (
     ResourceConstraint,
     EvaluationScenario,
     EvaluationDesign,
-    EvaluationForecast
+    EvaluationForecast,
+    ElicitationBiasConfig,
+    AlternateAbilityConfig
 )
 
 class EvaluationConfig(BaseModel):
@@ -62,6 +64,14 @@ class EvaluationConfig(BaseModel):
     save_detailed_json: bool = Field(
         False,
         description="Whether to save detailed JSON output with all forecast data"
+    )
+    elicitation_bias: ElicitationBiasConfig = Field(
+        default_factory=ElicitationBiasConfig,
+        description="Configuration for elicitation bias parameters"
+    )
+    alternate_ability: AlternateAbilityConfig = Field(
+        default_factory=AlternateAbilityConfig,
+        description="Configuration for alternate ability function parameters"
     )
 
 def parse_args():
@@ -431,16 +441,64 @@ def define_elicitation_bias(config: EvaluationConfig) -> Dict[str, Any]:
     # sensitivity rate is constant past the ability threhsold and depends
     # linearly on the resource gap.
     
+    if not config.elicitation_bias.enabled:
+        return {
+            "elicitation_bias_enabled": False,
+            "elicitation_bias_type": None,
+            "elicitation_bias_args": None,
+        }
+    
+    # Handle file-based configuration
+    if isinstance(config.elicitation_bias.source, str):
+        try:
+            with open(config.elicitation_bias.source, 'r') as f:
+                source_config = json.load(f)
+        except (FileNotFoundError, json.JSONDecodeError) as e:
+            logging.warning(f"Could not load elicitation bias config from {config.elicitation_bias.source}: {e}")
+            # Fall back to default
+            source_config = {"type": "fall_past_threshold", "args": [0.5]}
+    else:
+        source_config = config.elicitation_bias.source
     
     return {
         "elicitation_bias_enabled": True,
-        "elicitation_bias_type": "fall_past_threshold",
-        "elicitation_bias_args": [0.5],
+        "elicitation_bias_type": source_config.get("type", "fall_past_threshold"),
+        "elicitation_bias_args": source_config.get("args", [0.5]),
+    }
+
+def define_alternate_ability_params(config: EvaluationConfig) -> Dict[str, Any]:
+    """
+    Define alternate ability function parameters based on configuration.
+    
+    Args:
+        config: Evaluation configuration
+        
+    Returns:
+        Dictionary with alternate ability parameters
+    """
+    if not config.alternate_ability.enabled:
+        return {
+            "alternate_ability_enabled": False,
+            "alternate_ability_type": None,
+            "alternate_ability_args": None,
+        }
+    
+    # Validate function type
+    from .schemas import AlternateAbilityType
+    valid_types = [e.value for e in AlternateAbilityType]
+    if config.alternate_ability.function_type not in valid_types:
+        raise ValueError(f"Invalid alternate ability function type: {config.alternate_ability.function_type}. Must be one of {valid_types}")
+    
+    return {
+        "alternate_ability_enabled": True,
+        "alternate_ability_type": config.alternate_ability.function_type,
+        "alternate_ability_args": config.alternate_ability.parameters,
     }
 
 def calculate_evaluation_forecast(
     scenario: EvaluationScenario,
-    design: EvaluationDesign
+    design: EvaluationDesign,
+    config: EvaluationConfig
 ) -> EvaluationForecast:
     """
     Calculate evaluation forecast parameters under given constraints.
@@ -573,13 +631,12 @@ def calculate_evaluation_forecast(
         base_cost_id = scenario.cost_id[:-6]  # Remove "_upper" suffix
     
     # Determine elicitation bias parameters
-    elicitation_params = {}
-    elicitation_params = define_elicitation_bias(scenario.config)
+    elicitation_params = define_elicitation_bias(config)
     
     # Determine if we are using an alternative function to represent the
     # true ability, i.e. even though we forecast a logistic curve, what if
     # the true ability is instead a different function.
-    alternate_ability_params = {}
+    alternate_ability_params = define_alternate_ability_params(config)
 
     # Create the evaluation forecast with all parameters for complete tracking
     forecast_data = {
@@ -805,7 +862,7 @@ def calculate_forecasts_for_all_combinations(
     for i, scenario in enumerate(scenarios):
         for design in designs:
             try:
-                forecast = calculate_evaluation_forecast(scenario, design)
+                forecast = calculate_evaluation_forecast(scenario, design, config)
                 all_forecasts.append(forecast)
                 
                 # Log progress periodically
