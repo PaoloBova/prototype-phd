@@ -240,3 +240,59 @@ class BootstrapConfig(BaseModel):
     class Config:
         arbitrary_types_allowed = True
 
+class ElicitationBiasType(str, Enum):
+    """Types of elicitation bias functions."""
+    FALL_PAST_THRESHOLD = "fall_past_threshold"
+    LINEAR = "linear"
+    LOGISTIC = "logistic"
+
+class ElicitationBiasConfig(BaseModel):
+    """Configuration for elicitation bias parameters."""
+    source: Union[Dict[str, Any], str] = Field(
+        default_factory=lambda: {"type": "fall_past_threshold", "args": [0.5]},
+        description="Either inline config dict or path to config file"
+    )
+    enabled: bool = Field(True, description="Whether elicitation bias is enabled")
+    
+    def __init__(self, **data):
+        super().__init__(**data)
+        # Validate the type if source is a dict
+        if isinstance(self.source, dict) and "type" in self.source:
+            valid_types = [e.value for e in ElicitationBiasType]
+            if self.source["type"] not in valid_types:
+                raise ValueError(f"Invalid elicitation bias type: {self.source['type']}. Must be one of {valid_types}")
+
+    class Config:
+        arbitrary_types_allowed = True
+
+class AlternateAbilityType(str, Enum):
+    """Types of alternate ability functions."""
+    EXPONENTIAL = "exponential"
+    POWER_LAW = "power_law"
+    CUBIC_SPLINE = "cubic_spline"
+    TANGENT = "tangent"
+    LOGISTIC = "logistic"
+
+class AlternateAbilityConfig(BaseModel):
+    """Configuration for alternate ability function parameters."""
+    enabled: bool = Field(False, description="Whether alternate ability function is enabled")
+    function_type: Optional[str] = Field(None, description="Type of alternate ability function")
+    parameters: Optional[List[float]] = Field(None, description="Parameters for the alternate ability function")
+    description: Optional[str] = Field(None, description="Description of the alternate ability configuration")
+    
+    def __init__(self, **data):
+        super().__init__(**data)
+        # Validate that enabled configs have required fields
+        if self.enabled:
+            if self.function_type is None:
+                raise ValueError("function_type is required when alternate ability is enabled")
+            if self.parameters is None:
+                raise ValueError("parameters is required when alternate ability is enabled")
+            # Validate function type
+            valid_types = [e.value for e in AlternateAbilityType]
+            if self.function_type not in valid_types:
+                raise ValueError(f"Invalid alternate ability function type: {self.function_type}. Must be one of {valid_types}")
+
+    class Config:
+        arbitrary_types_allowed = True
+
