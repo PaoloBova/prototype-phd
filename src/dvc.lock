@@ -142,13 +142,13 @@ stages:
       size: 191
     - path: src/forecast_evaluation.py
       hash: md5
-      md5: 2e04f2514b0eba18f76614a54d6eb796
-      size: 45287
+      md5: 13ff9208487a2b4f5b8536cc154408a4
+      size: 45548
     outs:
     - path: output/forecast_detection/evaluation_forecasts.csv
       hash: md5
-      md5: 89851793066354bfb11b4d533b96fdac
-      size: 227897
+      md5: 0ea32dbd373f20b9036049944e847942
+      size: 232957
   explore_evaluation_forecasts:
     cmd: python -m src.tools.explore_evaluation_forecasts --input output/forecast_detection/evaluation_forecasts.csv
       --output reports/forecast_detection/evaluation_visualizations --font-size 24
