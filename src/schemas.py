@@ -224,6 +224,8 @@ class EvaluationForecast(BaseModel):
     alternate_ability_args: Optional[List[float]] = Field(
         None, description="Additional parameters for alternate ability functions"
     )
+    elicitation_bias_config_name: str = Field("default", description="Name/ID of elicitation bias config used")
+    alternate_ability_config_name: str = Field("default", description="Name/ID of alternate ability config used")
 
     class Config:
         arbitrary_types_allowed = True
@@ -246,6 +248,7 @@ class ElicitationBiasType(str, Enum):
 
 class ElicitationBiasConfig(BaseModel):
     """Configuration for elicitation bias parameters."""
+    name: Optional[str] = Field(None, description="Optional name for this configuration")
     source: Union[Dict[str, Any], str] = Field(
         default_factory=lambda: {"type": "fall_past_threshold", "args": [0.5]},
         description="Either inline config dict or path to config file"
@@ -272,6 +275,7 @@ class AlternateAbilityType(str, Enum):
 
 class AlternateAbilityConfig(BaseModel):
     """Configuration for alternate ability function parameters."""
+    name: Optional[str] = Field(None, description="Optional name for this configuration")
     enabled: bool = Field(False, description="Whether alternate ability function is enabled")
     function_type: Optional[str] = Field(None, description="Type of alternate ability function")
     parameters: Optional[List[Union[float, bool]]] = Field(None, description="Parameters for the alternate ability function")
