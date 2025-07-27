@@ -22,11 +22,6 @@ class SimulationMethod(str, Enum):
     MONTE_CARLO = "monte_carlo"           # Generating new tasks and outcomes each time
     CORRELATED_OUTCOMES = "correlated"    # Modeling correlated task successes
 
-class CorrelationModel(str, Enum):
-    """Types of correlation models for task successes."""
-    NONE = "none"                         # No correlation (independent successes)
-    FIXED_ORDER = "fixed_order"           # Perfect correlation (fixed task order)
-    MIXTURE = "mixture"                   # Mixture of correlation and independence
 
 class SimulationConfig(BaseModel):
     """Configuration for simulation approaches."""
@@ -45,28 +40,6 @@ class SimulationConfig(BaseModel):
     random_seed: Optional[int] = Field(
         None, 
         description="Random seed for reproducibility"
-    )
-    correlation_model: CorrelationModel = Field(
-        CorrelationModel.NONE, 
-        description="Model for task success correlation"
-    )
-    correlation_strength: float = Field(
-        0.0, 
-        description="Strength of correlation (0 = independent, 1 = perfect correlation)",
-        ge=0.0,
-        le=1.0
-    )
-    elicitation_enabled: bool = Field(
-        False,
-        description="Enable elicitation impact on successes"
-    )
-    elicitation_threshold: float = Field(
-        0.0,
-        description="Difficulty at which elicitation begins to decline"
-    )
-    elicitation_slope: float = Field(
-        1.0,
-        description="Steepness of the elicitation impact curve"
     )
     
     class Config:
@@ -136,8 +109,7 @@ def generate_success_outcomes(
     seed: Optional[int] = None,
 ) -> np.ndarray:
     """
-    Generate success/failure outcomes for tasks based on a logistic model,
-    optional correlation, and then apply elicitation impact.
+    Generate success/failure outcomes for tasks.
     
     Args:
         task_difficulties: Array of task difficulties
@@ -150,11 +122,8 @@ def generate_success_outcomes(
     rng = np.random.RandomState(seed)
     n_tasks = len(task_difficulties)
     
-    threshold = forecast.threshold
-    slope = forecast.slope
-    
-    correlation_model = forecast.correlation_model
-    correlation_strength = forecast.correlation_strength
+    threshold = forecast.ability.threshold
+    slope = forecast.ability.slope
     elicitation_bias_enabled = forecast.elicitation_bias_enabled
     elicitation_bias_type = forecast.elicitation_bias_type
     elicitation_bias_args = forecast.elicitation_bias_args
@@ -205,31 +174,8 @@ def generate_success_outcomes(
         # Default logistic function probabilities
         probs = logistic_function(task_difficulties, threshold, slope)
 
-    if correlation_model == CorrelationModel.NONE or correlation_strength <= 0.0:
-        # Independent successes - standard binomial sampling
-        success = rng.binomial(1, probs)
-    
-    elif correlation_model == CorrelationModel.FIXED_ORDER:
-        if correlation_strength >= 1.0:
-            # Perfect correlation - deterministic cutoff based on threshold
-            success = (task_difficulties <= threshold).astype(int)
-        else:
-            # Mixture of fixed order and independence
-            deterministic = (task_difficulties <= threshold).astype(int)
-            independent = rng.binomial(1, probs)
-            mask = rng.random(n_tasks) < correlation_strength
-            success = np.where(mask, deterministic, independent)
-    
-    elif correlation_model == CorrelationModel.MIXTURE:
-        # Generate a correlated random component
-        # Here we use a single random value that shifts the threshold
-        # Higher correlation_strength = more threshold shifting
-        threshold_shift = rng.normal(0, correlation_strength / slope)
-        adjusted_probs = logistic_function(task_difficulties, threshold + threshold_shift, slope)
-        success = rng.binomial(1, adjusted_probs)
-    
-    else:
-        raise ValueError(f"Unsupported correlation model: {correlation_model}")
+    # Generate success outcomes using binomial sampling
+    success = rng.binomial(1, probs)
     
     # Apply elicitation impact if enabled
     if elicitation_bias_enabled and n_tasks > 0:
