@@ -211,10 +211,10 @@ class EvaluationForecast(BaseModel):
     correlation_model: Optional[str] = Field(None, description="Name of the correlation model used")
     correlation_strength: Optional[float] = Field(None, description="Strength of the correlation model")
     elicitation_bias_enabled: bool = Field(False, description="Whether elicitation bias is enabled for this forecast")
-    elicitation_bias_type: Optional[float] = Field(
+    elicitation_bias_type: Optional[str] = Field(
         None, description="Type of elicitation bias (e.g., fall_past_threshold, linear, logistic)"
     )
-    elicitation_bias_args: Optional[float] = Field(
+    elicitation_bias_args: Optional[List[float]] = Field(
         None, description="Additional parameters for elicitation bias functions (e.g., threshold, slope)"
     )
     alternate_ability_enabled: bool = Field(
