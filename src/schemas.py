@@ -269,7 +269,6 @@ class AlternateAbilityType(str, Enum):
     """Types of alternate ability functions."""
     EXPONENTIAL = "exponential"
     POWER_LAW = "power_law"
-    CUBIC_SPLINE = "cubic_spline"
     TANGENT = "tangent"
     LOGISTIC = "logistic"
 
@@ -277,7 +276,7 @@ class AlternateAbilityConfig(BaseModel):
     """Configuration for alternate ability function parameters."""
     enabled: bool = Field(False, description="Whether alternate ability function is enabled")
     function_type: Optional[str] = Field(None, description="Type of alternate ability function")
-    parameters: Optional[List[float]] = Field(None, description="Parameters for the alternate ability function")
+    parameters: Optional[List[Union[float, bool]]] = Field(None, description="Parameters for the alternate ability function")
     description: Optional[str] = Field(None, description="Description of the alternate ability configuration")
     
     def __init__(self, **data):
