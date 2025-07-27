@@ -1001,8 +1001,8 @@ def save_forecasts(forecasts: List[EvaluationForecast],
         record = forecast.model_dump()
         # Extract simple nested objects and flatten them
         record = extract_unnested_dict(record, "ability")
-        record = extract_unnested_dict(record, "elicitation_bias_args")
-        record = extract_unnested_dict(record, "alternative_ability_args")
+        # record = extract_unnested_dict(record, "elicitation_bias_args")
+        # record = extract_unnested_dict(record, "alternative_ability_args")
         flat_records.append(record)
     
     # Convert to DataFrame

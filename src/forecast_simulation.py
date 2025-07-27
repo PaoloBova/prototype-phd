@@ -20,7 +20,7 @@ from .schemas import (
     SensitivityResult
 )
 from .simulation import (
-    SimulationConfig, SimulationMethod, CorrelationModel,
+    SimulationConfig,
     run_simulation, calculate_simulation_statistics, weighted_score_estimator
 )
 
@@ -311,12 +311,7 @@ def simulate_estimator(
     # Run the simulation
     results = run_simulation(
         config=simulation_config,
-        n_tasks=forecast.total_samples,
-        window_lower=forecast.window_lower,
-        window_upper=forecast.window_upper,
-        threshold=forecast.ability.threshold,
-        slope=forecast.ability.slope,
-        sampler_type=forecast.sampler_type,
+        forecast=forecast,
         analysis_fn=analysis_fn
     )
 
@@ -555,8 +550,6 @@ def create_nested_hdf5_structure(
     sim_group.attrs['slope'] = forecast.ability.slope
     sim_group.attrs['sampler_type'] = str(forecast.sampler_type)
     sim_group.attrs['budget_fraction'] = forecast.budget_fraction
-    sim_group.attrs['correlation_model'] = str(sim_config.correlation_model)
-    sim_group.attrs['correlation_strength'] = sim_config.correlation_strength
     
     # Store variant information if available
     if hasattr(forecast, "ability_variant"):
