@@ -85,10 +85,10 @@ def plot_characteristic_curves(ability_df: pd.DataFrame, output_dir: str):
             ax.plot(x, y, color=cmap(norm(year)), alpha=0.7)
         
         # Add colorbar for years
-        sm = plt.cm.ScalarMappable(cmap=cmap, norm=norm)
-        sm.set_array([])
-        cbar = fig.colorbar(sm)
-        cbar.set_label("Year")
+        # sm = plt.cm.ScalarMappable(cmap=cmap, norm=norm)
+        # sm.set_array([])
+        # cbar = fig.colorbar(sm)
+        # cbar.set_label("Year")
         
         # Add labels and title
         ax.set_xlabel("Task Difficulty")
