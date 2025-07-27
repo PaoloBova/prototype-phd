@@ -154,3 +154,21 @@ checklink/cookies.txt
 /data
 /external_data
 /plots
+
+# Additional files
+/nbs
+/prototype_phd/methods/firthlogist.py
+/prototype_phd/methods/networks.py
+/publication_drafts
+/design_notes
+/reports
+/scripts/forecast_detection_case_study.instructions.md
+/scripts/forecast_detection_rates.py
+/scripts/logistic_regression_example.py
+/prompt_templates
+/scripts/langchain_example.py
+/tests/quick_test.py
+/scripts/disks.py
+scripts/tlg_experiment.py
+output/forecast_detection/cost_trends_detailed.json
+src/pyproject.toml.backup
