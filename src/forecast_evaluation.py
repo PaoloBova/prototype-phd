@@ -376,12 +376,63 @@ def create_task_sampler(sampler_type: TaskSamplerType = TaskSamplerType.UNIFORM,
     else:
         raise ValueError(f"Unsupported sampler type: {sampler_type}")
 
-def define_elicitation_bias(config: EvaluationConfig) -> Dict[str, Any]:
+
+def _apply_budget_scaling(base_value: float, budget_gap: float, scaling_type: str, scaling_params: Dict[str, float]) -> float:
     """
-    Define elicitation bias parameters based on configuration.
+    Apply budget-dependent scaling to a parameter value.
+    
+    Args:
+        base_value: The base parameter value (when budget_gap = 0)
+        budget_gap: Budget gap from 0.0 (full budget) to 1.0 (no budget)
+        scaling_type: Type of scaling function ("constant", "linear", "exponential", "power_law", "logistic")
+        scaling_params: Named parameters for the scaling function
+    
+    Returns:
+        The scaled parameter value
+    """
+    if scaling_type == "constant":
+        return base_value
+    
+    elif scaling_type == "linear":
+        # Linear interpolation: scaled_value = base_value + (target_value - base_value) * budget_gap
+        target_value = scaling_params.get("target_value", base_value)
+        return base_value + (target_value - base_value) * budget_gap
+    
+    elif scaling_type == "exponential":
+        # Exponential decay: scaled_value = base_value * exp(-decay_rate * budget_gap)
+        decay_rate = scaling_params.get("decay_rate", 1.0)
+        import math
+        return base_value * math.exp(-decay_rate * budget_gap)
+    
+    elif scaling_type == "power_law":
+        # Power law scaling: scaled_value = base_value * (1 - budget_gap)^exponent
+        exponent = scaling_params.get("exponent", 1.0)
+        return base_value * ((1.0 - budget_gap) ** exponent)
+    
+    elif scaling_type == "logistic":
+        # Logistic scaling: uses logistic function centered around midpoint
+        midpoint = scaling_params.get("midpoint", 0.5)
+        steepness = scaling_params.get("steepness", 4.0)
+        min_value = scaling_params.get("min_value", 0.0)
+        max_value = scaling_params.get("max_value", base_value)
+        
+        import math
+        # Logistic function: L / (1 + exp(-k(x - x0)))
+        logistic_val = 1.0 / (1.0 + math.exp(-steepness * (budget_gap - midpoint)))
+        # Scale between min and max values
+        return min_value + (max_value - min_value) * (1.0 - logistic_val)
+    
+    else:
+        raise ValueError(f"Unknown scaling type: {scaling_type}. Must be one of: constant, linear, exponential, power_law, logistic")
+
+
+def define_elicitation_bias(config: EvaluationConfig, scenario: EvaluationScenario) -> Dict[str, Any]:
+    """
+    Define elicitation bias parameters based on configuration and budget scenario.
     
     Args:
         config: Evaluation configuration
+        scenario: Evaluation scenario containing budget and cost information
         
     Returns:
         Dictionary with elicitation bias parameters
@@ -474,8 +525,34 @@ def define_elicitation_bias(config: EvaluationConfig) -> Dict[str, Any]:
     if bias_type not in valid_types:
         raise ValueError(f"Invalid elicitation bias type: {bias_type}. Must be one of {valid_types}")
     
-    # Validate argument counts for each bias type
+    # Handle budget-dependent bias scaling
     args = source_config.get("args", [])
+    
+    if source_config.get("budget_dependent", False):
+        # Calculate budget gap: 1.0 = no budget (100% gap), 0.0 = full budget (no gap)
+        budget_gap = 1.0 - scenario.budget_fraction
+        
+        # Get budget scaling configuration
+        budget_scaling = source_config.get("budget_scaling", {})
+        
+        # Apply functional scaling to each parameter
+        scaled_args = []
+        for i, base_value in enumerate(args):
+            param_name = f"param_{i}"
+            if param_name in budget_scaling:
+                param_config = budget_scaling[param_name]
+                scaling_type = param_config.get("type", "constant")
+                scaling_params = param_config.get("params", {})
+                
+                scaled_value = _apply_budget_scaling(base_value, budget_gap, scaling_type, scaling_params)
+                scaled_args.append(scaled_value)
+            else:
+                # No scaling for this parameter, use base value
+                scaled_args.append(base_value)
+        
+        args = scaled_args
+    
+    # Validate argument counts for each bias type
     if bias_type == "fall_past_threshold" and len(args) != 1:
         raise ValueError(f"fall_past_threshold bias type requires exactly 1 argument, got {len(args)}")
     elif bias_type == "linear" and len(args) != 2:
@@ -485,8 +562,8 @@ def define_elicitation_bias(config: EvaluationConfig) -> Dict[str, Any]:
     
     return {
         "elicitation_bias_enabled": True,
-        "elicitation_bias_type": source_config.get("type", "fall_past_threshold"),
-        "elicitation_bias_args": source_config.get("args", [0.5]),
+        "elicitation_bias_type": bias_type,
+        "elicitation_bias_args": args,
     }
 
 def define_alternate_ability_params(config: EvaluationConfig) -> Dict[str, Any]:
@@ -654,7 +731,7 @@ def calculate_evaluation_forecast(
         base_cost_id = scenario.cost_id[:-6]  # Remove "_upper" suffix
     
     # Determine elicitation bias parameters
-    elicitation_params = define_elicitation_bias(config)
+    elicitation_params = define_elicitation_bias(config, scenario)
     
     # Determine if we are using an alternative function to represent the
     # true ability, i.e. even though we forecast a logistic curve, what if
