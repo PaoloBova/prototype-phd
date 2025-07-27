@@ -135,24 +135,26 @@ def generate_success_outcomes(
     if alternate_ability_enabled:
         # If alternate ability function is enabled, apply it to modify probabilities
         if alternate_ability_type == "exponential":
-            # Exponential decay function
-            decay_rate = alternate_ability_args[0] if len(alternate_ability_args) > 0 else 1.0
-            probs = np.exp(-decay_rate * (task_difficulties - threshold))
+            # Exponential survival function: S(x) = exp(-λx) where λ is the rate parameter
+            rate_param = alternate_ability_args[0] if len(alternate_ability_args) > 0 else 1.0
+            convert_from_log2 = alternate_ability_args[1] if len(alternate_ability_args) > 1 else True
+            
+            # Convert task difficulties from log2 space to linear space if specified
+            if convert_from_log2:
+                linear_difficulties = np.exp2(task_difficulties)
+            else:
+                linear_difficulties = task_difficulties
+                
+            probs = np.exp(-rate_param * linear_difficulties)
+            probs = np.clip(probs, 0, 1)
         
         elif alternate_ability_type == "power_law":
             # Power law function
             exponent = alternate_ability_args[0] if len(alternate_ability_args) > 0 else 1.0
-            probs = (task_difficulties / threshold) ** (-exponent)
-            probs = np.clip(probs, 0, 1)
-        elif alternate_ability_type == "cubic_spline":
-            # Cubic spline interpolation (requires scipy)
-            from scipy.interpolate import CubicSpline
-            if len(alternate_ability_args) < 2:
-                raise ValueError("Cubic spline requires at least two points for interpolation.")
-            x_points = np.array(alternate_ability_args[:-1])
-            y_points = np.array(alternate_ability_args[-1])
-            cs = CubicSpline(x_points, y_points)
-            probs = cs(task_difficulties)
+            # Avoid division by zero and ensure positive values
+            threshold_safe = max(threshold, 1e-6)
+            ratio = np.maximum(task_difficulties, 1e-6) / threshold_safe
+            probs = ratio ** (-exponent)
             probs = np.clip(probs, 0, 1)
         elif alternate_ability_type == "tangent":
             # Tangent function
@@ -181,21 +183,24 @@ def generate_success_outcomes(
     if elicitation_bias_enabled and n_tasks > 0:
         if elicitation_bias_type == "fall_past_threshold":
             # Sensitivity rate falls from 1 to new rate past ability threshold
-            sensitvity_rate = elicitation_bias_args[0] if len(elicitation_bias_args) > 0 else 0.0
-            keep = np.where(task_difficulties <= threshold, 1.0, sensitvity_rate)
+            sensitivity_rate = elicitation_bias_args[0] if len(elicitation_bias_args) > 0 else 0.0
+            keep_probs = np.where(task_difficulties <= threshold, 1.0, sensitivity_rate)
         elif elicitation_bias_type == "linear":
             # Linear decline based on task difficulty
             elicitation_threshold = elicitation_bias_args[0] if len(elicitation_bias_args) > 0 else 0.0
             elicitation_slope = elicitation_bias_args[1] if len(elicitation_bias_args) > 1 else 1.0
-            keep = np.clip(1 - elicitation_slope * (task_difficulties - elicitation_threshold) / (forecast.window_upper - elicitation_threshold), 0, 1)
+            keep_probs = np.clip(1 - elicitation_slope * (task_difficulties - elicitation_threshold) / (forecast.window_upper - elicitation_threshold), 0, 1)
         elif elicitation_bias_type == "logistic":
             # Logistic decline based on task difficulty
             elicitation_threshold = elicitation_bias_args[0] if len(elicitation_bias_args) > 0 else 0.0
             elicitation_slope = elicitation_bias_args[1] if len(elicitation_bias_args) > 1 else 1.0
-            keep = logistic_function(task_difficulties, elicitation_threshold, elicitation_slope)
+            keep_probs = logistic_function(task_difficulties, elicitation_threshold, elicitation_slope)
         else:
             raise ValueError(f"Unsupported elicitation bias type: {elicitation_bias_type}")
-        success = success * keep
+        
+        # Apply elicitation bias as a binary masking based on keep_probs
+        keep_mask = rng.binomial(1, keep_probs)
+        success = success * keep_mask
 
     return success
 
