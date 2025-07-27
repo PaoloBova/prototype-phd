@@ -65,13 +65,13 @@ class EvaluationConfig(BaseModel):
         False,
         description="Whether to save detailed JSON output with all forecast data"
     )
-    elicitation_bias: ElicitationBiasConfig = Field(
-        default_factory=ElicitationBiasConfig,
-        description="Configuration for elicitation bias parameters"
+    elicitation_bias_configs: List[ElicitationBiasConfig] = Field(
+        default_factory=lambda: [ElicitationBiasConfig()],
+        description="List of elicitation bias configurations to test"
     )
-    alternate_ability: AlternateAbilityConfig = Field(
-        default_factory=AlternateAbilityConfig,
-        description="Configuration for alternate ability function parameters"
+    alternate_ability_configs: List[AlternateAbilityConfig] = Field(
+        default_factory=lambda: [AlternateAbilityConfig()],
+        description="List of alternate ability configurations to test" 
     )
 
 def parse_args():
@@ -426,12 +426,12 @@ def _apply_budget_scaling(base_value: float, budget_gap: float, scaling_type: st
         raise ValueError(f"Unknown scaling type: {scaling_type}. Must be one of: constant, linear, exponential, power_law, logistic")
 
 
-def define_elicitation_bias(config: EvaluationConfig, scenario: EvaluationScenario) -> Dict[str, Any]:
+def define_elicitation_bias(bias_config: ElicitationBiasConfig, scenario: EvaluationScenario) -> Dict[str, Any]:
     """
     Define elicitation bias parameters based on configuration and budget scenario.
     
     Args:
-        config: Evaluation configuration
+        bias_config: Elicitation bias configuration
         scenario: Evaluation scenario containing budget and cost information
         
     Returns:
@@ -492,7 +492,7 @@ def define_elicitation_bias(config: EvaluationConfig, scenario: EvaluationScenar
     # sensitivity rate is constant past the ability threhsold and depends
     # linearly on the resource gap.
     
-    if not config.elicitation_bias.enabled:
+    if not bias_config.enabled:
         return {
             "elicitation_bias_enabled": False,
             "elicitation_bias_type": None,
@@ -500,23 +500,23 @@ def define_elicitation_bias(config: EvaluationConfig, scenario: EvaluationScenar
         }
     
     # Handle file-based configuration
-    if isinstance(config.elicitation_bias.source, str):
+    if isinstance(bias_config.source, str):
         try:
-            with open(config.elicitation_bias.source, 'r') as f:
+            with open(bias_config.source, 'r') as f:
                 source_config = json.load(f)
                 
             # Validate required fields for file-based config
             if "type" not in source_config:
-                raise ValueError(f"Elicitation bias config missing required 'type' field in {config.elicitation_bias.source}")
+                raise ValueError(f"Elicitation bias config missing required 'type' field in {bias_config.source}")
             if "args" not in source_config:
-                raise ValueError(f"Elicitation bias config missing required 'args' field in {config.elicitation_bias.source}")
+                raise ValueError(f"Elicitation bias config missing required 'args' field in {bias_config.source}")
                 
         except (FileNotFoundError, json.JSONDecodeError) as e:
-            logging.warning(f"Could not load elicitation bias config from {config.elicitation_bias.source}: {e}")
+            logging.warning(f"Could not load elicitation bias config from {bias_config.source}: {e}")
             # Fall back to default
             source_config = {"type": "fall_past_threshold", "args": [0.5]}
     else:
-        source_config = config.elicitation_bias.source
+        source_config = bias_config.source
     
     # Validate bias type
     from .schemas import ElicitationBiasType
@@ -566,17 +566,21 @@ def define_elicitation_bias(config: EvaluationConfig, scenario: EvaluationScenar
         "elicitation_bias_args": args,
     }
 
-def define_alternate_ability_params(config: EvaluationConfig) -> Dict[str, Any]:
+def define_alternate_ability_params(ability_config: AlternateAbilityConfig) -> Dict[str, Any]:
     """
     Define alternate ability function parameters based on configuration.
     
+    Determines if we are using an alternative function to represent the
+    true ability, i.e. even though we forecast a logistic curve, what if
+    the true ability is instead a different function.
+    
     Args:
-        config: Evaluation configuration
+        ability_config: Alternate ability configuration
         
     Returns:
         Dictionary with alternate ability parameters
     """
-    if not config.alternate_ability.enabled:
+    if not ability_config.enabled:
         return {
             "alternate_ability_enabled": False,
             "alternate_ability_type": None,
@@ -586,20 +590,20 @@ def define_alternate_ability_params(config: EvaluationConfig) -> Dict[str, Any]:
     # Validate function type
     from .schemas import AlternateAbilityType
     valid_types = [e.value for e in AlternateAbilityType]
-    if config.alternate_ability.function_type not in valid_types:
-        raise ValueError(f"Invalid alternate ability function type: {config.alternate_ability.function_type}. Must be one of {valid_types}")
+    if ability_config.function_type not in valid_types:
+        raise ValueError(f"Invalid alternate ability function type: {ability_config.function_type}. Must be one of {valid_types}")
     
     return {
         "alternate_ability_enabled": True,
-        "alternate_ability_type": config.alternate_ability.function_type,
-        "alternate_ability_args": config.alternate_ability.parameters,
+        "alternate_ability_type": ability_config.function_type,
+        "alternate_ability_args": ability_config.parameters,
     }
 
 def calculate_evaluation_forecast(
     scenario: EvaluationScenario,
     design: EvaluationDesign,
     config: EvaluationConfig
-) -> EvaluationForecast:
+) -> Dict[str, Any]:
     """
     Calculate evaluation forecast parameters under given constraints.
     
@@ -608,7 +612,7 @@ def calculate_evaluation_forecast(
         design: Evaluation design parameters (sampling, adjustment method, etc.)
         
     Returns:
-        EvaluationForecast object with forecast parameters
+        EvaluationForecast data
     """
     # Calculate base evaluation window from ability parameters
     lower_bound, upper_bound = calculate_evaluation_window(
@@ -730,14 +734,6 @@ def calculate_evaluation_forecast(
         cost_variant = "upper"
         base_cost_id = scenario.cost_id[:-6]  # Remove "_upper" suffix
     
-    # Determine elicitation bias parameters
-    elicitation_params = define_elicitation_bias(config, scenario)
-    
-    # Determine if we are using an alternative function to represent the
-    # true ability, i.e. even though we forecast a logistic curve, what if
-    # the true ability is instead a different function.
-    alternate_ability_params = define_alternate_ability_params(config)
-
     # Create the evaluation forecast with all parameters for complete tracking
     forecast_data = {
         "ability": scenario.ability,
@@ -770,12 +766,7 @@ def calculate_evaluation_forecast(
         "base_cost_id": base_cost_id
     }
     
-    # Add additional parameters if available
-    forecast_data = {**forecast_data,
-                     **alternate_ability_params,
-                     **elicitation_params}
-    
-    return EvaluationForecast(**forecast_data)
+    return forecast_data
 
 def generate_task_samples(forecast: EvaluationForecast) -> np.ndarray:
     """
@@ -962,8 +953,18 @@ def calculate_forecasts_for_all_combinations(
     for i, scenario in enumerate(scenarios):
         for design in designs:
             try:
-                forecast = calculate_evaluation_forecast(scenario, design, config)
-                all_forecasts.append(forecast)
+                forecast_data = calculate_evaluation_forecast(scenario, design, config)
+                for j in range(len(config.elicitation_bias_configs)):
+                    for k in range(len(config.alternate_ability_configs)):
+                        elicitation_params = define_elicitation_bias(config.elicitation_bias_configs[j], scenario)
+                        alternate_ability_params = define_alternate_ability_params(config.alternate_ability_configs[k])
+
+                        # Add additional parameters if available
+                        forecast_data = {**forecast_data,
+                                        **alternate_ability_params,
+                                        **elicitation_params}
+                        forecast = EvaluationForecast(**forecast_data)
+                        all_forecasts.append(forecast)
                 
                 # Log progress periodically
                 if i % 100 == 0:
