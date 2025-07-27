@@ -225,10 +225,10 @@ def run_simulation(
         base_outcomes = generate_success_outcomes(base_tasks, config, forecast)
         
         # Bootstrap from this fixed set
-        sample_size = config.sample_size if config.sample_size is not None else forecast.n_tasks
+        sample_size = config.sample_size if config.sample_size is not None else forecast.total_samples
         
         for i in range(config.n_samples):
-            indices = rng.choice(forecast.n_tasks, size=sample_size, replace=True)
+            indices = rng.choice(forecast.total_samples, size=sample_size, replace=True)
             tasks = base_tasks[indices]
             outcomes = base_outcomes[indices]
             
