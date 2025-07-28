@@ -996,6 +996,11 @@ def main():
     
     print(f"Loaded {len(df)} evaluation forecasts")
     
+    # Add sanity check columns
+    df["window_width"] = df["window_upper"] - df["window_lower"]
+    df["original_window_width"] = df["original_window_upper"] - df["original_window_lower"]
+    df["width_ratio"] = df["window_width"] / df["original_window_width"]
+    
     # Apply filters if specified
     original_len = len(df)
     
