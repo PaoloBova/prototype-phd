@@ -476,3 +476,183 @@ def method(dispatch_fn, dispatch_key=None):
             dispatch_fn.__multi__[dispatch_key] = fn
         return dispatch_fn
     return apply_decorator
+
+
+def expand_sweep_config(sweep_config: Dict[str, Any]) -> List[Dict[str, Any]]:
+    """
+    Expand a parameter sweep configuration into individual run configurations.
+    
+    This function takes a sweep configuration with a base template and parameter
+    sweep specifications, then generates all combinations of parameter values
+    as individual run configurations.
+    
+    Args:
+        sweep_config (Dict[str, Any]): A dictionary containing:
+            - 'base_config': Template configuration that serves as the base for all runs
+            - '_sweep': List of sweep specifications, each containing:
+                - 'path': List representing nested path to parameter (supports integer indices)
+                - 'values': List of values to sweep over for this parameter
+    
+    Returns:
+        List[Dict[str, Any]]: List of individual run configurations, one for each
+        parameter combination. Each config is a complete copy of base_config with
+        parameter values applied.
+    
+    Raises:
+        ValueError: If sweep_config is missing required keys or has invalid structure
+        TypeError: If path elements or values have incorrect types
+    
+    Example:
+        >>> sweep_config = {
+        ...     "base_config": {
+        ...         "model": {"lr": 0.01, "layers": [64, 32]},
+        ...         "training": {"epochs": 100}
+        ...     },
+        ...     "_sweep": [
+        ...         {"path": ["model", "lr"], "values": [0.01, 0.001]},
+        ...         {"path": ["model", "layers", 0], "values": [64, 128]},
+        ...         {"path": ["training", "epochs"], "values": [100, 200]}
+        ...     ]
+        ... }
+        >>> configs = expand_sweep_config(sweep_config)
+        >>> len(configs)
+        8
+        >>> configs[0]["model"]["lr"]
+        0.01
+        >>> configs[4]["model"]["lr"] 
+        0.001
+    
+    Notes:
+        - Generates cartesian product of all sweep parameter values
+        - Supports nested dictionary paths and array indices in paths
+        - Each generated config includes '_sweep_metadata' with combination info
+        - Path elements can be strings (dict keys) or integers (array indices)
+        - Base config is deep copied for each run to avoid mutation
+    """
+    import copy
+    
+    # Validate input structure
+    if not isinstance(sweep_config, dict):
+        raise TypeError("sweep_config must be a dictionary")
+    
+    if "base_config" not in sweep_config:
+        raise ValueError("sweep_config must contain 'base_config' key")
+    
+    if "_sweep" not in sweep_config:
+        raise ValueError("sweep_config must contain '_sweep' key")
+    
+    base_config = sweep_config["base_config"]
+    sweep_specs = sweep_config["_sweep"]
+    
+    if not isinstance(sweep_specs, list):
+        raise TypeError("_sweep must be a list of sweep specifications")
+    
+    # Validate each sweep specification
+    for i, spec in enumerate(sweep_specs):
+        if not isinstance(spec, dict):
+            raise TypeError(f"Sweep specification {i} must be a dictionary")
+        
+        if "path" not in spec:
+            raise ValueError(f"Sweep specification {i} missing 'path' key")
+        if "values" not in spec:
+            raise ValueError(f"Sweep specification {i} missing 'values' key")
+        
+        if not isinstance(spec["path"], list):
+            raise TypeError(f"Sweep specification {i}: 'path' must be a list")
+        if not isinstance(spec["values"], list):
+            raise TypeError(f"Sweep specification {i}: 'values' must be a list")
+        
+        # Validate path elements
+        for j, path_element in enumerate(spec["path"]):
+            if not isinstance(path_element, (str, int)):
+                raise TypeError(f"Sweep specification {i}: path element {j} must be string or integer")
+    
+    # Extract parameter combinations
+    param_paths = [spec["path"] for spec in sweep_specs]
+    param_values = [spec["values"] for spec in sweep_specs]
+    
+    # Generate all combinations using itertools.product
+    run_configs = []
+    
+    for combination_values in itertools.product(*param_values):
+        # Deep copy base config for this run
+        run_config = copy.deepcopy(base_config)
+        
+        # Apply each parameter value to its path
+        combination_dict = {}
+        for path, value in zip(param_paths, combination_values):
+            _set_nested_value_by_path(run_config, path, value)
+            # Store combination info for metadata
+            path_str = ".".join(str(p) for p in path)
+            combination_dict[path_str] = value
+        
+        # Add metadata about this parameter combination
+        run_config["_sweep_metadata"] = {
+            "parameter_combination": combination_dict,
+            "combination_index": len(run_configs)
+        }
+        
+        run_configs.append(run_config)
+    
+    return run_configs
+
+
+def _set_nested_value_by_path(config: Dict[str, Any], path: List[Union[str, int]], value: Any) -> None:
+    """
+    Set a value in a nested dictionary/list structure using a path.
+    
+    This helper function navigates through nested dictionaries and lists to set
+    a value at the specified path. It handles both dictionary keys (strings) and
+    list indices (integers).
+    
+    Args:
+        config (Dict[str, Any]): The configuration dictionary to modify
+        path (List[Union[str, int]]): Path to the target location
+        value (Any): Value to set at the target location
+    
+    Raises:
+        KeyError: If a dictionary key in the path doesn't exist
+        IndexError: If a list index in the path is out of bounds
+        TypeError: If path navigation encounters wrong types
+    
+    Example:
+        >>> config = {"model": {"params": [1, 2, 3]}}
+        >>> _set_nested_value_by_path(config, ["model", "params", 1], 99)
+        >>> config["model"]["params"][1]
+        99
+    """
+    current = config
+    
+    # Navigate to the parent of the target location
+    for path_element in path[:-1]:
+        if isinstance(path_element, str):
+            # Dictionary key
+            if not isinstance(current, dict):
+                raise TypeError(f"Expected dict at path element '{path_element}', got {type(current)}")
+            if path_element not in current:
+                raise KeyError(f"Key '{path_element}' not found in configuration")
+            current = current[path_element]
+        elif isinstance(path_element, int):
+            # List index
+            if not isinstance(current, list):
+                raise TypeError(f"Expected list at path element {path_element}, got {type(current)}")
+            if path_element >= len(current) or path_element < -len(current):
+                raise IndexError(f"List index {path_element} out of bounds")
+            current = current[path_element]
+        else:
+            raise TypeError(f"Path element must be string or int, got {type(path_element)}")
+    
+    # Set the final value
+    final_element = path[-1]
+    if isinstance(final_element, str):
+        if not isinstance(current, dict):
+            raise TypeError(f"Expected dict for final key '{final_element}', got {type(current)}")
+        current[final_element] = value
+    elif isinstance(final_element, int):
+        if not isinstance(current, list):
+            raise TypeError(f"Expected list for final index {final_element}, got {type(current)}")
+        if final_element >= len(current) or final_element < -len(current):
+            raise IndexError(f"List index {final_element} out of bounds")
+        current[final_element] = value
+    else:
+        raise TypeError(f"Final path element must be string or int, got {type(final_element)}")
