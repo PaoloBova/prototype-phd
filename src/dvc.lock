@@ -130,8 +130,8 @@ stages:
     deps:
     - path: configs/forecast_detection/forecast_evaluation.json
       hash: md5
-      md5: c3e66e7cbbe76f4ef5a3294c8f80851c
-      size: 634
+      md5: 8f699f08e27e7a0ac787377919b4856b
+      size: 1932
     - path: output/forecast_detection/ability_forecasts.csv
       hash: md5
       md5: 6687806c0540c305bfecb28abf017f77
@@ -147,8 +147,8 @@ stages:
     outs:
     - path: output/forecast_detection/evaluation_forecasts.csv
       hash: md5
-      md5: 0ea32dbd373f20b9036049944e847942
-      size: 232957
+      md5: 23b3c5b968d6fd77ddbdd25bde9ab338
+      size: 1157181
   explore_evaluation_forecasts:
     cmd: python -m src.tools.explore_evaluation_forecasts --input output/forecast_detection/evaluation_forecasts.csv
       --output reports/forecast_detection/evaluation_visualizations --font-size 24
