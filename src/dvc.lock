@@ -150,24 +150,24 @@ stages:
       md5: 3de3e21f2dbb250b2b476b2c88130d6c
       size: 216321
   explore_evaluation_forecasts:
-    cmd: python -m src.tools.explore_evaluation_forecasts --input output/forecast_detection/evaluation_forecasts.csv
+    cmd: python -m src.tools.explore_evaluation_forecasts --input output/forecast_detection/evaluation_forecasts.json
       --output reports/forecast_detection/evaluation_visualizations --font-size 24
       --disable-titles
     deps:
-    - path: output/forecast_detection/evaluation_forecasts.csv
+    - path: output/forecast_detection/evaluation_forecasts.json
       hash: md5
-      md5: 89851793066354bfb11b4d533b96fdac
-      size: 227897
+      md5: 3de3e21f2dbb250b2b476b2c88130d6c
+      size: 216321
     - path: src/tools/explore_evaluation_forecasts.py
       hash: md5
-      md5: 2a589098c8ff90abc19baff17902a556
-      size: 47746
+      md5: e9d613194204f2a2efcb78686c455c36
+      size: 50057
     outs:
     - path: reports/forecast_detection/evaluation_visualizations
       hash: md5
-      md5: 6217ab1a7cf56fd5cca1c4db9b30ad0f.dir
-      size: 832696
-      nfiles: 3
+      md5: 0487e09b6ddb37be68e8f29cd964f810.dir
+      size: 222831
+      nfiles: 1
   forecast_simulation:
     cmd: python -m src.forecast_simulation --in output/forecast_detection/evaluation_forecasts.json
       --out output/forecast_detection/simulation_results.csv --raw output/forecast_detection/raw_simulation_results.h5
