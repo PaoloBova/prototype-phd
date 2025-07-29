@@ -125,7 +125,7 @@ stages:
       nfiles: 9
   forecast_evaluation:
     cmd: python -m src.forecast_evaluation --ability output/forecast_detection/ability_forecasts.csv
-      --cost output/forecast_detection/cost_trends.csv --out output/forecast_detection/evaluation_forecasts.csv
+      --cost output/forecast_detection/cost_trends.csv --out output/forecast_detection/evaluation_forecasts.json
       --config configs/forecast_detection/forecast_evaluation.json
     deps:
     - path: configs/forecast_detection/forecast_evaluation.json
@@ -142,13 +142,13 @@ stages:
       size: 191
     - path: src/forecast_evaluation.py
       hash: md5
-      md5: 13ff9208487a2b4f5b8536cc154408a4
-      size: 45548
+      md5: 9ce9ab7acbfc44649020b70ee10b0d25
+      size: 37081
     outs:
-    - path: output/forecast_detection/evaluation_forecasts.csv
+    - path: output/forecast_detection/evaluation_forecasts.json
       hash: md5
-      md5: 23b3c5b968d6fd77ddbdd25bde9ab338
-      size: 1157181
+      md5: 8736d6b2e3ff0a9f20fea223d8dfe6a4
+      size: 651311
   explore_evaluation_forecasts:
     cmd: python -m src.tools.explore_evaluation_forecasts --input output/forecast_detection/evaluation_forecasts.csv
       --output reports/forecast_detection/evaluation_visualizations --font-size 24

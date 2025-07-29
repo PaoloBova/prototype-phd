@@ -29,7 +29,7 @@ import prototype_phd.stats
 def parse_args():
     """Parse command line arguments."""
     parser = argparse.ArgumentParser(description="Calculate sensitivity metrics")
-    parser.add_argument("--in", dest="input", required=True, help="Path to evaluation forecasts CSV")
+    parser.add_argument("--in", dest="input", required=True, help="Path to evaluation forecasts JSON")
     parser.add_argument("--out", required=True, help="Path to output CSV file")
     parser.add_argument("--raw", required=False, help="Path to raw simulation results HDF5 file")
     parser.add_argument("--config", default="configs/forecast_detection/forecast_simulation.json", 
@@ -221,8 +221,8 @@ def simulate_estimator(
         ws_cfg = config.get("weighted_score", {})
         ws_cfg = {
             **ws_cfg,
-            "range_min": forecast.window_lower,
-            "range_max": forecast.window_upper,
+            "range_min": forecast.design.window_lower,
+            "range_max": forecast.design.window_upper,
         }
         weight_fn = create_weight_function(ws_cfg.get("weight_function", {"type": "linear"}))
         
@@ -230,18 +230,18 @@ def simulate_estimator(
         n_bins = ws_cfg.get("n_bins", 10)
         if ws_cfg.get("use_original_window", False):
             # use the original gold standard window from the eval forecast
-            window_lower = forecast.original_window_lower
-            window_upper = forecast.original_window_upper
+            window_lower = forecast.design.original_window_lower
+            window_upper = forecast.design.original_window_upper
         else:
             # use the current evaulation window
             # Should give similar results as long the bins are chosen well
-            window_lower = forecast.window_lower
-            window_upper = forecast.window_upper
+            window_lower = forecast.design.window_lower
+            window_upper = forecast.design.window_upper
         bin_edges = np.linspace(window_lower, window_upper, n_bins + 1)
         if ws_cfg.get("truncate_bins", False):
             # truncate the bin edges to the evaluation window
             # Remove bins outside the evaluation window
-            bin_edges = np.clip(bin_edges, forecast.window_lower, forecast.window_upper)
+            bin_edges = np.clip(bin_edges, forecast.design.window_lower, forecast.design.window_upper)
             bin_edges = np.unique(bin_edges)  # ensure unique edges after clipping
             # recalculate number of bins
             n_bins = len(bin_edges) - 1
@@ -294,7 +294,7 @@ def simulate_estimator(
             # We use the original gold standard evaluation window to ensure the
             # logistic curve is estimated over the full range of possible
             # difficulties, not just the sampled tasks.
-            grid = np.linspace(forecast.original_window_lower, forecast.original_window_upper, 200)
+            grid = np.linspace(forecast.design.original_window_lower, forecast.design.original_window_upper, 200)
             # Use logistic function to estimate probabilities
             probs = 1.0 / (1.0 + np.exp(-b1 * (grid - (-b0 / b1))))
             # weighted‐sum under estimated logistic curve
@@ -339,8 +339,8 @@ def calculate_true_value(estimator: str, forecast: EvaluationForecast, config: D
         # inject the *same* window used for simulation:
         ws_cfg = {
             **ws_cfg,
-            "range_min": forecast.original_window_lower,
-            "range_max": forecast.original_window_upper,
+            "range_min": forecast.design.original_window_lower,
+            "range_max": forecast.design.original_window_upper,
         }
         return calculate_true_weighted_score(
             forecast.ability.threshold,
@@ -396,47 +396,47 @@ def calculate_stats(
     return stats
 
 def filter_forecasts(
-    forecasts_df: pd.DataFrame, 
+    forecasts: List[EvaluationForecast], 
     filters: Dict[str, Any]
 ) -> pd.DataFrame:
     """
     Filter forecasts based on configuration.
     
     Args:
-        forecasts_df: DataFrame with evaluation forecasts
+        forecasts: List of EvaluationForecast objects
         filters: Filter configuration
         
     Returns:
         Filtered DataFrame
     """
-    filtered_df = forecasts_df.copy()
+    filtered_forecasts = forecasts.copy()
     
     # Basic sample size filter
     min_samples = filters.get("min_samples")
     if min_samples is not None:
-        filtered_df = filtered_df[filtered_df["total_samples"] >= min_samples]
+        filtered_forecasts = [f for f in filtered_forecasts if f.design.total_samples >= min_samples]
     
     max_samples = filters.get("max_samples")
     if max_samples is not None:
-        filtered_df = filtered_df[filtered_df["total_samples"] <= max_samples]
-    
+        filtered_forecasts = [f for f in filtered_forecasts if f.design.total_samples <= max_samples]
+
     # Filter by variants
     ability_variants = filters.get("ability_variants")
-    if ability_variants is not None and "ability_variant" in filtered_df.columns:
-        filtered_df = filtered_df[filtered_df["ability_variant"].isin(ability_variants)]
-    
+    if ability_variants is not None:
+        filtered_forecasts = [f for f in filtered_forecasts if f.scenario.ability_variant in ability_variants]
+
     cost_variants = filters.get("cost_variants")
-    if cost_variants is not None and "cost_variant" in filtered_df.columns:
-        filtered_df = filtered_df[filtered_df["cost_variant"].isin(cost_variants)]
-    
+    if cost_variants is not None:
+        filtered_forecasts = [f for f in filtered_forecasts if f.scenario.cost_variant in cost_variants]
+
     # Filter by sampler type
     sampler_types = filters.get("sampler_types")
     if sampler_types is not None:
-        filtered_df = filtered_df[filtered_df["sampler_type"].isin(sampler_types)]
-    
-    logging.info(f"Filtered from {len(forecasts_df)} to {len(filtered_df)} forecasts")
-    
-    return filtered_df
+        filtered_forecasts = [f for f in filtered_forecasts if f.design.sampler_type in sampler_types]
+
+    logging.info(f"Filtered from {len(forecasts)} to {len(filtered_forecasts)} forecasts")
+
+    return filtered_forecasts
 
 def generate_simulation_id(forecast: EvaluationForecast, estimator: str, sim_config: SimulationConfig) -> str:
     """
@@ -452,17 +452,16 @@ def generate_simulation_id(forecast: EvaluationForecast, estimator: str, sim_con
     """
     # Include variant information in ID if available
     variant_info = ""
-    if hasattr(forecast, "ability_variant") and hasattr(forecast, "cost_variant"):
-        if forecast.ability_variant != "unknown" or forecast.cost_variant != "unknown":
-            variant_info = f"{forecast.ability_variant}_{forecast.cost_variant}_"
+    if forecast.scenario.ability_variant != "unknown" or forecast.scenario.cost_variant != "unknown":
+        variant_info = f"{forecast.scenario.ability_variant}_{forecast.scenario.cost_variant}_"
     
     components = [
         forecast.ability.scenario,
-        forecast.budget_scenario,
+        forecast.scenario_id,
         forecast.ability.date.strftime("%Y-%m-%d"),
         variant_info + estimator,
         sim_config.method,
-        f"{forecast.total_samples}_samples",
+        f"{forecast.design.total_samples}_samples",
         f"{sim_config.n_samples}_sims"
     ]
     return "__".join([str(c).replace(" ", "_") for c in components])
@@ -492,8 +491,8 @@ def create_nested_hdf5_structure(
     
     # Level 1: Ability scenario (include variant info if available)
     ability_scenario_name = str(forecast.ability.scenario)
-    if hasattr(forecast, "ability_variant") and forecast.ability_variant != "unknown":
-        ability_scenario_name += f"_{forecast.ability_variant}"
+    if forecast.scenario.ability_variant != "unknown":
+        ability_scenario_name += f"_{forecast.scenario.ability_variant}"
     ability_group_name = ability_scenario_name.replace(" ", "_")
     
     if ability_group_name not in raw_file:
@@ -502,9 +501,9 @@ def create_nested_hdf5_structure(
         ability_group = raw_file[ability_group_name]
     
     # Level 2: Budget scenario (include cost variant if available)
-    budget_scenario_name = str(forecast.budget_scenario)
-    if hasattr(forecast, "cost_variant") and forecast.cost_variant != "unknown":
-        budget_scenario_name += f"_{forecast.cost_variant}"
+    budget_scenario_name = str(forecast.scenario_id)
+    if forecast.scenario.cost_variant != "unknown":
+        budget_scenario_name += f"_{forecast.scenario.cost_variant}"
     budget_group_name = budget_scenario_name.replace(" ", "_")
     
     if budget_group_name not in ability_group:
@@ -527,7 +526,7 @@ def create_nested_hdf5_structure(
         estimator_group = date_group[estimator_group_name]
     
     # Level 5: Simulation method
-    method_group_name = f"{sim_config.method}_{forecast.total_samples}_samples"
+    method_group_name = f"{sim_config.method}_{forecast.design.total_samples}_samples"
     
     # Ensure uniqueness by adding an index if needed
     base_method_name = method_group_name
@@ -543,19 +542,17 @@ def create_nested_hdf5_structure(
     
     # Store metadata as attributes
     sim_group.attrs['true_value'] = true_value
-    sim_group.attrs['window_lower'] = forecast.window_lower
-    sim_group.attrs['window_upper'] = forecast.window_upper
-    sim_group.attrs['total_samples'] = forecast.total_samples
+    sim_group.attrs['window_lower'] = forecast.design.window_lower
+    sim_group.attrs['window_upper'] = forecast.design.window_upper
+    sim_group.attrs['total_samples'] = forecast.design.total_samples
     sim_group.attrs['threshold'] = forecast.ability.threshold
     sim_group.attrs['slope'] = forecast.ability.slope
-    sim_group.attrs['sampler_type'] = str(forecast.sampler_type)
-    sim_group.attrs['budget_fraction'] = forecast.budget_fraction
+    sim_group.attrs['sampler_type'] = str(forecast.design.sampler_type)
+    sim_group.attrs['budget_fraction'] = forecast.scenario.budget_fraction
     
-    # Store variant information if available
-    if hasattr(forecast, "ability_variant"):
-        sim_group.attrs['ability_variant'] = forecast.ability_variant
-    if hasattr(forecast, "cost_variant"):
-        sim_group.attrs['cost_variant'] = forecast.cost_variant
+    # Store variant information
+    sim_group.attrs['ability_variant'] = forecast.scenario.ability_variant
+    sim_group.attrs['cost_variant'] = forecast.scenario.cost_variant
     
     # Store full statistics
     stats_group = sim_group.create_group('stats')
@@ -569,7 +566,7 @@ def create_nested_hdf5_structure(
             stats_group.attrs[stat_name] = stat_value
 
 def run_simulations(
-    forecasts_df: pd.DataFrame,
+    forecasts: List[EvaluationForecast],
     config_path: str,
     raw_output_path: Optional[str] = None
 ) -> Tuple[List[SensitivityResult], Dict[str, np.ndarray]]:
@@ -577,7 +574,7 @@ def run_simulations(
     Run simulations for each evaluation forecast and estimator.
     
     Args:
-        forecasts_df: DataFrame with evaluation forecasts
+        forecasts: List of evaluation forecasts
         config_path: Path to simulation configuration file
         raw_output_path: Optional path to save raw simulation results
         
@@ -593,7 +590,7 @@ def run_simulations(
     
     # Get filters from config and apply them
     filters = config_data.get("filters", {})
-    filtered_df = filter_forecasts(forecasts_df, filters)
+    forecasts_filtered = filter_forecasts(forecasts, filters)
     
     # Extract simulation configuration
     simulation_config = SimulationConfig(**config_data["simulation"])
@@ -623,13 +620,10 @@ def run_simulations(
     
     try:
         # Process each evaluation forecast
-        for _, row in tqdm.tqdm(filtered_df.iterrows(), total=len(filtered_df)):
+        for forecast in tqdm.tqdm(forecasts_filtered, desc="Running simulations"):
             # Skip scenarios with no samples
-            if row["total_samples"] <= 0:
+            if forecast.design.total_samples <= 0:
                 continue
-                
-            # Create evaluation forecast object from row
-            forecast = create_evaluation_forecast_from_row(row)
             
             # Run simulations for each estimator
             for estimator in methods_to_run:
@@ -647,30 +641,25 @@ def run_simulations(
                 
                 # --- build metadata for CSV output ---
                 additional_fields = {
-                    "ability_id": forecast.ability_id,
-                    "cost_id": forecast.cost_id,
-                    "constraint_id": forecast.constraint_id,
+                    "ability_id": forecast.scenario.ability_id,
+                    "cost_id": forecast.scenario.cost_id,
+                    "constraint_id": forecast.scenario.constraint_id,
                     "design_id": forecast.design_id,
-                    "budget_fraction": forecast.budget_fraction,
-                    "window_lower": forecast.window_lower,
-                    "window_upper": forecast.window_upper,
-                    "original_window_lower": forecast.original_window_lower,
-                    "original_window_upper": forecast.original_window_upper,
-                    "total_samples": forecast.total_samples
+                    "budget_fraction": forecast.scenario.budget_fraction,
+                    "window_lower": forecast.design.window_lower,
+                    "window_upper": forecast.design.window_upper,
+                    "original_window_lower": forecast.design.original_window_lower,
+                    "original_window_upper": forecast.design.original_window_upper,
+                    "total_samples": forecast.design.total_samples,
+                    "ability_variant": forecast.scenario.ability_variant,
+                    "cost_variant": forecast.scenario.cost_variant,
+                    "base_ability_id": forecast.scenario.base_ability_id,
+                    "base_cost_id": forecast.scenario.base_cost_id
                 }
-                # include variants if present
-                if hasattr(forecast, "ability_variant"):
-                    additional_fields["ability_variant"] = forecast.ability_variant
-                if hasattr(forecast, "cost_variant"):
-                    additional_fields["cost_variant"] = forecast.cost_variant
-                if hasattr(forecast, "base_ability_id"):
-                    additional_fields["base_ability_id"] = forecast.base_ability_id
-                if hasattr(forecast, "base_cost_id"):
-                    additional_fields["base_cost_id"] = forecast.base_cost_id
 
                 sensitivity_result = SensitivityResult(
                     ability_scenario=forecast.ability.scenario,
-                    budget_scenario=forecast.budget_scenario,
+                    budget_scenario=forecast.scenario_id,
                     date=forecast.ability.date,
                     estimator=estimator,
                     bias=float(stats["bias"]),
@@ -752,25 +741,22 @@ def main():
     args = parse_args()
     
     logging.info(f"Reading evaluation forecasts from {args.input}")
-    forecasts_df = pd.read_csv(args.input)
-    
+    with open(args.input, 'r') as f:
+        forecast_data = json.load(f)
+    forecasts = [EvaluationForecast(**item) for item in forecast_data]
+
     # In debug mode, only use a small subset
     if args.debug:
         logging.info("Running in debug mode with limited forecasts")
-        forecasts_df = forecasts_df.head(5)
-    
-    # Convert date columns back to datetime
-    date_cols = [col for col in forecasts_df.columns if 'date' in col]
-    for date_col in date_cols:
-        forecasts_df[date_col] = pd.to_datetime(forecasts_df[date_col])
+        forecasts = forecasts[:5]
         
-    logging.info(f"Loaded {len(forecasts_df)} evaluation forecasts")
+    logging.info(f"Loaded {len(forecasts)} evaluation forecasts")
     
     logging.info(f"Loading simulation configuration from {args.config}")
     
     logging.info("Running simulations for evaluation forecasts")
     results, raw_results = run_simulations(
-        forecasts_df, 
+        forecasts, 
         args.config,
         raw_output_path=args.raw if hasattr(args, 'raw') else None
     )

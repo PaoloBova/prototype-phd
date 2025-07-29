@@ -8,71 +8,24 @@ import math
 import os
 import pandas as pd
 import numpy as np
+from tomlkit import value
 import prototype_phd.data_utils as data_utils
 from datetime import datetime
 from typing import List, Tuple, Dict, Optional, Union, Any, Callable
-from pydantic import BaseModel, Field
+from prototype_phd.utils import expand_sweep_config
 from .schemas import (
-    AbilityForecast, 
-    TaskSamplerType, 
-    TaskSampler, 
-    UniformTaskSampler, 
-    NormalTaskSampler,
+    AbilityForecast,
     WindowAdjustmentMethod, 
     ResourceConstraintType, 
     ResourceConstraint,
     EvaluationScenario,
-    EvaluationDesign,
     EvaluationForecast,
-    ElicitationBiasConfig,
-    AlternateAbilityConfig
+    EvaluationConfig,
+    EvaluationDesign,
+    CalculatedElicitationBias,
+    generate_content_hash,
 )
 
-class EvaluationConfig(BaseModel):
-    """Configuration for evaluation forecasts."""
-    resource_constraints: Dict[str, Any] = Field(
-        {
-            "static_budgets": [1.0, 0.75, 0.5, 0.25, 0.1, 0.0],
-            "include_dynamic_scenarios": False,
-            "dynamic_start_date": "2025-01-01T00:00:00",
-            "dynamic_end_date": "2030-12-31T00:00:00",
-            "dynamic_frequency": "YE"
-        },
-        description="Resource constraint parameters"
-    )
-    evaluation_design: Dict[str, Any] = Field(
-        {
-            "sampler_types": ["uniform", "normal"],
-            "adjustment_methods": ["upper_bound", "sample_based"],
-            "repeats_per_unit": 20,
-            "sampler_params": {
-                "normal": {
-                    "mean_offset": 0.0,
-                    "std_dev_factor": 0.3
-                }
-            }
-        }, 
-        description="Evaluation design parameters"
-    )
-    scenario_generation: Dict[str, bool] = Field(
-        {
-            "include_base_scenarios": True,
-            "include_ci_scenarios": True
-        },
-        description="Scenario generation options"
-    )
-    save_detailed_json: bool = Field(
-        False,
-        description="Whether to save detailed JSON output with all forecast data"
-    )
-    elicitation_bias_configs: List[ElicitationBiasConfig] = Field(
-        default_factory=lambda: [ElicitationBiasConfig()],
-        description="List of elicitation bias configurations to test"
-    )
-    alternate_ability_configs: List[AlternateAbilityConfig] = Field(
-        default_factory=lambda: [AlternateAbilityConfig()],
-        description="List of alternate ability configurations to test" 
-    )
 
 def parse_args():
     """Parse command line arguments."""
@@ -80,34 +33,40 @@ def parse_args():
     parser.add_argument("--ability", required=True, help="Path to ability forecasts CSV")
     parser.add_argument("--cost", required=True, help="Path to cost trends CSV")
     parser.add_argument("--out", required=True, help="Path to output CSV file")
-    parser.add_argument("--config", required=False, help="Path to evaluation config JSON")
+    
+    # Configuration options (mutually exclusive)
+    config_group = parser.add_mutually_exclusive_group(required=True)
+    config_group.add_argument("--config", help="Path to evaluation config JSON (legacy single-run mode)")
+    config_group.add_argument("--sweep-config", help="Path to parameter sweep config JSON (new multi-run mode)")
+    
     parser.add_argument("--debug", action="store_true", help="Enable debug output")
     return parser.parse_args()
 
-def expand_ability_forecasts(abilities_df: pd.DataFrame, include_ci: bool = True) -> Dict[str, AbilityForecast]:
+def expand_ability_forecasts(abilities_df: pd.DataFrame, include_ci: bool = True) -> List[Dict[str, Any]]:
     """
-    Expand ability forecasts to include confidence interval scenarios.
+    Expand ability forecasts to include confidence interval scenarios with explicit metadata.
     
     Args:
         abilities_df: DataFrame with ability forecasts including confidence intervals
         include_ci: Whether to include confidence interval scenarios
         
     Returns:
-        Dictionary mapping scenario IDs to AbilityForecast objects
+        List of dictionaries with forecast, variant_type, base_id, and variant_id
     """
-    expanded_forecasts = {}
+    ability_variants = []
     
     # Process each original forecast
     for _, row in abilities_df.iterrows():
-        # Create base scenario from median values
-        base_scenario_id = f"{row['model']}_{row['scenario']}_base"
         # Ensure all fields are present
         required_fields = {'date', 'threshold', 'slope', 'scenario', 'model'}
         if not all(field in row for field in required_fields):
             logging.warning(f"Skipping row missing required fields: {row}")
             continue
             
+        base_id = f"{row['model']}_{row['scenario']}"
+        
         try:
+            # Create base scenario from median values
             base_forecast = AbilityForecast(
                 date=pd.to_datetime(row['date']),
                 threshold=float(row['threshold']),
@@ -115,7 +74,12 @@ def expand_ability_forecasts(abilities_df: pd.DataFrame, include_ci: bool = True
                 scenario=row['scenario'],
                 model=row['model']
             )
-            expanded_forecasts[base_scenario_id] = base_forecast
+            ability_variants.append({
+                'forecast': base_forecast,
+                'variant_type': 'base',
+                'base_id': base_id,
+                'variant_id': f"{base_id}_base"
+            })
         except Exception as e:
             logging.error(f"Error creating base forecast: {e}, row: {row}")
             continue
@@ -129,7 +93,6 @@ def expand_ability_forecasts(abilities_df: pd.DataFrame, include_ci: bool = True
             
             if has_threshold_ci and has_slope_ci:
                 # Lower bound scenario (more pessimistic)
-                lower_scenario_id = f"{row['model']}_{row['scenario']}_lower"
                 lower_forecast = AbilityForecast(
                     date=pd.to_datetime(row['date']),
                     threshold=float(row['threshold_ci_upper']),  # Higher threshold = harder problems
@@ -137,10 +100,14 @@ def expand_ability_forecasts(abilities_df: pd.DataFrame, include_ci: bool = True
                     scenario=f"{row['scenario']}_lower_ci",
                     model=row['model']
                 )
-                expanded_forecasts[lower_scenario_id] = lower_forecast
+                ability_variants.append({
+                    'forecast': lower_forecast,
+                    'variant_type': 'lower',
+                    'base_id': base_id,
+                    'variant_id': f"{base_id}_lower"
+                })
                 
                 # Upper bound scenario (more optimistic)
-                upper_scenario_id = f"{row['model']}_{row['scenario']}_upper"
                 upper_forecast = AbilityForecast(
                     date=pd.to_datetime(row['date']),
                     threshold=float(row['threshold_ci_lower']),  # Lower threshold = easier problems
@@ -148,35 +115,45 @@ def expand_ability_forecasts(abilities_df: pd.DataFrame, include_ci: bool = True
                     scenario=f"{row['scenario']}_upper_ci",
                     model=row['model']
                 )
-                expanded_forecasts[upper_scenario_id] = upper_forecast
+                ability_variants.append({
+                    'forecast': upper_forecast,
+                    'variant_type': 'upper',
+                    'base_id': base_id,
+                    'variant_id': f"{base_id}_upper"
+                })
     
-    return expanded_forecasts
+    return ability_variants
 
-def expand_cost_trends(costs_df: pd.DataFrame, include_ci: bool = True) -> Dict[str, Dict[str, float]]:
+def expand_cost_trends(costs_df: pd.DataFrame, include_ci: bool = True) -> List[Dict[str, Any]]:
     """
-    Expand cost trends to include confidence interval scenarios.
+    Expand cost trends to include confidence interval scenarios with explicit metadata.
     
     Args:
         costs_df: DataFrame with cost trends including confidence intervals
         include_ci: Whether to include confidence interval scenarios
         
     Returns:
-        Dictionary mapping scenario IDs to cost parameters
+        List of dictionaries with cost parameters, variant_type, base_id, and variant_id
     """
-    expanded_costs = {}
+    cost_variants = []
     
     # Process each cost trend
     for _, row in costs_df.iterrows():
         model = row['model']
+        base_id = model
         
         # Base scenario with median values
-        base_scenario_id = f"{model}_base"
-        base_cost = {
+        base_cost_params = {
             'doubling_rate': float(row['doubling_rate']),
             'intercept': float(row['intercept']),
             'model': model,
         }
-        expanded_costs[base_scenario_id] = base_cost
+        cost_variants.append({
+            'cost_params': base_cost_params,
+            'variant_type': 'base',
+            'base_id': base_id,
+            'variant_id': f"{base_id}_base"
+        })
 
         # Add confidence interval scenarios if configured and available
         if include_ci:
@@ -186,24 +163,32 @@ def expand_cost_trends(costs_df: pd.DataFrame, include_ci: bool = True) -> Dict[
             
             if has_ci:
                 # Lower bound scenario (more expensive)
-                lower_scenario_id = f"{model}_lower"
-                lower_cost = {
+                lower_cost_params = {
                     'doubling_rate': float(row['doubling_rate_ci_lower']),  # Lower doubling rate = costs grow faster
                     'intercept': float(row['intercept']),
                     'model': f"{model}_lower_ci",
                 }
-                expanded_costs[lower_scenario_id] = lower_cost
+                cost_variants.append({
+                    'cost_params': lower_cost_params,
+                    'variant_type': 'lower',
+                    'base_id': base_id,
+                    'variant_id': f"{base_id}_lower"
+                })
                 
                 # Upper bound scenario (less expensive)
-                upper_scenario_id = f"{model}_upper"
-                upper_cost = {
+                upper_cost_params = {
                     'doubling_rate': float(row['doubling_rate_ci_upper']),  # Higher doubling rate = costs grow slower
                     'intercept': float(row['intercept']),
                     'model': f"{model}_upper_ci",
                 }
-                expanded_costs[upper_scenario_id] = upper_cost
+                cost_variants.append({
+                    'cost_params': upper_cost_params,
+                    'variant_type': 'upper',
+                    'base_id': base_id,
+                    'variant_id': f"{base_id}_upper"
+                })
     
-    return expanded_costs
+    return cost_variants
 
 def define_resource_scenarios(config: EvaluationConfig) -> List[ResourceConstraint]:
     """
@@ -280,6 +265,66 @@ def define_resource_scenarios(config: EvaluationConfig) -> List[ResourceConstrai
     
     return scenarios
 
+def generate_evaluation_scenarios(
+    abilities_df: pd.DataFrame, 
+    costs_df: pd.DataFrame,
+    config: EvaluationConfig
+) -> List[EvaluationScenario]:
+    """
+    Generate all combinations of evaluation scenarios.
+    
+    Args:
+        abilities_df: DataFrame with ability forecasts
+        costs_df: DataFrame with cost trends
+        config: Evaluation configuration
+    
+    Returns:
+        List of EvaluationScenario objects
+    """
+    # Convert date columns to datetime if needed
+    if 'date' in abilities_df.columns:
+        abilities_df["date"] = pd.to_datetime(abilities_df["date"])
+    
+    # Get resource constraints from config
+    constraints = define_resource_scenarios(config)
+    
+    # Expand ability and cost forecasts based on config with explicit metadata
+    ability_variants = expand_ability_forecasts(
+        abilities_df, 
+        include_ci=config.scenario_generation.get("include_ci_scenarios", True)
+    )
+    cost_variants = expand_cost_trends(
+        costs_df,
+        include_ci=config.scenario_generation.get("include_ci_scenarios", True)
+    )
+    
+    # Generate all scenario combinations with explicit variant metadata
+    scenarios = []
+    
+    for ability_variant in ability_variants:
+        for cost_variant in cost_variants:
+            for constraint in constraints:
+                budget_fraction = float(constraint.values)
+                
+                # Create scenario with all fields including variant metadata
+                scenario = EvaluationScenario(
+                    ability=ability_variant['forecast'],
+                    doubling_rate=cost_variant['cost_params']['doubling_rate'],
+                    intercept=cost_variant['cost_params']['intercept'],
+                    budget_fraction=budget_fraction,
+                    ability_id=ability_variant['variant_id'],
+                    cost_id=cost_variant['variant_id'],
+                    constraint_id=constraint.name,
+                    cost_model=cost_variant['cost_params']['model'],
+                    ability_variant=ability_variant['variant_type'],
+                    cost_variant=cost_variant['variant_type'],
+                    base_ability_id=ability_variant['base_id'],
+                    base_cost_id=cost_variant['base_id']
+                )
+                scenarios.append(scenario)
+    
+    return scenarios
+
 def calculate_evaluation_window(threshold: float, slope: float) -> Tuple[float, float]:
     """
     Calculate evaluation window that covers ~80% of the logistic curve.
@@ -321,6 +366,9 @@ def calculate_evaluation_window(threshold: float, slope: float) -> Tuple[float, 
     logging.debug(f"Window calculation: threshold={threshold}, slope={slope}, "
                   f"result: lower={lower_bound}, upper={upper_bound}")
     
+    if lower_bound > upper_bound:
+        logging.warning(f"Window bounds reversed: lower={lower_bound}, upper={upper_bound}.")
+
     return lower_bound, upper_bound
 
 def calculate_mean_cost(lower_bound: float, upper_bound: float, doubling_rate: float) -> float:
@@ -353,29 +401,6 @@ def calculate_mean_cost(lower_bound: float, upper_bound: float, doubling_rate: f
     
     mean_cost = (term1 - term2) * (doubling_rate / window_width) / np.log(2)
     return mean_cost
-
-def create_task_sampler(sampler_type: TaskSamplerType = TaskSamplerType.UNIFORM, **kwargs) -> TaskSampler:
-    """
-    Create a task sampler of the specified type.
-    
-    Args:
-        sampler_type: Type of sampler to create
-        **kwargs: Additional parameters for the specific sampler type
-        
-    Returns:
-        TaskSampler instance
-    """
-    if sampler_type == TaskSamplerType.UNIFORM:
-        return UniformTaskSampler(sampler_type=sampler_type)
-    elif sampler_type == TaskSamplerType.NORMAL:
-        return NormalTaskSampler(
-            sampler_type=sampler_type,
-            mean_offset=kwargs.get("mean_offset", 0.0),
-            std_dev_factor=kwargs.get("std_dev_factor", 0.3)
-        )
-    else:
-        raise ValueError(f"Unsupported sampler type: {sampler_type}")
-
 
 def _apply_budget_scaling(base_value: float, budget_gap: float, scaling_type: str, scaling_params: Dict[str, float]) -> float:
     """
@@ -425,17 +450,9 @@ def _apply_budget_scaling(base_value: float, budget_gap: float, scaling_type: st
     else:
         raise ValueError(f"Unknown scaling type: {scaling_type}. Must be one of: constant, linear, exponential, power_law, logistic")
 
-
-def define_elicitation_bias(bias_config: ElicitationBiasConfig, scenario: EvaluationScenario) -> Dict[str, Any]:
+def define_elicitation_bias(scenario: EvaluationScenario, config: EvaluationConfig) -> CalculatedElicitationBias:
     """
     Define elicitation bias parameters based on configuration and budget scenario.
-    
-    Args:
-        bias_config: Elicitation bias configuration
-        scenario: Evaluation scenario containing budget and cost information
-        
-    Returns:
-        Dictionary with elicitation bias parameters
     """
     # Placeholder for actual elicitation bias logic
     
@@ -492,65 +509,35 @@ def define_elicitation_bias(bias_config: ElicitationBiasConfig, scenario: Evalua
     # sensitivity rate is constant past the ability threhsold and depends
     # linearly on the resource gap.
     
-    if not bias_config.enabled:
-        return {
-            "elicitation_bias_enabled": False,
-            "elicitation_bias_type": None,
-            "elicitation_bias_args": None,
-        }
+    bias_config = config.elicitation_bias_config
     
-    # Handle file-based configuration
-    if isinstance(bias_config.source, str):
+    # Use the bias type and parameters from the schema directly
+    bias_type = bias_config.bias_type.value
+    args = list(bias_config.parameters)
+    
+    # Handle file-based configuration if provided
+    if bias_config.source_file:
         try:
-            with open(bias_config.source, 'r') as f:
-                source_config = json.load(f)
+            with open(bias_config.source_file, 'r') as f:
+                file_config = json.load(f)
                 
-            # Validate required fields for file-based config
-            if "type" not in source_config:
-                raise ValueError(f"Elicitation bias config missing required 'type' field in {bias_config.source}")
-            if "args" not in source_config:
-                raise ValueError(f"Elicitation bias config missing required 'args' field in {bias_config.source}")
+            # Override with file configuration if available
+            if "type" in file_config:
+                bias_type = file_config["type"]
+            if "args" in file_config:
+                args = file_config["args"]
                 
         except (FileNotFoundError, json.JSONDecodeError) as e:
-            logging.warning(f"Could not load elicitation bias config from {bias_config.source}: {e}")
-            # Fall back to default
-            source_config = {"type": "fall_past_threshold", "args": [0.5]}
-    else:
-        source_config = bias_config.source
+            logging.warning(f"Could not load elicitation bias config from {bias_config.source_file}: {e}")
+            # Continue with schema-based configuration
+    
+    # Handle budget-dependent bias scaling
     
     # Validate bias type
     from .schemas import ElicitationBiasType
     valid_types = [e.value for e in ElicitationBiasType]
-    bias_type = source_config.get("type")
     if bias_type not in valid_types:
         raise ValueError(f"Invalid elicitation bias type: {bias_type}. Must be one of {valid_types}")
-    
-    # Handle budget-dependent bias scaling
-    args = source_config.get("args", [])
-    
-    if source_config.get("budget_dependent", False):
-        # Calculate budget gap: 1.0 = no budget (100% gap), 0.0 = full budget (no gap)
-        budget_gap = 1.0 - scenario.budget_fraction
-        
-        # Get budget scaling configuration
-        budget_scaling = source_config.get("budget_scaling", {})
-        
-        # Apply functional scaling to each parameter
-        scaled_args = []
-        for i, base_value in enumerate(args):
-            param_name = f"param_{i}"
-            if param_name in budget_scaling:
-                param_config = budget_scaling[param_name]
-                scaling_type = param_config.get("type", "constant")
-                scaling_params = param_config.get("params", {})
-                
-                scaled_value = _apply_budget_scaling(base_value, budget_gap, scaling_type, scaling_params)
-                scaled_args.append(scaled_value)
-            else:
-                # No scaling for this parameter, use base value
-                scaled_args.append(base_value)
-        
-        args = scaled_args
     
     # Validate argument counts for each bias type
     if bias_type == "fall_past_threshold" and len(args) != 1:
@@ -560,59 +547,52 @@ def define_elicitation_bias(bias_config: ElicitationBiasConfig, scenario: Evalua
     elif bias_type == "logistic" and len(args) != 2:
         raise ValueError(f"logistic bias type requires exactly 2 arguments, got {len(args)}")
     
-    return {
-        "elicitation_bias_enabled": True,
-        "elicitation_bias_type": bias_type,
-        "elicitation_bias_args": args,
-    }
-
-def define_alternate_ability_params(ability_config: AlternateAbilityConfig) -> Dict[str, Any]:
-    """
-    Define alternate ability function parameters based on configuration.
-    
-    Determines if we are using an alternative function to represent the
-    true ability, i.e. even though we forecast a logistic curve, what if
-    the true ability is instead a different function.
-    
-    Args:
-        ability_config: Alternate ability configuration
+    if bias_config.budget_dependent:
+        # Calculate budget gap: 1.0 = no budget (100% gap), 0.0 = full budget (no gap)
+        budget_gap = 1.0 - scenario.budget_fraction
         
-    Returns:
-        Dictionary with alternate ability parameters
-    """
-    if not ability_config.enabled:
-        return {
-            "alternate_ability_enabled": False,
-            "alternate_ability_type": None,
-            "alternate_ability_args": None,
-        }
+        # Get budget scaling configuration
+        budget_scaling = bias_config.budget_scaling
+
+        # Apply functional scaling to each parameter
+        scaled_args = []
+        for i, base_value in enumerate(args):
+            param_name = f"param_{i}"
+            if param_name in budget_scaling:
+                param_config = budget_scaling[param_name]
+                scaling_type = param_config.get("type", "constant")
+                scaling_params = param_config.get("params", {})
+                # Apply budget scaling function
+                scaled_value = _apply_budget_scaling(base_value, budget_gap, scaling_type, scaling_params)
+                scaled_args.append(scaled_value)
+            else:
+                # No scaling for this parameter, use base value
+                scaled_args.append(base_value)
+        
+        args = scaled_args
     
-    # Validate function type
-    from .schemas import AlternateAbilityType
-    valid_types = [e.value for e in AlternateAbilityType]
-    if ability_config.function_type not in valid_types:
-        raise ValueError(f"Invalid alternate ability function type: {ability_config.function_type}. Must be one of {valid_types}")
-    
-    return {
-        "alternate_ability_enabled": True,
-        "alternate_ability_type": ability_config.function_type,
-        "alternate_ability_args": ability_config.parameters,
-    }
+    return CalculatedElicitationBias(
+        enabled=bias_config.enabled,
+        bias_type=bias_type,
+        name=bias_config.name,
+        source_file=bias_config.source_file,
+        parameters=bias_config.parameters,
+        args=args
+    )
 
 def calculate_evaluation_forecast(
     scenario: EvaluationScenario,
-    design: EvaluationDesign,
     config: EvaluationConfig
-) -> Dict[str, Any]:
+) -> EvaluationForecast:
     """
-    Calculate evaluation forecast parameters under given constraints.
+    Calculate evaluation forecast with full design and bias/ability processing.
     
     Args:
         scenario: Evaluation scenario with ability, cost, and budget parameters
-        design: Evaluation design parameters (sampling, adjustment method, etc.)
+        config: Evaluation configuration with design parameters and bias/ability configs
         
     Returns:
-        EvaluationForecast data
+        Complete EvaluationForecast object
     """
     # Calculate base evaluation window from ability parameters
     lower_bound, upper_bound = calculate_evaluation_window(
@@ -639,7 +619,7 @@ def calculate_evaluation_forecast(
     
     # Calculate total samples and cost for gold standard
     window_width = upper_bound - lower_bound
-    total_samples = math.ceil(window_width) * design.repeats_per_unit
+    total_samples = math.ceil(window_width) * config.repeats_per_unit
     gold_standard_cost = total_samples * mean_cost
     
     # Calculate available budget
@@ -659,27 +639,27 @@ def calculate_evaluation_forecast(
     else:
         try:
             # Partial budget - adjust according to method
-            if design.adjustment_method == WindowAdjustmentMethod.UPPER_BOUND:
+            if config.adjustment_method == WindowAdjustmentMethod.UPPER_BOUND:
                 # Adjust only the upper bound
                 if scenario.doubling_rate == 0:
                     # Avoid division by zero
                     adjusted_upper = lower_bound + (window_width * scenario.budget_fraction)
                 else:
-                    term1 = (available_budget * np.log(2)) / (design.repeats_per_unit * scenario.doubling_rate)
+                    term1 = (available_budget * np.log(2)) / (config.repeats_per_unit * scenario.doubling_rate)
                     term2 = 2.0 ** (lower_bound / scenario.doubling_rate)
                     adjusted_upper = scenario.doubling_rate * np.log2(term1 + term2)
                 
                 # Ensure we don't exceed the original upper bound
                 adjusted_upper = min(adjusted_upper, upper_bound)
                 
-            elif design.adjustment_method == WindowAdjustmentMethod.BOTH_BOUNDS:
+            elif config.adjustment_method == WindowAdjustmentMethod.BOTH_BOUNDS:
                 # Adjust both bounds to maintain the center point
                 center_point = (upper_bound + lower_bound) / 2
                 affordable_width = (window_width * scenario.budget_fraction)
                 
                 # Check if we're using cost-based scaling
                 if mean_cost > 0:
-                    affordable_width = (available_budget * np.log(2)) / (design.repeats_per_unit * mean_cost)
+                    affordable_width = (available_budget * np.log(2)) / (config.repeats_per_unit * mean_cost)
                 
                 half_width = min(affordable_width / 2, (upper_bound - lower_bound) / 2)
                 adjusted_lower = center_point - half_width
@@ -690,7 +670,7 @@ def calculate_evaluation_forecast(
         except Exception as e:
             logging.error(f"Error adjusting window: {e}. Using original window.")
             # Fall back to original window or simple scaling
-            if design.adjustment_method == WindowAdjustmentMethod.UPPER_BOUND:
+            if config.adjustment_method == WindowAdjustmentMethod.UPPER_BOUND:
                 adjusted_upper = lower_bound + (window_width * scenario.budget_fraction)
     
     # Final safety check - ensure window is properly ordered
@@ -701,92 +681,42 @@ def calculate_evaluation_forecast(
     
     # Calculate adjusted width and samples
     adjusted_width = max(0, adjusted_upper - adjusted_lower)
-    adjusted_samples = int(design.repeats_per_unit * adjusted_width)
+    adjusted_samples = int(config.repeats_per_unit * adjusted_width)
     
     # For SAMPLE_BASED method, scale the samples directly
-    if design.adjustment_method == WindowAdjustmentMethod.SAMPLE_BASED and scenario.budget_fraction > 0:
+    if config.adjustment_method == WindowAdjustmentMethod.SAMPLE_BASED and scenario.budget_fraction > 0:
         adjusted_samples = int(total_samples * scenario.budget_fraction)
-    
-    design_id = f"{design.sampler_type.value}_{design.adjustment_method.value}_repeats_{design.repeats_per_unit}"
-    
-    # Extract ability and cost variants from their IDs
-    ability_variant = "unknown"
-    base_ability_id = ""
-    if scenario.ability_id.endswith("_base"):
-        ability_variant = "base"
-        base_ability_id = scenario.ability_id[:-5]  # Remove "_base" suffix
-    elif scenario.ability_id.endswith("_lower"):
-        ability_variant = "lower"
-        base_ability_id = scenario.ability_id[:-6]  # Remove "_lower" suffix
-    elif scenario.ability_id.endswith("_upper"):
-        ability_variant = "upper"
-        base_ability_id = scenario.ability_id[:-6]  # Remove "_upper" suffix
-    
-    cost_variant = "unknown"
-    base_cost_id = ""
-    if scenario.cost_id.endswith("_base"):
-        cost_variant = "base"
-        base_cost_id = scenario.cost_id[:-5]  # Remove "_base" suffix
-    elif scenario.cost_id.endswith("_lower"):
-        cost_variant = "lower"
-        base_cost_id = scenario.cost_id[:-6]  # Remove "_lower" suffix
-    elif scenario.cost_id.endswith("_upper"):
-        cost_variant = "upper"
-        base_cost_id = scenario.cost_id[:-6]  # Remove "_upper" suffix
-    
-    # Create the evaluation forecast with all parameters for complete tracking
-    forecast_data = {
-        "ability": scenario.ability,
-        "budget_fraction": scenario.budget_fraction,
-        "budget_scenario": scenario.scenario_id,
-        "window_lower": adjusted_lower,
-        "window_upper": adjusted_upper,
-        "sampler_type": design.sampler_type,
-        "total_samples": adjusted_samples,
-        "gold_standard_cost": gold_standard_cost,
-        "available_budget": available_budget,
-        "adjustment_method": design.adjustment_method,
-        # Include original window for reference
-        "original_window_lower": lower_bound,
-        "original_window_upper": upper_bound,
-        # Include design parameters
-        "repeats_per_unit": design.repeats_per_unit,
-        # Include cost model info
-        "cost_model": scenario.cost_model,
-        "doubling_rate": scenario.doubling_rate,
-        # Include IDs for tracking
-        "ability_id": scenario.ability_id,
-        "cost_id": scenario.cost_id,
-        "constraint_id": scenario.constraint_id,
-        "design_id": design_id,
-        # Add variant information
-        "ability_variant": ability_variant,
-        "cost_variant": cost_variant,
-        "base_ability_id": base_ability_id,
-        "base_cost_id": base_cost_id
-    }
-    
-    return forecast_data
 
-def generate_task_samples(forecast: EvaluationForecast) -> np.ndarray:
-    """
-    Generate task difficulty samples for a given forecast.
+    # Calculate elicitation bias and alternate ability using existing functions
+    calculated_elicitation_bias = define_elicitation_bias(scenario, config)
     
-    Args:
-        forecast: EvaluationForecast object
-        
-    Returns:
-        Array of task difficulty samples
-    """
-    if forecast.total_samples <= 0:
-        return np.array([])
+    # Create EvaluationDesign with all calculated results
+    design = EvaluationDesign(
+        sampler_type=config.sampler_type,
+        adjustment_method=config.adjustment_method,
+        repeats_per_unit=config.repeats_per_unit,
+        sampler_params=config.sampler_params,
+        window_lower=adjusted_lower,
+        window_upper=adjusted_upper,
+        total_samples=adjusted_samples,
+        gold_standard_cost=gold_standard_cost,
+        available_budget=available_budget,
+        original_window_lower=lower_bound,
+        original_window_upper=upper_bound,
+        elicitation_bias=calculated_elicitation_bias,
+        alternate_ability=config.alternate_ability
+    )
     
-    sampler = create_task_sampler(forecast.sampler_type)
+    # Generate hash-based IDs
+    scenario_id = generate_content_hash(scenario.model_dump(), "scenario")
+    design_id = generate_content_hash(design.model_dump(), "design")
     
-    return sampler.sample(
-        forecast.total_samples, 
-        forecast.window_lower, 
-        forecast.window_upper
+    # Create and return complete EvaluationForecast
+    return EvaluationForecast(
+        scenario_id=scenario_id,
+        design_id=design_id,
+        scenario=scenario,
+        design=design
     )
 
 def discretize_task_allocation(forecast: EvaluationForecast) -> Dict[int, int]:
@@ -835,266 +765,96 @@ def discretize_task_allocation(forecast: EvaluationForecast) -> Dict[int, int]:
             
     return task_allocations
 
-def generate_evaluation_scenarios(
-    abilities_df: pd.DataFrame, 
-    costs_df: pd.DataFrame,
-    config: EvaluationConfig
-) -> List[EvaluationScenario]:
-    """
-    Generate all combinations of evaluation scenarios.
-    
-    Args:
-        abilities_df: DataFrame with ability forecasts
-        costs_df: DataFrame with cost trends
-        config: Evaluation configuration
-    
-    Returns:
-        List of EvaluationScenario objects
-    """
-    # Convert date columns to datetime if needed
-    if 'date' in abilities_df.columns:
-        abilities_df["date"] = pd.to_datetime(abilities_df["date"])
-    
-    # Get resource constraints from config
-    constraints = define_resource_scenarios(config)
-    
-    # Expand ability and cost forecasts based on config
-    expanded_abilities = expand_ability_forecasts(
-        abilities_df, 
-        include_ci=config.scenario_generation.get("include_ci_scenarios", True)
-    )
-    expanded_costs = expand_cost_trends(
-        costs_df,
-        include_ci=config.scenario_generation.get("include_ci_scenarios", True)
-    )
-    # Filter for base cost scenarios
-    cost_models = [model for model in expanded_costs.keys()]
-    
-    # Generate all scenario combinations
-    scenarios = []
-    
-    for ability_id, ability_forecast in expanded_abilities.items():
-        for cost_id in cost_models:
-            cost_params = expanded_costs[cost_id]
-            doubling_rate = cost_params['doubling_rate']
-            
-            for constraint in constraints:
-                budget_fraction = float(constraint.values)
-                
-                # Create unique scenario ID
-                scenario_id = f"{ability_id}_{cost_id}_{constraint.name}"
-                
-                # Create scenario
-                scenario = EvaluationScenario(
-                    ability=ability_forecast,
-                    doubling_rate=doubling_rate,
-                    budget_fraction=budget_fraction,
-                    scenario_id=scenario_id,
-                    ability_id=ability_id,
-                    cost_id=cost_id,
-                    constraint_id=constraint.name,
-                    cost_model=cost_params['model']
-                )
-                scenarios.append(scenario)
-    
-    return scenarios
-
-def calculate_forecasts_for_all_combinations(
-    abilities_df: pd.DataFrame, 
-    costs_df: pd.DataFrame,
-    config: EvaluationConfig
-) -> List[EvaluationForecast]:
-    """
-    Calculate evaluation forecasts for all combinations of ability forecasts and cost trends.
-    
-    Args:
-        abilities_df: DataFrame with ability forecasts
-        costs_df: DataFrame with cost trends
-        config: Evaluation configuration
-    
-    Returns:
-        List of EvaluationForecast objects
-    """
-    # Generate all evaluation scenarios
-    scenarios = generate_evaluation_scenarios(abilities_df, costs_df, config)
-    logging.info(f"Generated {len(scenarios)} evaluation scenarios")
-    
-    # Define evaluation designs based on config
-    sampler_types = [
-        TaskSamplerType(s) for s in 
-        config.evaluation_design.get("sampler_types", ["uniform", "normal"])
-    ]
-    
-    adjustment_methods = [
-        WindowAdjustmentMethod(m) for m in 
-        config.evaluation_design.get("adjustment_methods", ["upper_bound", "sample_based"])
-    ]
-    
-    logging.info(f"Using sampler types: {sampler_types}")
-    logging.info(f"Using adjustment methods: {adjustment_methods}")
-    
-    repeats_per_unit = config.evaluation_design.get("repeats_per_unit", 20)
-    
-    # Create all evaluation design combinations
-    designs = [
-        EvaluationDesign(
-            sampler_type=sampler_type,
-            adjustment_method=adjustment_method,
-            repeats_per_unit=repeats_per_unit,
-            sampler_params=config.evaluation_design.get("sampler_params", {}).get(sampler_type.value, {})
-        )
-        for sampler_type in sampler_types
-        for adjustment_method in adjustment_methods
-    ]
-    
-    # Calculate forecasts for each scenario and design combination
-    all_forecasts = []
-    
-    for i, scenario in enumerate(scenarios):
-        for design in designs:
-            try:
-                forecast_data = calculate_evaluation_forecast(scenario, design, config)
-                for j in range(len(config.elicitation_bias_configs)):
-                    for k in range(len(config.alternate_ability_configs)):
-                        elicitation_params = define_elicitation_bias(config.elicitation_bias_configs[j], scenario)
-                        alternate_ability_params = define_alternate_ability_params(config.alternate_ability_configs[k])
-
-                        # Add additional parameters if available
-                        forecast_data = {**forecast_data,
-                                        **alternate_ability_params,
-                                        **elicitation_params}
-                        forecast = EvaluationForecast(**forecast_data)
-                        all_forecasts.append(forecast)
-                
-                # Log progress periodically
-                if i % 100 == 0:
-                    logging.debug(f"Processed {i} scenarios out of {len(scenarios)}")
-                    
-            except Exception as e:
-                logging.error(f"Error calculating forecast for scenario {scenario.scenario_id}: {e}")
-    
-    return all_forecasts
-
-def extract_unnested_dict(record:dict, key:str) -> Dict[str, Any]:
-    """Extract an unnested dictionary and flatten."""
-    if isinstance(record, dict) and key in record:
-        record = record.copy()
-        for k, v in record[key].items():
-            record[f"{key}_{k}"] = v
-        record.pop(key)
-    return record
-        
 def save_forecasts(forecasts: List[EvaluationForecast],
-                   output_path: str,
-                   config: EvaluationConfig):
+                   output_path: str):
     """
-    Save evaluation forecasts to CSV file with complete data fields.
+    Save evaluation forecasts to file with complete data fields.
     
     Args:
         forecasts: List of evaluation forecast objects
-        output_path: Path to output CSV file
+        output_path: Path to output file
         config: Evaluation configuration
     """
-    # Flatten nested objects for CSV format
-    flat_records = []
-    for forecast in forecasts:
-        # Convert the forecast to a dictionary
-        record = forecast.model_dump()
-        # Extract simple nested objects and flatten them
-        record = extract_unnested_dict(record, "ability")
-        # record = extract_unnested_dict(record, "elicitation_bias_args")
-        # record = extract_unnested_dict(record, "alternative_ability_args")
-        flat_records.append(record)
-    
-    # Convert to DataFrame
-    df = pd.DataFrame(flat_records)
-    
-    # Add sanity check columns
-    df["window_width"] = df["window_upper"] - df["window_lower"]
-    df["original_window_width"] = df["original_window_upper"] - df["original_window_lower"]
-    df["width_ratio"] = df["window_width"] / df["original_window_width"]
-    
-    # Sort columns for better readability
-    priority_cols = [
-        "budget_scenario", "ability_id", "ability_model", "ability_scenario", "cost_model", "budget_fraction",
-        "ability_threshold", "ability_slope", "constraint_id", "cost_id", "doubling_rate",
-        "window_lower", "window_upper", "window_width",
-        "original_window_lower", "original_window_upper", "original_window_width",
-        "adjustment_method", "sampler_type"
-    ]
-    
-    # Reorder columns, putting priority columns first
-    existing_cols = set(df.columns)
-    col_order = [col for col in priority_cols if col in existing_cols]
-    col_order.extend([col for col in df.columns if col not in col_order])
-    df = df[col_order]
-    
-    # If specified, include diagnostic data
-    if config.save_detailed_json:
-        # Save a detailed JSON with all data
-        json_path = output_path.replace('.csv', '_detailed.json')
-        with open(json_path, 'w') as f:
-            json.dump([forecast.model_dump() for forecast in forecasts], f, 
-                     default=str, indent=2)
-        logging.info(f"Saved detailed forecast data to {json_path}")
-    
+
     # Ensure output directory exists
     os.makedirs(os.path.dirname(output_path), exist_ok=True)
-    
-    # Save to CSV
-    df.to_csv(output_path, index=False)
-    logging.info(f"Saved {len(df)} forecast records to {output_path}")
-    
-    # Report any potential issues
-    n_invalid_width = sum(df["window_width"] <= 0)
-    if n_invalid_width > 0:
-        logging.warning(f"Found {n_invalid_width} records with invalid window width (≤0)")
-        
-    n_reversed = sum(df["window_lower"] > df["window_upper"])
-    if n_reversed > 0:
-        logging.warning(f"Found {n_reversed} records with reversed window bounds")
+    with open(output_path, 'w') as f:
+        json.dump([f.model_dump() for f in forecasts], f, cls=data_utils.CombinedEncoder, indent=2)
+    logging.info(f"Saved {len(forecasts)} forecast records to {output_path}")
 
 def main():
     """Main entry point."""
     args = parse_args()
     
-    # Load configuration if provided, otherwise use defaults
-    if args.config:
-        with open(args.config, 'r') as f:
-            config_data = json.load(f)
-        config = EvaluationConfig(**config_data)
-    else:
-        config = EvaluationConfig()
-
     # Configure logging
     log_level = logging.DEBUG if args.debug else logging.INFO
     data_utils.configure_logging_console(level=log_level)
     
-        
-    logging.info(f"Using configuration: {config.model_dump_json(indent=2)}")
-
+    # Load input data
     logging.info(f"Reading ability forecasts from {args.ability}")
     abilities_df = pd.read_csv(args.ability)
     
     logging.info(f"Reading cost trends from {args.cost}")
     costs_df = pd.read_csv(args.cost)
     
-    logging.info("Calculating evaluation forecasts for all combinations")
-    forecasts = calculate_forecasts_for_all_combinations(abilities_df, costs_df, config)
-    logging.info(f"Calculated {len(forecasts)} evaluation forecasts")
+    # Load and expand configurations to list
+    if args.sweep_config:
+        logging.info("Running in parameter sweep mode")
+        with open(args.sweep_config, 'r') as f:
+            sweep_config_data = json.load(f)
+        run_configs = expand_sweep_config(sweep_config_data)
+        logging.info(f"Generated {len(run_configs)} individual run configurations")
+    else:
+        logging.info("Running in single configuration mode")
+        with open(args.config, 'r') as f:
+            config_data = json.load(f)
+        run_configs = [config_data]
     
+    # Process all configurations
+    forecasts = []
+    for i, run_config_data in enumerate(run_configs):
+        logging.debug(f"Processing configuration {i+1}/{len(run_configs)}")
+        
+        # Clean and create EvaluationConfig (remove _sweep_metadata)
+        config_data = {k: v for k, v in run_config_data.items() if k != '_sweep_metadata'}
+        config = EvaluationConfig(**config_data)
+        
+        # Generate scenarios for this config
+        scenarios = generate_evaluation_scenarios(abilities_df, costs_df, config)
+        logging.debug(f"Generated {len(scenarios)} scenarios for this configuration")
+        
+        # Process all scenarios
+        for scenario in scenarios:
+            try:
+                forecast = calculate_evaluation_forecast(scenario, config)
+                forecasts.append(forecast)
+            except Exception as e:
+                logging.error(f"Error calculating forecast for scenario {scenario.ability_id}_{scenario.cost_id}_{scenario.constraint_id}: {e}")
+        
+        if (i + 1) % 10 == 0 or len(run_configs) == 1:
+            logging.info(f"Processed {i+1} configurations, generated {len(forecasts)} forecasts so far")
+    
+    logging.info(f"Calculated {len(forecasts)} total evaluation forecasts")
+    
+    # Save all results
     logging.info(f"Saving evaluation forecasts to {args.out}")
-    save_forecasts(forecasts, args.out, config)
+    save_forecasts(forecasts, args.out)
     
     # Provide summary statistics
     df = pd.DataFrame([f.model_dump() for f in forecasts])
     logging.info(f"Summary statistics:")
     logging.info(f"  Total forecasts: {len(df)}")
-    logging.info(f"  Unique forecasts: {df['budget_scenario'].nunique()}")
-    logging.info(f"  Number of ability models: {df['ability_id'].nunique()}")
-    logging.info(f"  Number of cost models: {df['cost_id'].nunique()}")
-    logging.info(f"  Number of constraints: {df['constraint_id'].nunique()}")
-    logging.info(f"  Number of designs: {df['design_id'].nunique()}")
+    
+    if 'budget_scenario' in df.columns:
+        logging.info(f"  Unique budget scenarios: {df['budget_scenario'].nunique()}")
+    if 'ability_id' in df.columns:
+        logging.info(f"  Number of ability models: {df['ability_id'].nunique()}")
+    if 'cost_id' in df.columns:
+        logging.info(f"  Number of cost models: {df['cost_id'].nunique()}")
+    if 'constraint_id' in df.columns:
+        logging.info(f"  Number of constraints: {df['constraint_id'].nunique()}")
+    if 'design_id' in df.columns:
+        logging.info(f"  Number of designs: {df['design_id'].nunique()}")
     
     logging.info("Complete")
 

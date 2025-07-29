@@ -41,20 +41,20 @@ stages:
 
   forecast_evaluation:
     wdir: ..
-    cmd: python -m src.forecast_evaluation --ability output/forecast_detection/ability_forecasts.csv --cost output/forecast_detection/cost_trends.csv --out output/forecast_detection/evaluation_forecasts.csv --config configs/forecast_detection/forecast_evaluation.json
+    cmd: python -m src.forecast_evaluation --ability output/forecast_detection/ability_forecasts.csv --cost output/forecast_detection/cost_trends.csv --out output/forecast_detection/evaluation_forecasts.json --config configs/forecast_detection/forecast_evaluation.json
     deps:
       - output/forecast_detection/ability_forecasts.csv
       - output/forecast_detection/cost_trends.csv
       - configs/forecast_detection/forecast_evaluation.json
       - src/forecast_evaluation.py
     outs:
-      - output/forecast_detection/evaluation_forecasts.csv
+      - output/forecast_detection/evaluation_forecasts.json
 
   forecast_simulation:
     wdir: ..
-    cmd: python -m src.forecast_simulation --in output/forecast_detection/evaluation_forecasts.csv --out output/forecast_detection/simulation_results.csv --raw output/forecast_detection/raw_simulation_results.h5 --config configs/forecast_detection/forecast_simulation.json
+    cmd: python -m src.forecast_simulation --in output/forecast_detection/evaluation_forecasts.json --out output/forecast_detection/simulation_results.csv --raw output/forecast_detection/raw_simulation_results.h5 --config configs/forecast_detection/forecast_simulation.json
     deps:
-      - output/forecast_detection/evaluation_forecasts.csv
+      - output/forecast_detection/evaluation_forecasts.json
       - src/forecast_simulation.py
       - configs/forecast_detection/forecast_simulation.json
       - src/simulation.py
@@ -94,9 +94,9 @@ stages:
 
   explore_evaluation_forecasts:
     wdir: ..
-    cmd: python -m src.tools.explore_evaluation_forecasts --input output/forecast_detection/evaluation_forecasts.csv --output reports/forecast_detection/evaluation_visualizations --font-size 24 --disable-titles
+    cmd: python -m src.tools.explore_evaluation_forecasts --input output/forecast_detection/evaluation_forecasts.json --output reports/forecast_detection/evaluation_visualizations --font-size 24 --disable-titles
     deps:
-      - output/forecast_detection/evaluation_forecasts.csv
+      - output/forecast_detection/evaluation_forecasts.json
       - src/tools/explore_evaluation_forecasts.py
     outs:
       - reports/forecast_detection/evaluation_visualizations

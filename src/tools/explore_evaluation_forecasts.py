@@ -3,6 +3,7 @@ Utilities for exploring and visualizing evaluation forecast data.
 """
 
 import argparse
+import json
 import matplotlib.pyplot as plt
 import matplotlib as mpl
 import numpy as np
@@ -988,7 +989,10 @@ def main():
     TITLE_ENABLED = not args.disable_titles
     
     print(f"Loading evaluation forecasts from {args.input}")
-    df = pd.read_csv(args.input)
+    with open(args.json, 'r') as f:
+        json_data = f.read()
+        data = json.loads(json_data)
+    df = pd.json_normalize(data, sep='_')
     
     # Convert date column to datetime if needed
     if "ability_date" in df.columns:

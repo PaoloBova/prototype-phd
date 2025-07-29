@@ -63,10 +63,10 @@ def generate_task_samples(
     """
     rng = np.random.RandomState(seed)
     
-    n_tasks = forecast.total_samples
-    window_lower = forecast.window_lower
-    window_upper = forecast.window_upper
-    sampler_type = forecast.sampler_type
+    n_tasks = forecast.design.total_samples
+    window_lower = forecast.design.window_lower
+    window_upper = forecast.design.window_upper
+    sampler_type = forecast.design.sampler_type
     
     if n_tasks <= 0:
         return np.array([])
@@ -124,12 +124,12 @@ def generate_success_outcomes(
     
     threshold = forecast.ability.threshold
     slope = forecast.ability.slope
-    elicitation_bias_enabled = forecast.elicitation_bias_enabled
-    elicitation_bias_type = forecast.elicitation_bias_type
-    elicitation_bias_args = forecast.elicitation_bias_args
-    alternate_ability_enabled = forecast.alternate_ability_enabled
-    alternate_ability_type = forecast.alternate_ability_type
-    alternate_ability_args = forecast.alternate_ability_args
+    elicitation_bias_enabled = forecast.design.elicitation_bias.enabled
+    elicitation_bias_type = forecast.design.elicitation_bias.bias_type
+    elicitation_bias_args = forecast.design.elicitation_bias.args
+    alternate_ability_enabled = forecast.design.alternate_ability.enabled
+    alternate_ability_type = forecast.design.alternate_ability.function_type
+    alternate_ability_args = forecast.design.alternate_ability.args
     
     # Calculate success probabilities
     if alternate_ability_enabled:
@@ -189,7 +189,7 @@ def generate_success_outcomes(
             # Linear decline based on task difficulty
             elicitation_threshold = elicitation_bias_args[0] if len(elicitation_bias_args) > 0 else 0.0
             elicitation_slope = elicitation_bias_args[1] if len(elicitation_bias_args) > 1 else 1.0
-            keep_probs = np.clip(1 - elicitation_slope * (task_difficulties - elicitation_threshold) / (forecast.window_upper - elicitation_threshold), 0, 1)
+            keep_probs = np.clip(1 - elicitation_slope * (task_difficulties - elicitation_threshold) / (forecast.design.window_upper - elicitation_threshold), 0, 1)
         elif elicitation_bias_type == "logistic":
             # Logistic decline based on task difficulty
             elicitation_threshold = elicitation_bias_args[0] if len(elicitation_bias_args) > 0 else 0.0
@@ -230,10 +230,10 @@ def run_simulation(
         base_outcomes = generate_success_outcomes(base_tasks, config, forecast)
         
         # Bootstrap from this fixed set
-        sample_size = config.sample_size if config.sample_size is not None else forecast.total_samples
+        sample_size = config.sample_size if config.sample_size is not None else forecast.design.total_samples
         
         for i in range(config.n_samples):
-            indices = rng.choice(forecast.total_samples, size=sample_size, replace=True)
+            indices = rng.choice(forecast.design.total_samples, size=sample_size, replace=True)
             tasks = base_tasks[indices]
             outcomes = base_outcomes[indices]
             
