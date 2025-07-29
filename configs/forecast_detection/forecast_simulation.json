@@ -37,8 +37,8 @@
     }
   },
   "output": {
-    "save_individual_simulations": false,
-    "save_convergence_stats": false
+    "save_individual_simulations": true,
+    "save_convergence_stats": true
   },
   "risk_thresholds": {
   "threshold": [10,20,30],
