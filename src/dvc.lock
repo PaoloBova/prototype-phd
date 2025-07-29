@@ -175,16 +175,16 @@ stages:
     deps:
     - path: configs/forecast_detection/forecast_simulation.json
       hash: md5
-      md5: d4edcf69e5ce6d63d298f0e18d9909ba
-      size: 957
+      md5: 320e9852ac379929aeafee289558a572
+      size: 956
     - path: output/forecast_detection/evaluation_forecasts.json
       hash: md5
       md5: 3de3e21f2dbb250b2b476b2c88130d6c
       size: 216321
     - path: src/forecast_simulation.py
       hash: md5
-      md5: 450c19316f4337d5a4d4942749a0b55c
-      size: 30945
+      md5: acee426ef8a38c3dd9c1b2b7ccc90128
+      size: 29862
     - path: src/schemas.py
       hash: md5
       md5: 4d8f34e7bf98683da670f67f29f50c34
@@ -196,12 +196,12 @@ stages:
     outs:
     - path: output/forecast_detection/raw_simulation_results.h5
       hash: md5
-      md5: 67e9e62765e9eeb57dd4092c034e640f
-      size: 3448688
+      md5: c7ed75fa46377e88601a719a55bc0562
+      size: 2020208
     - path: output/forecast_detection/simulation_results.csv
       hash: md5
-      md5: dcd4b56f45b369a4a95b0317da4aae67
-      size: 104400
+      md5: 098893de0d13c7e64dfeeabc20f4ce7e
+      size: 104389
   analyze_bias:
     cmd: python -m src.tools.analyze_bias --input output/forecast_detection/simulation_results.csv
       --output reports/bias_analysis --remove-outliers
@@ -231,8 +231,8 @@ stages:
       size: 1191
     - path: output/forecast_detection/raw_simulation_results.h5
       hash: md5
-      md5: 67e9e62765e9eeb57dd4092c034e640f
-      size: 3448688
+      md5: c7ed75fa46377e88601a719a55bc0562
+      size: 2020208
     - path: src/tools/explore_simulations.py
       hash: md5
       md5: 4690ebfd1421f3e41e0b6c2c0af01178
@@ -240,8 +240,8 @@ stages:
     outs:
     - path: reports/forecast_detection/exploration_results.csv
       hash: md5
-      md5: 6133afaeefaf98a0def761fa3e5e5dd5.dir
-      size: 3817579
+      md5: 293f6c53e393d5f725a16eb1e3cbd768.dir
+      size: 3837086
       nfiles: 15
   explore_logistic_fits:
     cmd: python -m src.tools.explore_logistic_fits --fits output/forecast_detection/logistic_fit_results.json
