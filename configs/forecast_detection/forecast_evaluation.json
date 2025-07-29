@@ -19,7 +19,7 @@
   },
   "scenario_generation": {
     "include_base_scenarios": true,
-    "include_ci_scenarios": true
+    "include_ci_scenarios": false
   },
   "save_detailed_json": false
 }

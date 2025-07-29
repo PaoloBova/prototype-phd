@@ -2,12 +2,7 @@
   "simulation": {
     "n_samples": 1000,
     "method": "monte_carlo",
-    "correlation_model": "none",
-    "correlation_strength": 0.0,
-    "seed": 42,
-    "elicitation_enabled": false,
-    "elicitation_threshold": 0.0,
-    "elicitation_slope": 1.0
+    "seed": 42
   },
   "methods_to_run": [
     "weighted_score",
@@ -42,8 +37,8 @@
     }
   },
   "output": {
-    "save_individual_simulations": true,
-    "save_convergence_stats": true
+    "save_individual_simulations": false,
+    "save_convergence_stats": false
   },
   "risk_thresholds": {
   "threshold": [10,20,30],
