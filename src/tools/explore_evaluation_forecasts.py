@@ -4,6 +4,7 @@ Utilities for exploring and visualizing evaluation forecast data.
 
 import argparse
 import json
+import logging
 import matplotlib.pyplot as plt
 import matplotlib as mpl
 import numpy as np
@@ -451,9 +452,9 @@ def plot_costs_over_time(df: pd.DataFrame, output_dir: str, fmt: str = "png"):
             # "scenario_ability_model",
             # "scenario_ability_scenario",
             "scenario_cost_model",
-            "design_id",
-            "ability_variant",
-            "cost_variant"
+            # "design_id",
+            "scenario_ability_variant",
+            "scenario_cost_variant"
         )
         if c in df.columns
     ]
@@ -465,11 +466,12 @@ def plot_costs_over_time(df: pd.DataFrame, output_dir: str, fmt: str = "png"):
     groups = df.groupby(key_cols)
     for key, grp in groups:
         if grp["scenario_ability_date"].nunique() < 2:
+            print(f"Skipping group {key} with only one date; not enough data for cost-over-time plot.")
             continue
         grp = grp.sort_values("scenario_ability_date")
         plt.figure(figsize=(10,6))
         # plot gold standard
-        gold = grp.groupby("scenario_ability_date")["gold_standard_cost"].first()
+        gold = grp.groupby("scenario_ability_date")["design_gold_standard_cost"].first()
         plt.plot(gold.index, gold.values, "k-o", label="Gold Standard")
         # plot each constraint
         for cid, sub in grp.groupby("scenario_constraint_id"):
@@ -1036,6 +1038,8 @@ def main():
     
     # Create output directory
     os.makedirs(args.output, exist_ok=True)
+    
+    print(f"Filtered from {original_len} to {len(df)} records based on provided filters")
     
     # Generate visualizations
     # plot_evaluation_windows(df, args.output, args.format)
