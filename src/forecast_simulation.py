@@ -11,6 +11,7 @@ import h5py
 import prototype_phd.data_utils as data_utils
 from datetime import datetime
 import tqdm
+import time
 from typing import Dict, List, Optional, Tuple, Any, Callable
 import scipy.stats
 
@@ -35,6 +36,8 @@ def parse_args():
     parser.add_argument("--config", default="configs/forecast_detection/forecast_simulation.json", 
                         help="Path to sensitivity config file")
     parser.add_argument("--debug", action="store_true", help="Run in debug mode with limited forecasts")
+    parser.add_argument("--n-jobs", type=int, default=1,
+                        help="Number of parallel jobs (1 for sequential, -1 for all cores)")
     return parser.parse_args()
 
 def logistic_function(x: np.ndarray, threshold: float, slope: float) -> np.ndarray:
@@ -512,10 +515,126 @@ def create_nested_hdf5_structure(
         elif isinstance(stat_value, float) and not np.isnan(stat_value):
             stats_group.attrs[stat_name] = stat_value
 
+def process_single_forecast(
+    forecast: EvaluationForecast,
+    simulation_config: SimulationConfig,
+    methods_to_run: List[str],
+    config_data: Dict[str, Any]
+) -> Tuple[List[SensitivityResult], Dict[str, np.ndarray], List[Dict[str, Any]]]:
+    """
+    Process a single forecast for all estimators.
+    
+    Args:
+        forecast: Evaluation forecast to process
+        simulation_config: Simulation configuration  
+        methods_to_run: List of estimator methods to run
+        config_data: Full configuration dictionary
+        
+    Returns:
+        Tuple of (list of SensitivityResult objects, dict of raw results, list of HDF5 data)
+    """
+    results = []
+    raw_results = {}
+    hdf5_data = []
+    
+    # Skip scenarios with no samples
+    if forecast.design.total_samples <= 0:
+        return results, raw_results, hdf5_data
+    
+    # Run simulations for each estimator
+    for estimator in methods_to_run:
+        # Generate a unique simulation ID for the in-memory storage
+        sim_id = generate_simulation_id(forecast, estimator, simulation_config)
+        
+        # Run the simulation and get results array
+        sim_results = simulate_estimator(forecast, simulation_config, estimator, config_data)
+        
+        # Calculate true value
+        true_value = calculate_true_value(estimator, forecast, config_data)
+        
+        # Calculate statistics
+        stats = calculate_stats(sim_results, estimator, true_value)
+        
+        # --- build metadata for CSV output ---
+        additional_fields = {
+            "ability_id": forecast.scenario.ability_id,
+            "cost_id": forecast.scenario.cost_id,
+            "constraint_id": forecast.scenario.constraint_id,
+            "design_id": forecast.design_id,
+            "budget_fraction": forecast.scenario.budget_fraction,
+            "window_lower": forecast.design.window_lower,
+            "window_upper": forecast.design.window_upper,
+            "original_window_lower": forecast.design.original_window_lower,
+            "original_window_upper": forecast.design.original_window_upper,
+            "total_samples": forecast.design.total_samples,
+            "ability_variant": forecast.scenario.ability_variant,
+            "cost_variant": forecast.scenario.cost_variant,
+            "base_ability_id": forecast.scenario.base_ability_id,
+            "base_cost_id": forecast.scenario.base_cost_id
+        }
+
+        sensitivity_result = SensitivityResult(
+            ability_scenario=forecast.scenario.ability.scenario,
+            budget_scenario=forecast.scenario_id,
+            date=forecast.scenario.ability.date,
+            estimator=estimator,
+            bias=float(stats["bias"]),
+            variance=float(stats["variance"]),
+            mean=float(stats["mean"]),               
+            true_value=true_value,                   
+            ci_lower=float(stats["lower_ci"]),
+            ci_upper=float(stats["upper_ci"]),
+            contains_true=bool(stats["contains_true"]),
+            **additional_fields
+        )
+        results.append(sensitivity_result)
+
+        # Store in memory
+        raw_results[sim_id] = {
+            'results': sim_results,
+            'metadata': {
+                'estimator': estimator,
+                'ability_scenario': forecast.scenario.ability.scenario,
+                'budget_scenario': forecast.scenario_id,
+                'date': forecast.scenario.ability.date,
+                'true_value': true_value,
+                'mean': stats["mean"],
+                'window_lower': forecast.design.window_lower,
+                'window_upper': forecast.design.window_upper,
+                'total_samples': forecast.design.total_samples,
+                'threshold': forecast.scenario.ability.threshold,
+                'slope': forecast.scenario.ability.slope,
+                'sampler_type': forecast.design.sampler_type,
+                'ability_id': forecast.scenario.ability_id,
+                'cost_id': forecast.scenario.cost_id,
+                'constraint_id': forecast.scenario.constraint_id,
+                'design_id': forecast.design_id,
+                'budget_fraction': forecast.scenario.budget_fraction,
+                'ability_variant': forecast.scenario.ability_variant,
+                'cost_variant': forecast.scenario.cost_variant,
+                'base_ability_id': forecast.scenario.base_ability_id,
+                'base_cost_id': forecast.scenario.base_cost_id
+            },
+            'stats': stats
+        }
+        
+        # Collect HDF5 data for later writing
+        hdf5_data.append({
+            'forecast': forecast,
+            'estimator': estimator,
+            'sim_results': sim_results,
+            'stats': stats,
+            'true_value': true_value
+        })
+    
+    return results, raw_results, hdf5_data
+
+
 def run_simulations(
     forecasts: List[EvaluationForecast],
     config_path: str,
-    raw_output_path: Optional[str] = None
+    raw_output_path: Optional[str] = None,
+    n_jobs: int = 1
 ) -> Tuple[List[SensitivityResult], Dict[str, np.ndarray]]:
     """
     Run simulations for each evaluation forecast and estimator.
@@ -524,6 +643,7 @@ def run_simulations(
         forecasts: List of evaluation forecasts
         config_path: Path to simulation configuration file
         raw_output_path: Optional path to save raw simulation results
+        n_jobs: Number of parallel jobs (1 for sequential, -1 for all cores)
         
     Returns:
         Tuple of (list of SensitivityResult objects, dict of raw results)
@@ -566,94 +686,73 @@ def run_simulations(
         raw_file = None
     
     try:
-        # Process each evaluation forecast
-        for forecast in tqdm.tqdm(forecasts_filtered, desc="Running simulations"):
-            # Skip scenarios with no samples
-            if forecast.design.total_samples <= 0:
-                continue
-            
-            # Run simulations for each estimator
-            for estimator in methods_to_run:
-                # Generate a unique simulation ID for the in-memory storage
-                sim_id = generate_simulation_id(forecast, estimator, simulation_config)
-                
-                # Run the simulation and get results array
-                sim_results = simulate_estimator(forecast, simulation_config, estimator, config_data)
-                
-                # Calculate true value
-                true_value = calculate_true_value(estimator, forecast, config_data)
-                
-                # Calculate statistics
-                stats = calculate_stats(sim_results, estimator, true_value)
-                
-                # --- build metadata for CSV output ---
-                additional_fields = {
-                    "ability_id": forecast.scenario.ability_id,
-                    "cost_id": forecast.scenario.cost_id,
-                    "constraint_id": forecast.scenario.constraint_id,
-                    "design_id": forecast.design_id,
-                    "budget_fraction": forecast.scenario.budget_fraction,
-                    "window_lower": forecast.design.window_lower,
-                    "window_upper": forecast.design.window_upper,
-                    "original_window_lower": forecast.design.original_window_lower,
-                    "original_window_upper": forecast.design.original_window_upper,
-                    "total_samples": forecast.design.total_samples,
-                    "ability_variant": forecast.scenario.ability_variant,
-                    "cost_variant": forecast.scenario.cost_variant,
-                    "base_ability_id": forecast.scenario.base_ability_id,
-                    "base_cost_id": forecast.scenario.base_cost_id
-                }
-
-                sensitivity_result = SensitivityResult(
-                    ability_scenario=forecast.scenario.ability.scenario,
-                    budget_scenario=forecast.scenario_id,
-                    date=forecast.scenario.ability.date,
-                    estimator=estimator,
-                    bias=float(stats["bias"]),
-                    variance=float(stats["variance"]),
-                    mean=float(stats["mean"]),               
-                    true_value=true_value,                   
-                    ci_lower=float(stats["lower_ci"]),
-                    ci_upper=float(stats["upper_ci"]),
-                    contains_true=bool(stats["contains_true"]),
-                    **additional_fields
+        # Process forecasts either sequentially or in parallel
+        all_hdf5_data = []
+        
+        if n_jobs == 1:
+            # Sequential processing
+            logging.info("Running simulations sequentially")
+            start_time = time.time()
+            for forecast in tqdm.tqdm(forecasts_filtered, desc="Running simulations"):
+                single_results, single_raw, single_hdf5 = process_single_forecast(
+                    forecast, simulation_config, methods_to_run, config_data
                 )
-                results.append(sensitivity_result)
-
-                # Save raw results to HDF5 file if provided and configured
-                if raw_file is not None and config_data.get("output", {}).get("save_individual_simulations", False):
-                    create_nested_hdf5_structure(
-                        raw_file, forecast, estimator, sim_results, stats, simulation_config, true_value
+                results.extend(single_results)
+                raw_results.update(single_raw)
+                all_hdf5_data.extend(single_hdf5)
+            processing_time = time.time() - start_time
+            logging.info(f"Sequential processing completed in {processing_time:.2f} seconds")
+        else:
+            # Parallel processing
+            try:
+                from joblib import Parallel, delayed
+                logging.info(f"Running simulations in parallel with {n_jobs} jobs")
+                logging.info(f"Processing {len(forecasts_filtered)} forecasts with {len(methods_to_run)} estimators each")
+                
+                start_time = time.time()
+                forecast_results = Parallel(n_jobs=n_jobs, verbose=10)(
+                    delayed(process_single_forecast)(forecast, simulation_config, methods_to_run, config_data)
+                    for forecast in forecasts_filtered
+                )
+                processing_time = time.time() - start_time
+                logging.info(f"Parallel processing completed in {processing_time:.2f} seconds")
+                
+                # Collect results from all forecasts
+                logging.info("Collecting results from parallel workers...")
+                collect_start = time.time()
+                for single_results, single_raw, single_hdf5 in forecast_results:
+                    results.extend(single_results)
+                    raw_results.update(single_raw)
+                    all_hdf5_data.extend(single_hdf5)
+                collect_time = time.time() - collect_start
+                logging.info(f"Result collection completed in {collect_time:.2f} seconds")
+                    
+            except ImportError:
+                logging.warning("joblib not available, falling back to sequential processing")
+                start_time = time.time()
+                for forecast in tqdm.tqdm(forecasts_filtered, desc="Running simulations"):
+                    single_results, single_raw, single_hdf5 = process_single_forecast(
+                        forecast, simulation_config, methods_to_run, config_data
                     )
-
-                # Store in memory
-                raw_results[sim_id] = {
-                    'results': sim_results,
-                    'metadata': {
-                        'estimator': estimator,
-                        'ability_scenario': forecast.scenario.ability.scenario,
-                        'budget_scenario': forecast.scenario_id,
-                        'date': forecast.scenario.ability.date,
-                        'true_value': true_value,
-                        'mean': stats["mean"],
-                        'window_lower': forecast.design.window_lower,
-                        'window_upper': forecast.design.window_upper,
-                        'total_samples': forecast.design.total_samples,
-                        'threshold': forecast.scenario.ability.threshold,
-                        'slope': forecast.scenario.ability.slope,
-                        'sampler_type': forecast.design.sampler_type,
-                        'ability_id': forecast.scenario.ability_id,
-                        'cost_id': forecast.scenario.cost_id,
-                        'constraint_id': forecast.scenario.constraint_id,
-                        'design_id': forecast.design_id,
-                        'budget_fraction': forecast.scenario.budget_fraction,
-                        'ability_variant': forecast.scenario.ability_variant,
-                        'cost_variant': forecast.scenario.cost_variant,
-                        'base_ability_id': forecast.scenario.base_ability_id,
-                        'base_cost_id': forecast.scenario.base_cost_id
-                    },
-                    'stats': stats
-                }
+                    results.extend(single_results)
+                    raw_results.update(single_raw)
+                    all_hdf5_data.extend(single_hdf5)
+                processing_time = time.time() - start_time
+                logging.info(f"Fallback sequential processing completed in {processing_time:.2f} seconds")
+        
+        # Write all HDF5 data sequentially
+        if raw_file is not None and config_data.get("output", {}).get("save_individual_simulations", False):
+            logging.info(f"Writing {len(all_hdf5_data)} HDF5 entries sequentially")
+            for hdf5_entry in tqdm.tqdm(all_hdf5_data, desc="Writing HDF5 data"):
+                create_nested_hdf5_structure(
+                    raw_file, 
+                    hdf5_entry['forecast'], 
+                    hdf5_entry['estimator'], 
+                    hdf5_entry['sim_results'], 
+                    hdf5_entry['stats'], 
+                    simulation_config, 
+                    hdf5_entry['true_value']
+                )
     finally:
         # Close the HDF5 file if it was opened
         if raw_file is not None:
@@ -700,7 +799,8 @@ def main():
     results, raw_results = run_simulations(
         forecasts, 
         args.config,
-        raw_output_path=args.raw if hasattr(args, 'raw') else None
+        raw_output_path=args.raw if hasattr(args, 'raw') else None,
+        n_jobs=args.n_jobs
     )
     logging.info(f"Generated results for {len(results)} scenarios")
     
