@@ -279,7 +279,7 @@ def calculate_true_value(estimator: str, forecast: EvaluationForecast, config: D
     if estimator in ["threshold", "bin_threshold", "max_success"]:
         # All these estimators use the threshold as the true value
         # For max_success, we use the 50% threshold as an approximation
-        return forecast.ability.threshold
+        return forecast.scenario.ability.threshold
     elif estimator in ["weighted_score", "logistic_weighted"]:
         # Both weighted score estimators use the same calculation
         ws_cfg = config.get("weighted_score", {})
@@ -290,8 +290,8 @@ def calculate_true_value(estimator: str, forecast: EvaluationForecast, config: D
             "range_max": forecast.design.original_window_upper,
         }
         return calculate_true_weighted_score(
-            forecast.ability.threshold,
-            forecast.ability.slope,
+            forecast.scenario.ability.threshold,
+            forecast.scenario.ability.slope,
             ws_cfg
         )
     else:
@@ -403,9 +403,9 @@ def generate_simulation_id(forecast: EvaluationForecast, estimator: str, sim_con
         variant_info = f"{forecast.scenario.ability_variant}_{forecast.scenario.cost_variant}_"
     
     components = [
-        forecast.ability.scenario,
+        forecast.scenario.ability.scenario,
         forecast.scenario_id,
-        forecast.ability.date.strftime("%Y-%m-%d"),
+        forecast.scenario.ability.date.strftime("%Y-%m-%d"),
         variant_info + estimator,
         sim_config.method,
         f"{forecast.design.total_samples}_samples",
@@ -437,7 +437,7 @@ def create_nested_hdf5_structure(
     # /ability_scenario/budget_scenario/date/estimator/simulation_method
     
     # Level 1: Ability scenario (include variant info if available)
-    ability_scenario_name = str(forecast.ability.scenario)
+    ability_scenario_name = str(forecast.scenario.ability.scenario)
     if forecast.scenario.ability_variant != "unknown":
         ability_scenario_name += f"_{forecast.scenario.ability_variant}"
     ability_group_name = ability_scenario_name.replace(" ", "_")
@@ -459,7 +459,7 @@ def create_nested_hdf5_structure(
         budget_group = ability_group[budget_group_name]
     
     # Level 3: Date
-    date_group_name = forecast.ability.date.strftime("%Y-%m-%d")
+    date_group_name = forecast.scenario.ability.date.strftime("%Y-%m-%d")
     if date_group_name not in budget_group:
         date_group = budget_group.create_group(date_group_name)
     else:
@@ -492,8 +492,8 @@ def create_nested_hdf5_structure(
     sim_group.attrs['window_lower'] = forecast.design.window_lower
     sim_group.attrs['window_upper'] = forecast.design.window_upper
     sim_group.attrs['total_samples'] = forecast.design.total_samples
-    sim_group.attrs['threshold'] = forecast.ability.threshold
-    sim_group.attrs['slope'] = forecast.ability.slope
+    sim_group.attrs['threshold'] = forecast.scenario.ability.threshold
+    sim_group.attrs['slope'] = forecast.scenario.ability.slope
     sim_group.attrs['sampler_type'] = str(forecast.design.sampler_type)
     sim_group.attrs['budget_fraction'] = forecast.scenario.budget_fraction
     
@@ -605,9 +605,9 @@ def run_simulations(
                 }
 
                 sensitivity_result = SensitivityResult(
-                    ability_scenario=forecast.ability.scenario,
+                    ability_scenario=forecast.scenario.ability.scenario,
                     budget_scenario=forecast.scenario_id,
-                    date=forecast.ability.date,
+                    date=forecast.scenario.ability.date,
                     estimator=estimator,
                     bias=float(stats["bias"]),
                     variance=float(stats["variance"]),
@@ -631,16 +631,16 @@ def run_simulations(
                     'results': sim_results,
                     'metadata': {
                         'estimator': estimator,
-                        'ability_scenario': forecast.ability.scenario,
+                        'ability_scenario': forecast.scenario.ability.scenario,
                         'budget_scenario': forecast.scenario_id,
-                        'date': forecast.ability.date,
+                        'date': forecast.scenario.ability.date,
                         'true_value': true_value,
                         'mean': stats["mean"],
                         'window_lower': forecast.design.window_lower,
                         'window_upper': forecast.design.window_upper,
                         'total_samples': forecast.design.total_samples,
-                        'threshold': forecast.ability.threshold,
-                        'slope': forecast.ability.slope,
+                        'threshold': forecast.scenario.ability.threshold,
+                        'slope': forecast.scenario.ability.slope,
                         'sampler_type': forecast.design.sampler_type,
                         'ability_id': forecast.scenario.ability_id,
                         'cost_id': forecast.scenario.cost_id,

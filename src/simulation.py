@@ -122,8 +122,8 @@ def generate_success_outcomes(
     rng = np.random.RandomState(seed)
     n_tasks = len(task_difficulties)
     
-    threshold = forecast.ability.threshold
-    slope = forecast.ability.slope
+    threshold = forecast.scenario.ability.threshold
+    slope = forecast.scenario.ability.slope
     elicitation_bias_enabled = forecast.design.elicitation_bias.enabled
     elicitation_bias_type = forecast.design.elicitation_bias.bias_type
     elicitation_bias_args = forecast.design.elicitation_bias.args
