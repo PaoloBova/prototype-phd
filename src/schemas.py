@@ -122,7 +122,7 @@ class ElicitationBiasType(str, Enum):
 class ElicitationBiasConfig(BaseModel):
     """Configuration for elicitation bias parameters."""
     bias_type: ElicitationBiasType = Field(ElicitationBiasType.FALL_PAST_THRESHOLD, description="Type of elicitation bias function to use")
-    enabled: bool = Field(True, description="Whether elicitation bias is enabled")
+    enabled: bool = Field(False, description="Whether elicitation bias is enabled")
     name: Optional[str] = Field(None, description="Optional name for this configuration")
     source_file: Optional[str] = Field(None, description="Path to data, used by some types of elicitation bias")
     parameters: List[Union[float, bool]] = Field(

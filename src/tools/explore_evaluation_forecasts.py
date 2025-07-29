@@ -36,7 +36,7 @@ def _style_plots():
 def parse_args():
     """Parse command line arguments."""
     parser = argparse.ArgumentParser(description="Explore evaluation forecast data")
-    parser.add_argument("--input", required=True, help="Path to evaluation forecasts CSV file")
+    parser.add_argument("--input", required=True, help="Path to evaluation forecasts JSON file")
     parser.add_argument("--output", default="reports/evaluation_forecast_visualizations",
                         help="Output directory for visualizations")
     parser.add_argument("--format", default="png", help="Output format (png, pdf, svg)")
@@ -70,24 +70,24 @@ def plot_evaluation_windows(df: pd.DataFrame, output_dir: str, fmt: str = "png")
         fmt: File format for output
     """
     # Get unique values for ID-based filtering
-    ability_ids = get_unique_values(df, "ability_id")
-    cost_ids = get_unique_values(df, "cost_id")
+    ability_ids = get_unique_values(df, "scenario_ability_id")
+    cost_ids = get_unique_values(df, "scenario_cost_id")
     design_ids = get_unique_values(df, "design_id")
     
     # Limit the number of plots to avoid generating too many
     for ability_id in ability_ids[:3]:  # Limit to first 3 ability IDs
-        ability_info = df[df["ability_id"] == ability_id].iloc[0]
+        ability_info = df[df["scenario_ability_id"] == ability_id].iloc[0]
         
         for cost_id in cost_ids[:2]:  # Limit to first 2 cost IDs
-            cost_info = df[df["cost_id"] == cost_id].iloc[0]
+            cost_info = df[df["scenario_cost_id"] == cost_id].iloc[0]
             
             for design_id in design_ids[:2]:  # Limit to first 2 design IDs
                 design_info = df[df["design_id"] == design_id].iloc[0]
                 
                 # Filter data for this combination
                 filtered_df = df[
-                    (df["ability_id"] == ability_id) & 
-                    (df["cost_id"] == cost_id) & 
+                    (df["scenario_ability_id"] == ability_id) & 
+                    (df["scenario_cost_id"] == cost_id) & 
                     (df["design_id"] == design_id)
                 ]
                 
@@ -97,33 +97,33 @@ def plot_evaluation_windows(df: pd.DataFrame, output_dir: str, fmt: str = "png")
                 plt.figure(figsize=(12, 8))
                 
                 # Group by budget and sort by budget fraction
-                filtered_df = filtered_df.sort_values("budget_fraction")
+                filtered_df = filtered_df.sort_values("scenario_budget_fraction")
                 
                 # Plot the original and adjusted evaluation windows for each budget scenario
                 for i, (_, row) in enumerate(filtered_df.iterrows()):
-                    budget_fraction = row["budget_fraction"]
+                    budget_fraction = row["scenario_budget_fraction"]
                     
                     # Original window (semi-transparent)
-                    plt.plot([row["original_window_lower"], row["original_window_upper"]], 
+                    plt.plot([row["design_original_window_lower"], row["design_original_window_upper"]], 
                             [budget_fraction, budget_fraction], 
                             linewidth=2, alpha=0.3, color='blue',
                             label="Original Window" if i == 0 else "")
                     
                     # Adjusted window (solid)
-                    plt.plot([row["window_lower"], row["window_upper"]], 
+                    plt.plot([row["design_window_lower"], row["design_window_upper"]], 
                             [budget_fraction, budget_fraction], 
                             linewidth=2, marker='|', color='red',
                             label=f"{budget_fraction*100:.0f}% Budget")
                     
                 # Mark the threshold with a vertical line
-                threshold = ability_info["ability_threshold"]
+                threshold = ability_info["scenario_ability_threshold"]
                 plt.axvline(threshold, color='green', linestyle='--', label="Ability Threshold")
             
                 plt.xlabel("Task Difficulty")
                 plt.ylabel("Budget Fraction")
                 plt.title(f"Evaluation Windows by Budget\n"
-                         f"Model: {ability_info['ability_model']}, Scenario: {ability_info['ability_scenario']}\n"
-                         f"Cost: {cost_info['cost_model']}, Method: {design_info['adjustment_method']}")
+                         f"Model: {ability_info['scenario_ability_model']}, Scenario: {ability_info['scenario_ability_scenario']}\n"
+                         f"Cost: {cost_info['scenario_cost_model']}, Method: {design_info['design_adjustment_method']}")
                 plt.grid(True, axis='x', alpha=0.3)
                 
                 # Customize legend to avoid duplicates
@@ -154,8 +154,8 @@ def plot_window_adjustments(df: pd.DataFrame, output_dir: str, fmt: str = "png")
     """
     # Get key combinations to plot using the ID fields
     key_combinations = df.groupby(
-        ["ability_id", "cost_id", "design_id"]
-    ).size().reset_index()[["ability_id", "cost_id", "design_id"]]
+        ["scenario_ability_id", "scenario_cost_id", "design_id"]
+    ).size().reset_index()[["scenario_ability_id", "scenario_cost_id", "design_id"]]
     
     # Limit to a reasonable number of plots
     if len(key_combinations) > 12:
@@ -164,43 +164,43 @@ def plot_window_adjustments(df: pd.DataFrame, output_dir: str, fmt: str = "png")
     for _, row in key_combinations.iterrows():
         # Get descriptive information for this combination
         combo_info = df[
-            (df["ability_id"] == row["ability_id"]) & 
-            (df["cost_id"] == row["cost_id"]) & 
+            (df["scenario_ability_id"] == row["scenario_ability_id"]) & 
+            (df["scenario_cost_id"] == row["scenario_cost_id"]) & 
             (df["design_id"] == row["design_id"])
         ].iloc[0]
         
         # Filter the data for this combination
         filtered_df = df[
-            (df["ability_id"] == row["ability_id"]) & 
-            (df["cost_id"] == row["cost_id"]) & 
+            (df["scenario_ability_id"] == row["scenario_ability_id"]) & 
+            (df["scenario_cost_id"] == row["scenario_cost_id"]) & 
             (df["design_id"] == row["design_id"])
         ]
         
         # Sort by budget fraction
-        filtered_df = filtered_df.sort_values("budget_fraction")
+        filtered_df = filtered_df.sort_values("scenario_budget_fraction")
         
         plt.figure(figsize=(10, 6))
         
         # Plot relationship between budget fraction and window width
-        plt.scatter(filtered_df["budget_fraction"], filtered_df["window_width"], 
+        plt.scatter(filtered_df["scenario_budget_fraction"], filtered_df["window_width"], 
                    label="Window Width", s=50)
         
         # Plot relationship between budget fraction and width ratio
-        plt.scatter(filtered_df["budget_fraction"], filtered_df["width_ratio"], 
+        plt.scatter(filtered_df["scenario_budget_fraction"], filtered_df["width_ratio"], 
                    label="Width Ratio", s=50, marker='x')
         
         plt.xlabel("Budget Fraction")
         plt.ylabel("Window Width / Ratio")
         plt.title(f"Window Adjustment vs Budget\n"
-                 f"Model: {combo_info['ability_model']}, Scenario: {combo_info['ability_scenario']}\n"
-                 f"Cost: {combo_info['cost_model']}, Method: {combo_info['adjustment_method']}")
+                 f"Model: {combo_info['scenario_ability_model']}, Scenario: {combo_info['scenario_ability_scenario']}\n"
+                 f"Cost: {combo_info['scenario_cost_model']}, Method: {combo_info['design_adjustment_method']}")
         plt.grid(True, alpha=0.3)
         plt.legend()
         
         plt.tight_layout()
         
         # Save figure with ID-based filename
-        safe_filename = f"window_adjustment_ability_{row['ability_id']}_cost_{row['cost_id']}_design_{row['design_id']}.{fmt}"
+        safe_filename = f"window_adjustment_ability_{row['scenario_ability_id']}_cost_{row['scenario_cost_id']}_design_{row['design_id']}.{fmt}"
         safe_filename = safe_filename.replace(" ", "_")
         output_path = os.path.join(output_dir, "window_adjustments", safe_filename)
         os.makedirs(os.path.dirname(output_path), exist_ok=True)
@@ -219,24 +219,24 @@ def plot_task_density(df: pd.DataFrame, output_dir: str, fmt: str = "png"):
         fmt: File format for output
     """
     # Get unique values for ID-based filtering
-    ability_ids = get_unique_values(df, "ability_id")
-    cost_ids = get_unique_values(df, "cost_id")
+    ability_ids = get_unique_values(df, "scenario_ability_id")
+    cost_ids = get_unique_values(df, "scenario_cost_id")
     design_ids = get_unique_values(df, "design_id")
     
     # Limit the number of plots
     for ability_id in ability_ids[:2]:  # Limit to first 2 ability IDs
-        ability_info = df[df["ability_id"] == ability_id].iloc[0]
+        ability_info = df[df["scenario_ability_id"] == ability_id].iloc[0]
         
         for cost_id in cost_ids[:1]:  # Limit to first cost ID
-            cost_info = df[df["cost_id"] == cost_id].iloc[0]
+            cost_info = df[df["scenario_cost_id"] == cost_id].iloc[0]
             
             for design_id in design_ids[:1]:  # Limit to first design ID
                 design_info = df[df["design_id"] == design_id].iloc[0]
                 
                 # Filter data for this combination
                 filtered_df = df[
-                    (df["ability_id"] == ability_id) & 
-                    (df["cost_id"] == cost_id) & 
+                    (df["scenario_ability_id"] == ability_id) & 
+                    (df["scenario_cost_id"] == cost_id) & 
                     (df["design_id"] == design_id)
                 ]
                 
@@ -246,21 +246,21 @@ def plot_task_density(df: pd.DataFrame, output_dir: str, fmt: str = "png"):
                 plt.figure(figsize=(12, 6))
                 
                 # Group by budget scenario and sort by budget fraction
-                filtered_df = filtered_df.sort_values("budget_fraction", ascending=False)
+                filtered_df = filtered_df.sort_values("scenario_budget_fraction", ascending=False)
                 
                 # Get overall min/max for better plotting
-                max_difficulty = max(filtered_df["window_upper"].max(), 
-                                     filtered_df["original_window_upper"].max()) + 1
-                min_difficulty = min(filtered_df["window_lower"].min(), 
-                                     filtered_df["original_window_lower"].min()) - 1
+                max_difficulty = max(filtered_df["design_window_upper"].max(), 
+                                     filtered_df["design_original_window_upper"].max()) + 1
+                min_difficulty = min(filtered_df["design_window_lower"].min(), 
+                                     filtered_df["design_original_window_lower"].min()) - 1
                 x = np.linspace(min_difficulty, max_difficulty, 1000)
                 
                 # Plot the task density for each budget scenario
                 for _, row in filtered_df.iterrows():
-                    budget_fraction = row["budget_fraction"]
-                    window_lower = row["window_lower"]
-                    window_upper = row["window_upper"]
-                    total_samples = row["total_samples"]
+                    budget_fraction = row["scenario_budget_fraction"]
+                    window_lower = row["design_window_lower"]
+                    window_upper = row["design_window_upper"]
+                    total_samples = row["design_total_samples"]
                     
                     # Calculate task density
                     window_width = window_upper - window_lower
@@ -273,7 +273,7 @@ def plot_task_density(df: pd.DataFrame, output_dir: str, fmt: str = "png"):
                     y = np.zeros_like(x)
                     mask = (x >= window_lower) & (x <= window_upper)
                     
-                    sampler_type = row["sampler_type"]
+                    sampler_type = row["design_sampler_type"]
                     if sampler_type == "uniform":
                         # Uniform density
                         y[mask] = density
@@ -287,14 +287,14 @@ def plot_task_density(df: pd.DataFrame, output_dir: str, fmt: str = "png"):
                     plt.plot(x, y, label=f"{budget_fraction*100:.0f}% Budget")
                 
                 # Mark the threshold
-                threshold = ability_info["ability_threshold"]
+                threshold = ability_info["scenario_ability_threshold"]
                 plt.axvline(threshold, color='r', linestyle='--', label="Threshold")
                 
                 plt.xlabel("Task Difficulty")
                 plt.ylabel("Task Density (samples per difficulty unit)")
                 plt.title(f"Task Density by Budget\n"
-                         f"Model: {ability_info['ability_model']}, Scenario: {ability_info['ability_scenario']}\n"
-                         f"Cost: {cost_info['cost_model']}, Method: {design_info['adjustment_method']}")
+                         f"Model: {ability_info['scenario_ability_model']}, Scenario: {ability_info['scenario_ability_scenario']}\n"
+                         f"Cost: {cost_info['scenario_cost_model']}, Method: {design_info['design_adjustment_method']}")
                 plt.grid(True, alpha=0.3)
                 plt.legend()
                 
@@ -320,20 +320,20 @@ def plot_sample_counts(df: pd.DataFrame, output_dir: str, fmt: str = "png"):
         fmt: File format for output
     """
     # Get unique values for ID-based filtering
-    ability_ids = get_unique_values(df, "ability_id")
-    cost_ids = get_unique_values(df, "cost_id")
+    ability_ids = get_unique_values(df, "scenario_ability_id")
+    cost_ids = get_unique_values(df, "scenario_cost_id")
     
     # Limit plots
     for ability_id in ability_ids[:3]:  # Limit to first 3 ability IDs
-        ability_info = df[df["ability_id"] == ability_id].iloc[0]
+        ability_info = df[df["scenario_ability_id"] == ability_id].iloc[0]
         
         for cost_id in cost_ids[:2]:  # Limit to first 2 cost IDs
-            cost_info = df[df["cost_id"] == cost_id].iloc[0]
+            cost_info = df[df["scenario_cost_id"] == cost_id].iloc[0]
             
             # Filter data
             scenario_df = df[
-                (df["ability_id"] == ability_id) & 
-                (df["cost_id"] == cost_id)
+                (df["scenario_ability_id"] == ability_id) & 
+                (df["scenario_cost_id"] == cost_id)
             ]
             
             if len(scenario_df) == 0:
@@ -346,20 +346,20 @@ def plot_sample_counts(df: pd.DataFrame, output_dir: str, fmt: str = "png"):
             scenario_df['design_label'] = scenario_df['design_id']
             
             # Group by design and plot
-            ax = sns.barplot(data=scenario_df, x="budget_fraction", y="total_samples", 
+            ax = sns.barplot(data=scenario_df, x="scenario_budget_fraction", y="design_total_samples", 
                           hue="design_label", alpha=0.7, errorbar=None)
             
             # Customize plot
             plt.xlabel("Budget Fraction")
             plt.ylabel("Total Sample Count")
             plt.title(f"Sample Counts by Budget and Design Method\n"
-                     f"Model: {ability_info['ability_model']}, Scenario: {ability_info['ability_scenario']}\n"
-                     f"Cost: {cost_info['cost_model']}")
+                     f"Model: {ability_info['scenario_ability_model']}, Scenario: {ability_info['scenario_ability_scenario']}\n"
+                     f"Cost: {cost_info['scenario_cost_model']}")
             plt.grid(True, axis='y', alpha=0.3)
             
             # Format x tick labels as percentages
             plt.xticks(ticks=plt.xticks()[0], 
-                      labels=[f"{x*100:.0f}%" for x in sorted(scenario_df["budget_fraction"].unique())])
+                      labels=[f"{x*100:.0f}%" for x in sorted(scenario_df["scenario_budget_fraction"].unique())])
             
             plt.tight_layout()
             
@@ -408,7 +408,7 @@ def plot_cost_allocation(df: pd.DataFrame, output_dir: str, fmt: str = "png"):
             scenario_df['design_label'] = scenario_df['design_id']
             
             # Group by design and plot
-            ax = sns.barplot(data=scenario_df, x="budget_fraction", y="available_budget", 
+            ax = sns.barplot(data=scenario_df, x="scenario_budget_fraction", y="design_available_budget", 
                           hue="design_label", alpha=0.7, errorbar=None)
             
             # Customize plot
@@ -421,7 +421,7 @@ def plot_cost_allocation(df: pd.DataFrame, output_dir: str, fmt: str = "png"):
             
             # Format x tick labels as percentages
             plt.xticks(ticks=plt.xticks()[0], 
-                      labels=[f"{x*100:.0f}%" for x in sorted(scenario_df["budget_fraction"].unique())])
+                      labels=[f"{x*100:.0f}%" for x in sorted(scenario_df["scenario_budget_fraction"].unique())])
             
             plt.tight_layout()
             
@@ -440,17 +440,17 @@ def plot_costs_over_time(df: pd.DataFrame, output_dir: str, fmt: str = "png"):
     For each group of forecasts that share all hyperparameters except date and constraint,
     draw available_budget and gold_standard_cost as lines over time.
     """
-    if "ability_date" not in df or "constraint_id" not in df:
+    if "scenario_ability_date" not in df or "scenario_constraint_id" not in df:
         print("Insufficient data for cost-over-time plots")
         return
-    df["ability_date"] = pd.to_datetime(df["ability_date"])
+    df["scenario_ability_date"] = pd.to_datetime(df["scenario_ability_date"])
 
     # Determine grouping columns: use ability_model (no date) and other keys
     key_cols = [
         c for c in (
-            # "ability_model",
-            # "ability_scenario",
-            "cost_model",
+            # "scenario_ability_model",
+            # "scenario_ability_scenario",
+            "scenario_cost_model",
             "design_id",
             "ability_variant",
             "cost_variant"
@@ -464,19 +464,19 @@ def plot_costs_over_time(df: pd.DataFrame, output_dir: str, fmt: str = "png"):
 
     groups = df.groupby(key_cols)
     for key, grp in groups:
-        if grp["ability_date"].nunique() < 2:
+        if grp["scenario_ability_date"].nunique() < 2:
             continue
-        grp = grp.sort_values("ability_date")
+        grp = grp.sort_values("scenario_ability_date")
         plt.figure(figsize=(10,6))
         # plot gold standard
-        gold = grp.groupby("ability_date")["gold_standard_cost"].first()
+        gold = grp.groupby("scenario_ability_date")["gold_standard_cost"].first()
         plt.plot(gold.index, gold.values, "k-o", label="Gold Standard")
         # plot each constraint
-        for cid, sub in grp.groupby("constraint_id"):
-            sub = sub.sort_values("ability_date")
-            bf = sub["budget_fraction"].iloc[0]
+        for cid, sub in grp.groupby("scenario_constraint_id"):
+            sub = sub.sort_values("scenario_ability_date")
+            bf = sub["scenario_budget_fraction"].iloc[0]
             label = f"{cid} ({bf*100:.0f}%)"
-            plt.plot(sub["ability_date"], sub["available_budget"], "-o", label=label)
+            plt.plot(sub["scenario_ability_date"], sub["design_available_budget"], "-o", label=label)
         title_parts = [f"{col}={key[i]}" for i, col in enumerate(key_cols)]
         plt.title("Evaluation Cost Over Time\n" + ", ".join(title_parts))
         plt.xlabel("Date")
@@ -501,8 +501,8 @@ def plot_ability_scenario_comparison(plot_df: pd.DataFrame, output_dir: str, fmt
         fmt: File format for output
     """
     # Group by base ability ID to identify scenario families with multiple variants
-    scenario_counts = plot_df.groupby(['base_ability_id', 'cost_id'])['ability_variant'].nunique()
-    complete_families = scenario_counts[scenario_counts >= 2].reset_index()[['base_ability_id', 'cost_id']]
+    scenario_counts = plot_df.groupby(['scenario_base_ability_id', 'scenario_cost_id'])['scenario_ability_variant'].nunique()
+    complete_families = scenario_counts[scenario_counts >= 2].reset_index()[['scenario_base_ability_id', 'scenario_cost_id']]
     
     print(f"Found {len(complete_families)} ability scenario families with at least 2 variants")
     
@@ -514,14 +514,14 @@ def plot_ability_scenario_comparison(plot_df: pd.DataFrame, output_dir: str, fmt
     plot_families = complete_families.iloc[:10]
     
     for _, family in plot_families.iterrows():
-        base_ability_id = family['base_ability_id']
-        cost_id = family['cost_id']
+        base_ability_id = family['scenario_base_ability_id']
+        cost_id = family['scenario_cost_id']
         
         # Get scenarios in this family - fixing to a single cost model
         family_df = plot_df[
-            (plot_df['base_ability_id'] == base_ability_id) & 
-            (plot_df['cost_id'] == cost_id) &
-            (plot_df['cost_variant'] == 'base')  # Use base cost variant
+            (plot_df['scenario_base_ability_id'] == base_ability_id) & 
+            (plot_df['scenario_cost_id'] == cost_id) &
+            (plot_df['scenario_cost_variant'] == 'base')  # Use base cost variant
         ].copy()
         
         print(f"Processing ability family: ability={base_ability_id}, cost={cost_id} with {len(family_df)} records")
@@ -545,13 +545,13 @@ def plot_ability_scenario_comparison(plot_df: pd.DataFrame, output_dir: str, fmt
             
             # Sort variants for consistent ordering
             filtered_df['plot_order'] = 0
-            filtered_df.loc[filtered_df['ability_variant'] == 'base', 'plot_order'] = 0
-            filtered_df.loc[filtered_df['ability_variant'] == 'lower', 'plot_order'] = 1
-            filtered_df.loc[filtered_df['ability_variant'] == 'upper', 'plot_order'] = 2
+            filtered_df.loc[filtered_df['scenario_ability_variant'] == 'base', 'plot_order'] = 0
+            filtered_df.loc[filtered_df['scenario_ability_variant'] == 'lower', 'plot_order'] = 1
+            filtered_df.loc[filtered_df['scenario_ability_variant'] == 'upper', 'plot_order'] = 2
             filtered_df = filtered_df.sort_values('plot_order')
             
             # Get the variants present in this filtered dataset
-            variants_present = filtered_df['ability_variant'].unique()
+            variants_present = filtered_df['scenario_ability_variant'].unique()
             if len(variants_present) < 2:
                 print(f"Skipping ability plot for {ability_model}/{cost_model} - not enough variants")
                 continue
@@ -564,20 +564,20 @@ def plot_ability_scenario_comparison(plot_df: pd.DataFrame, output_dir: str, fmt
             
             # Plot each variant
             for i, variant in enumerate(variants_present):
-                variant_df = filtered_df[filtered_df['ability_variant'] == variant].copy()
+                variant_df = filtered_df[filtered_df['scenario_ability_variant'] == variant].copy()
                 variant_df = variant_df.sort_values('budget_fraction')
                 
                 plt.subplot(n_subplots, 1, i+1)
                 
                 for _, row in variant_df.iterrows():
-                    budget_fraction = row["budget_fraction"]
-                    plt.plot([row["window_lower"], row["window_upper"]], 
+                    budget_fraction = row["scenario_budget_fraction"]
+                    plt.plot([row["design_window_lower"], row["design_window_upper"]], 
                             [budget_fraction, budget_fraction], 
                             linewidth=2, marker='|',
                             label=f"{budget_fraction*100:.0f}% Budget")
                 
                 # Mark threshold
-                threshold = variant_df.iloc[0]["ability_threshold"] if len(variant_df) > 0 else 0
+                threshold = variant_df.iloc[0]["scenario_ability_threshold"] if len(variant_df) > 0 else 0
                 plt.axvline(threshold, color='r', linestyle='--', label="Threshold")
                 
                 # Set title and labels
@@ -620,8 +620,8 @@ def plot_cost_scenario_comparison(plot_df: pd.DataFrame, output_dir: str, fmt: s
         fmt: File format for output
     """
     # Group by base cost ID to identify scenario families with multiple variants
-    scenario_counts = plot_df.groupby(['base_cost_id', 'ability_id'])['cost_variant'].nunique()
-    complete_families = scenario_counts[scenario_counts >= 2].reset_index()[['base_cost_id', 'ability_id']]
+    scenario_counts = plot_df.groupby(['scenario_base_cost_id', 'scenario_ability_id'])['scenario_cost_variant'].nunique()
+    complete_families = scenario_counts[scenario_counts >= 2].reset_index()[['scenario_base_cost_id', 'scenario_ability_id']]
     
     print(f"Found {len(complete_families)} cost scenario families with at least 2 variants")
     
@@ -633,14 +633,14 @@ def plot_cost_scenario_comparison(plot_df: pd.DataFrame, output_dir: str, fmt: s
     plot_families = complete_families.iloc[:10]
     
     for _, family in plot_families.iterrows():
-        base_cost_id = family['base_cost_id']
-        ability_id = family['ability_id']
+        base_cost_id = family['scenario_base_cost_id']
+        ability_id = family['scenario_ability_id']
         
         # Get scenarios in this family - fixing to a single ability model
         family_df = plot_df[
-            (plot_df['base_cost_id'] == base_cost_id) & 
-            (plot_df['ability_id'] == ability_id) &
-            (plot_df['ability_variant'] == 'base')  # Use base ability variant
+            (plot_df['scenario_base_cost_id'] == base_cost_id) & 
+            (plot_df['scenario_ability_id'] == ability_id) &
+            (plot_df['scenario_ability_variant'] == 'base')  # Use base ability variant
         ].copy()
         
         print(f"Processing cost family: ability={ability_id}, cost={base_cost_id} with {len(family_df)} records")
@@ -659,20 +659,20 @@ def plot_cost_scenario_comparison(plot_df: pd.DataFrame, output_dir: str, fmt: s
                 cost_model = sample_row['cost_model'].replace('_base_ci', '').replace('_lower_ci', '').replace('_upper_ci', '')
                 adjustment_method = sample_row['adjustment_method']
                 sampler_type = sample_row['sampler_type']
-                doubling_rates = {v: filtered_df[filtered_df['cost_variant'] == v]['doubling_rate'].mean() 
-                                 for v in filtered_df['cost_variant'].unique() if pd.notna(v)}
+                doubling_rates = {v: filtered_df[filtered_df['scenario_cost_variant'] == v]['doubling_rate'].mean() 
+                                 for v in filtered_df['scenario_cost_variant'].unique() if pd.notna(v)}
             else:
                 continue
             
             # Sort variants for consistent ordering
             filtered_df['plot_order'] = 0
-            filtered_df.loc[filtered_df['cost_variant'] == 'base', 'plot_order'] = 0
-            filtered_df.loc[filtered_df['cost_variant'] == 'lower', 'plot_order'] = 1
-            filtered_df.loc[filtered_df['cost_variant'] == 'upper', 'plot_order'] = 2
+            filtered_df.loc[filtered_df['scenario_cost_variant'] == 'base', 'plot_order'] = 0
+            filtered_df.loc[filtered_df['scenario_cost_variant'] == 'lower', 'plot_order'] = 1
+            filtered_df.loc[filtered_df['scenario_cost_variant'] == 'upper', 'plot_order'] = 2
             filtered_df = filtered_df.sort_values('plot_order')
             
             # Get the variants present in this filtered dataset
-            variants_present = filtered_df['cost_variant'].unique()
+            variants_present = filtered_df['scenario_cost_variant'].unique()
             if len(variants_present) < 2:
                 print(f"Skipping cost plot for {ability_model}/{cost_model} - not enough variants")
                 continue
@@ -685,20 +685,20 @@ def plot_cost_scenario_comparison(plot_df: pd.DataFrame, output_dir: str, fmt: s
             
             # Plot each variant
             for i, variant in enumerate(variants_present):
-                variant_df = filtered_df[filtered_df['cost_variant'] == variant].copy()
+                variant_df = filtered_df[filtered_df['scenario_cost_variant'] == variant].copy()
                 variant_df = variant_df.sort_values('budget_fraction')
                 
                 plt.subplot(n_subplots, 1, i+1)
                 
                 for _, row in variant_df.iterrows():
-                    budget_fraction = row["budget_fraction"]
-                    plt.plot([row["window_lower"], row["window_upper"]], 
+                    budget_fraction = row["scenario_budget_fraction"]
+                    plt.plot([row["design_window_lower"], row["design_window_upper"]], 
                             [budget_fraction, budget_fraction], 
                             linewidth=2, marker='|',
                             label=f"{budget_fraction*100:.0f}% Budget")
                 
                 # Mark threshold
-                threshold = variant_df.iloc[0]["ability_threshold"] if len(variant_df) > 0 else 0
+                threshold = variant_df.iloc[0]["scenario_ability_threshold"] if len(variant_df) > 0 else 0
                 plt.axvline(threshold, color='r', linestyle='--', label="Threshold")
                 
                 # Set title and labels
@@ -748,8 +748,8 @@ def plot_combined_scenario_comparison(plot_df: pd.DataFrame, output_dir: str, fm
         fmt: File format for output
     """
     # Find combinations with multiple ability and cost variants
-    ability_counts = plot_df.groupby(['base_ability_id'])['ability_variant'].nunique()
-    cost_counts = plot_df.groupby(['base_cost_id'])['cost_variant'].nunique()
+    ability_counts = plot_df.groupby(['scenario_base_ability_id'])['scenario_ability_variant'].nunique()
+    cost_counts = plot_df.groupby(['scenario_base_cost_id'])['scenario_cost_variant'].nunique()
     
     ability_families = ability_counts[ability_counts >= 2].index.tolist()
     cost_families = cost_counts[cost_counts >= 2].index.tolist()
@@ -766,8 +766,8 @@ def plot_combined_scenario_comparison(plot_df: pd.DataFrame, output_dir: str, fm
         for base_cost_id in cost_families[:2]:
             # Check if this combination exists in the data
             combo_df = plot_df[
-                (plot_df['base_ability_id'] == base_ability_id) &
-                (plot_df['base_cost_id'] == base_cost_id)
+                (plot_df['scenario_base_ability_id'] == base_ability_id) &
+                (plot_df['scenario_base_cost_id'] == base_cost_id)
             ]
             if len(combo_df) > 0:
                 combined_scenarios.append((base_ability_id, base_cost_id))
@@ -782,8 +782,8 @@ def plot_combined_scenario_comparison(plot_df: pd.DataFrame, output_dir: str, fm
     for base_ability_id, base_cost_id in combined_scenarios:
         # Get all variants for this combination
         combo_df = plot_df[
-            (plot_df['base_ability_id'] == base_ability_id) &
-            (plot_df['base_cost_id'] == base_cost_id)
+            (plot_df['scenario_base_ability_id'] == base_ability_id) &
+            (plot_df['scenario_base_cost_id'] == base_cost_id)
         ].copy()
         
         # Get unique designs for this combination
@@ -794,8 +794,8 @@ def plot_combined_scenario_comparison(plot_df: pd.DataFrame, output_dir: str, fm
             filtered_df = combo_df[combo_df['design_id'] == design_id].copy()
             
             # Get variants present
-            ability_variants = sorted(filtered_df['ability_variant'].unique())
-            cost_variants = sorted(filtered_df['cost_variant'].unique())
+            ability_variants = sorted(filtered_df['scenario_ability_variant'].unique())
+            cost_variants = sorted(filtered_df['scenario_cost_variant'].unique())
             
             # Need at least 2 variants in each dimension
             if len(ability_variants) < 2 or len(cost_variants) < 2:
@@ -824,8 +824,8 @@ def plot_combined_scenario_comparison(plot_df: pd.DataFrame, output_dir: str, fm
                 for j, cost_variant in enumerate(cost_variants):
                     # Filter for this specific combination
                     cell_df = filtered_df[
-                        (filtered_df['ability_variant'] == ability_variant) &
-                        (filtered_df['cost_variant'] == cost_variant)
+                        (filtered_df['scenario_ability_variant'] == ability_variant) &
+                        (filtered_df['scenario_cost_variant'] == cost_variant)
                     ]
                     
                     # Skip if no data
@@ -838,21 +838,21 @@ def plot_combined_scenario_comparison(plot_df: pd.DataFrame, output_dir: str, fm
                     # Plot windows for different budget fractions
                     cell_df = cell_df.sort_values('budget_fraction')
                     for _, row in cell_df.iterrows():
-                        budget_fraction = row["budget_fraction"]
-                        plt.plot([row["window_lower"], row["window_upper"]], 
+                        budget_fraction = row["scenario_budget_fraction"]
+                        plt.plot([row["design_window_lower"], row["design_window_upper"]], 
                                 [budget_fraction, budget_fraction], 
                                 linewidth=2, marker='|',
                                 label=f"{budget_fraction*100:.0f}% Budget")
                     
                     # Mark threshold
                     if len(cell_df) > 0:
-                        threshold = cell_df.iloc[0]["ability_threshold"]
-                        doubling_rate = cell_df.iloc[0]["doubling_rate"]
+                        threshold = cell_df.iloc[0]["scenario_ability_threshold"]
+                        doubling_rate = cell_df.iloc[0]["scenario_doubling_rate"]
                         plt.axvline(threshold, color='r', linestyle='--')
                     
                     # Consistent axis limits across plots
-                    plt.xlim(filtered_df["window_lower"].min() - 1, filtered_df["window_upper"].max() + 1)
-                    plt.ylim(filtered_df["budget_fraction"].min() - 0.05, filtered_df["budget_fraction"].max() + 0.05)
+                    plt.xlim(filtered_df["design_window_lower"].min() - 1, filtered_df["design_window_upper"].max() + 1)
+                    plt.ylim(filtered_df["scenario_budget_fraction"].min() - 0.05, filtered_df["scenario_budget_fraction"].max() + 0.05)
                     
                     # Set title for each cell
                     ability_label = f"{ability_variant.title()} Ability"
@@ -901,32 +901,32 @@ def plot_scenario_comparison(df: pd.DataFrame, output_dir: str, fmt: str = "png"
     plot_df = df.copy()
     
     # Check if the variant fields are already present in the data
-    has_variants = all(col in plot_df.columns for col in ['ability_variant', 'cost_variant', 'base_ability_id', 'base_cost_id'])
+    has_variants = all(col in plot_df.columns for col in ['scenario_ability_variant', 'scenario_cost_variant', 'scenario_base_ability_id', 'scenario_base_cost_id'])
     
     if not has_variants:
         # If not present, extract them from IDs (backward compatibility)
         print("Variant fields not found in data, extracting from IDs...")
         # Extract variant type from ability_id (base, lower, upper)
-        plot_df['ability_variant'] = 'unknown'
-        plot_df.loc[plot_df['ability_id'].str.contains('_base'), 'ability_variant'] = 'base'
-        plot_df.loc[plot_df['ability_id'].str.contains('_lower'), 'ability_variant'] = 'lower'
-        plot_df.loc[plot_df['ability_id'].str.contains('_upper'), 'ability_variant'] = 'upper'
+        plot_df['scenario_ability_variant'] = 'unknown'
+        plot_df.loc[plot_df['ability_id'].str.contains('_base'), 'scenario_ability_variant'] = 'base'
+        plot_df.loc[plot_df['ability_id'].str.contains('_lower'), 'scenario_ability_variant'] = 'lower'
+        plot_df.loc[plot_df['ability_id'].str.contains('_upper'), 'scenario_ability_variant'] = 'upper'
         
         # Extract variant type from cost_id (base, lower, upper)
-        plot_df['cost_variant'] = 'unknown'
-        plot_df.loc[plot_df['cost_id'].str.contains('_base'), 'cost_variant'] = 'base'
-        plot_df.loc[plot_df['cost_id'].str.contains('_lower'), 'cost_variant'] = 'lower'
-        plot_df.loc[plot_df['cost_id'].str.contains('_upper'), 'cost_variant'] = 'upper'
+        plot_df['scenario_cost_variant'] = 'unknown'
+        plot_df.loc[plot_df['cost_id'].str.contains('_base'), 'scenario_cost_variant'] = 'base'
+        plot_df.loc[plot_df['cost_id'].str.contains('_lower'), 'scenario_cost_variant'] = 'lower'
+        plot_df.loc[plot_df['cost_id'].str.contains('_upper'), 'scenario_cost_variant'] = 'upper'
         
         # Extract the base part of the IDs (remove _base, _lower, _upper suffixes)
-        plot_df['base_ability_id'] = plot_df['ability_id'].str.replace('_lower$|_upper$|_base$', '', regex=True)
-        plot_df['base_cost_id'] = plot_df['cost_id'].str.replace('_lower$|_upper$|_base$', '', regex=True)
+        plot_df['scenario_base_ability_id'] = plot_df['ability_id'].str.replace('_lower$|_upper$|_base$', '', regex=True)
+        plot_df['scenario_base_cost_id'] = plot_df['cost_id'].str.replace('_lower$|_upper$|_base$', '', regex=True)
     else:
         print("Using pre-computed variant fields from data")
     
     # Print some debug info about the available variants
-    ability_variants = plot_df['ability_variant'].value_counts().to_dict()
-    cost_variants = plot_df['cost_variant'].value_counts().to_dict()
+    ability_variants = plot_df['scenario_ability_variant'].value_counts().to_dict()
+    cost_variants = plot_df['scenario_cost_variant'].value_counts().to_dict()
     print(f"Available ability variants: {ability_variants}")
     print(f"Available cost variants: {cost_variants}")
     
@@ -944,16 +944,16 @@ def create_summary_stats(df: pd.DataFrame, output_dir: str):
         output_dir: Directory to save summary
     """
     # Group by key IDs and generate summary stats
-    summary = df.groupby(["ability_id", "cost_id", "constraint_id", "design_id"]).agg({
-        "window_lower": ["mean", "min", "max"],
-        "window_upper": ["mean", "min", "max"],
+    summary = df.groupby(["scenario_ability_id", "scenario_cost_id", "scenario_constraint_id", "design_id"]).agg({
+        "design_window_lower": ["mean", "min", "max"],
+        "design_window_upper": ["mean", "min", "max"],
         "window_width": ["mean", "min", "max"],
-        "original_window_lower": ["mean", "min", "max"],
-        "original_window_upper": ["mean", "min", "max"],
+        "design_original_window_lower": ["mean", "min", "max"],
+        "design_original_window_upper": ["mean", "min", "max"],
         "original_window_width": ["mean", "min", "max"],
         "width_ratio": ["mean", "min", "max"],
-        "total_samples": ["mean", "min", "max", "sum"],
-        "available_budget": ["mean", "min", "max", "sum"]
+        "design_total_samples": ["mean", "min", "max", "sum"],
+        "design_available_budget": ["mean", "min", "max", "sum"]
     })
     
     # Save summary to CSV
@@ -964,14 +964,14 @@ def create_summary_stats(df: pd.DataFrame, output_dir: str):
     print(f"Saved summary statistics to {output_path}")
     
     # Create a simpler summary for quick reference
-    simple_summary = df.groupby(["ability_id", "ability_model", "ability_scenario"]).agg({
-        "budget_fraction": "nunique",
-        "cost_id": "nunique",
-        "constraint_id": "nunique",
+    simple_summary = df.groupby(["scenario_ability_id", "scenario_ability_model", "scenario_ability_scenario"]).agg({
+        "scenario_budget_fraction": "nunique",
+        "scenario_cost_id": "nunique",
+        "scenario_constraint_id": "nunique",
         "design_id": "nunique",
         "window_width": ["mean", "median"],
-        "total_samples": ["mean", "sum"],
-        "available_budget": ["mean", "sum"]
+        "design_total_samples": ["mean", "sum"],
+        "design_available_budget": ["mean", "sum"]
     }).reset_index()
     
     simple_path = os.path.join(output_dir, "simple_summary.csv")
@@ -989,20 +989,20 @@ def main():
     TITLE_ENABLED = not args.disable_titles
     
     print(f"Loading evaluation forecasts from {args.input}")
-    with open(args.json, 'r') as f:
+    with open(args.input, 'r') as f:
         json_data = f.read()
         data = json.loads(json_data)
     df = pd.json_normalize(data, sep='_')
     
     # Convert date column to datetime if needed
-    if "ability_date" in df.columns:
-        df["ability_date"] = pd.to_datetime(df["ability_date"])
+    if "scenario_ability_date" in df.columns:
+        df["scenario_ability_date"] = pd.to_datetime(df["scenario_ability_date"])
     
     print(f"Loaded {len(df)} evaluation forecasts")
     
     # Add sanity check columns
-    df["window_width"] = df["window_upper"] - df["window_lower"]
-    df["original_window_width"] = df["original_window_upper"] - df["original_window_lower"]
+    df["window_width"] = df["design_window_upper"] - df["design_window_lower"]
+    df["original_window_width"] = df["design_original_window_upper"] - df["design_original_window_lower"]
     df["width_ratio"] = df["window_width"] / df["original_window_width"]
     
     # Apply filters if specified
@@ -1010,15 +1010,15 @@ def main():
     
     # Filter by IDs
     if args.filter_ability:
-        df = df[df["ability_id"] == args.filter_ability].copy()
+        df = df[df["scenario_ability_id"] == args.filter_ability].copy()
         print(f"Filtered to {len(df)} records for ability_id: {args.filter_ability}")
     
     if args.filter_cost:
-        df = df[df["cost_id"] == args.filter_cost].copy()
+        df = df[df["scenario_cost_id"] == args.filter_cost].copy()
         print(f"Filtered to {len(df)} records for cost_id: {args.filter_cost}")
         
     if args.filter_constraint:
-        df = df[df["constraint_id"] == args.filter_constraint].copy()
+        df = df[df["scenario_constraint_id"] == args.filter_constraint].copy()
         print(f"Filtered to {len(df)} records for constraint_id: {args.filter_constraint}")
         
     if args.filter_design:
@@ -1027,11 +1027,11 @@ def main():
     
     # Apply legacy filters (backward compatibility)
     if args.filter_model:
-        df = df[df["ability_model"] == args.filter_model].copy()
+        df = df[df["scenario_ability_model"] == args.filter_model].copy()
         print(f"Filtered to {len(df)} records for model: {args.filter_model}")
     
     if args.filter_scenario:
-        df = df[df["ability_scenario"] == args.filter_scenario].copy()
+        df = df[df["scenario_ability_scenario"] == args.filter_scenario].copy()
         print(f"Filtered to {len(df)} records for scenario: {args.filter_scenario}")
     
     # Create output directory
