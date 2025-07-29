@@ -51,59 +51,6 @@ def logistic_function(x: np.ndarray, threshold: float, slope: float) -> np.ndarr
     """
     return 1.0 / (1.0 + np.exp(-slope * (x - threshold)))
 
-def create_evaluation_forecast_from_row(row: pd.Series) -> EvaluationForecast:
-    """
-    Create an EvaluationForecast object from a DataFrame row.
-    
-    Args:
-        row: Row from the evaluation forecasts DataFrame
-        
-    Returns:
-        EvaluationForecast object
-    """
-    # Extract ability forecast parameters from flattened columns
-    ability = AbilityForecast(
-        date=row["ability_date"],
-        threshold=row["ability_threshold"],
-        slope=row["ability_slope"],
-        scenario=row["ability_scenario"],
-        model=row["ability_model"]
-    )
-    
-    # Create evaluation forecast object with all needed fields
-    forecast_data = {
-        "ability": ability,
-        "budget_fraction": row["budget_fraction"],
-        "budget_scenario": row["budget_scenario"],
-        "window_lower": row["window_lower"],
-        "window_upper": row["window_upper"],
-        "sampler_type": row["sampler_type"],
-        "total_samples": int(row["total_samples"]),
-        "gold_standard_cost": row["gold_standard_cost"],
-        "available_budget": row["available_budget"],
-        "adjustment_method": row["adjustment_method"],
-        "original_window_lower": row["original_window_lower"],
-        "original_window_upper": row["original_window_upper"],
-        "repeats_per_unit": row.get("repeats_per_unit", 20),  # Default if missing
-        "cost_model": row["cost_model"],
-        "doubling_rate": row["doubling_rate"],
-        "ability_id": row["ability_id"],
-        "cost_id": row["cost_id"],
-        "constraint_id": row["constraint_id"],
-        "design_id": row["design_id"]
-    }
-    
-    # Add variant information if available in the DataFrame
-    if "ability_variant" in row:
-        forecast_data["ability_variant"] = row["ability_variant"]
-    if "cost_variant" in row:
-        forecast_data["cost_variant"] = row["cost_variant"]
-    if "base_ability_id" in row:
-        forecast_data["base_ability_id"] = row["base_ability_id"]
-    if "base_cost_id" in row:
-        forecast_data["base_cost_id"] = row["base_cost_id"]
-    
-    return EvaluationForecast(**forecast_data)
 
 def create_weight_function(weight_config: Dict[str, Any]) -> Callable[[float], float]:
     """
@@ -398,7 +345,7 @@ def calculate_stats(
 def filter_forecasts(
     forecasts: List[EvaluationForecast], 
     filters: Dict[str, Any]
-) -> pd.DataFrame:
+) -> List[EvaluationForecast]:
     """
     Filter forecasts based on configuration.
     
@@ -407,7 +354,7 @@ def filter_forecasts(
         filters: Filter configuration
         
     Returns:
-        Filtered DataFrame
+        Filtered list of EvaluationForecast objects
     """
     filtered_forecasts = forecasts.copy()
     
@@ -685,33 +632,28 @@ def run_simulations(
                     'metadata': {
                         'estimator': estimator,
                         'ability_scenario': forecast.ability.scenario,
-                        'budget_scenario': forecast.budget_scenario,
+                        'budget_scenario': forecast.scenario_id,
                         'date': forecast.ability.date,
                         'true_value': true_value,
                         'mean': stats["mean"],
-                        'window_lower': forecast.window_lower,
-                        'window_upper': forecast.window_upper,
-                        'total_samples': forecast.total_samples,
+                        'window_lower': forecast.design.window_lower,
+                        'window_upper': forecast.design.window_upper,
+                        'total_samples': forecast.design.total_samples,
                         'threshold': forecast.ability.threshold,
                         'slope': forecast.ability.slope,
-                        'sampler_type': forecast.sampler_type,
-                        'ability_id': forecast.ability_id,
-                        'cost_id': forecast.cost_id,
-                        'constraint_id': forecast.constraint_id,
+                        'sampler_type': forecast.design.sampler_type,
+                        'ability_id': forecast.scenario.ability_id,
+                        'cost_id': forecast.scenario.cost_id,
+                        'constraint_id': forecast.scenario.constraint_id,
                         'design_id': forecast.design_id,
-                        'budget_fraction': forecast.budget_fraction
+                        'budget_fraction': forecast.scenario.budget_fraction,
+                        'ability_variant': forecast.scenario.ability_variant,
+                        'cost_variant': forecast.scenario.cost_variant,
+                        'base_ability_id': forecast.scenario.base_ability_id,
+                        'base_cost_id': forecast.scenario.base_cost_id
                     },
                     'stats': stats
                 }
-                # add variants into raw_results as well
-                if hasattr(forecast, "ability_variant"):
-                    raw_results[sim_id]['metadata']['ability_variant'] = forecast.ability_variant
-                if hasattr(forecast, "cost_variant"):
-                    raw_results[sim_id]['metadata']['cost_variant'] = forecast.cost_variant
-                if hasattr(forecast, "base_ability_id"):
-                    raw_results[sim_id]['metadata']['base_ability_id'] = forecast.base_ability_id
-                if hasattr(forecast, "base_cost_id"):
-                    raw_results[sim_id]['metadata']['base_cost_id'] = forecast.base_cost_id
     finally:
         # Close the HDF5 file if it was opened
         if raw_file is not None:
