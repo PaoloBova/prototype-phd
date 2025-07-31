@@ -117,9 +117,13 @@ print(f"s = {SENSITIVITY_RATE_AFTER_THRESHOLD:.2f}")
 print(f"e* = {e_star:.6f} (Elicitation threshold)")
 
 # Remember the computed delta = t2 - t1
-delta = np.log2(CLAUDE_TIME_HORIZON) - np.log2(CLAUDE_TIME_HORIZON / COMPUTE_EQUIVALENT_GAIN)
+# delta = np.log2(CLAUDE_TIME_HORIZON) - np.log2(CLAUDE_TIME_HORIZON / COMPUTE_EQUIVALENT_GAIN)
+delta = np.log2(COMPUTE_EQUIVALENT_GAIN)
+# Assert that delta is close to the expected value
+assert np.isclose(delta, np.log2(CLAUDE_TIME_HORIZON) - np.log2(CLAUDE_TIME_HORIZON / COMPUTE_EQUIVALENT_GAIN))
 print(f"Delta = {delta:.6f} (Difference between t2 and t1)")
-# Or use compute equivalent gain as a multiplier instead of delta
+# Notice that delta is constant for any given model given our use of the compute
+# equivalent gain concept and the log2 transformation for the time horizon.
 
 # Use the relevant base elicitation threshold in our elicitation bias configs
 # For s=0, we should get e* = 11.039387
