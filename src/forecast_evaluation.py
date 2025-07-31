@@ -521,6 +521,7 @@ def define_elicitation_bias(scenario: EvaluationScenario, config: EvaluationConf
     # Use the bias type and parameters from the schema directly
     bias_type = bias_config.bias_type.value
     parameters = bias_config.parameters.copy()
+    budget_scaling = bias_config.budget_scaling
     
     # Validate bias type
     from .schemas import ElicitationBiasType
@@ -555,7 +556,6 @@ def define_elicitation_bias(scenario: EvaluationScenario, config: EvaluationConf
     if bias_config.budget_dependent:
         # Calculate budget gap: 1.0 = no budget (100% gap), 0.0 = full budget (no gap)
         budget_gap = 1.0 - scenario.budget_fraction
-        budget_scaling = bias_config.budget_scaling
 
         # Apply functional scaling to named parameters
         for param_name, base_value in parameters.items():
