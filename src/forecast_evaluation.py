@@ -421,9 +421,9 @@ def _apply_budget_scaling(base_value: float, budget_gap: float, scaling_type: st
         return base_value
     
     elif scaling_type == "linear":
-        # Linear interpolation: scaled_value = base_value + (target_value - base_value) * budget_gap
+        # Linear interpolation: scaled_value = base_value + (target_value - base_value) * (1 - budget_gap)
         target_value = scaling_params.get("target_value", base_value)
-        return base_value + (target_value - base_value) * budget_gap
+        return base_value + (target_value - base_value) * (1 - budget_gap)
     
     elif scaling_type == "exponential":
         # Exponential decay: scaled_value = base_value * exp(-decay_rate * budget_gap)
@@ -448,14 +448,26 @@ def _apply_budget_scaling(base_value: float, budget_gap: float, scaling_type: st
         logistic_val = 1.0 / (1.0 + math.exp(-steepness * (budget_gap - midpoint)))
         # Scale between min and max values
         return min_value + (max_value - min_value) * (1.0 - logistic_val)
-    elif scaling_type == "log2":
-        # Logarithmic scaling (base 2) from base_value to target value
+    elif scaling_type == "logarithmic":
+        # Logarithmic scaling from base_value to target_value
         target_value = scaling_params.get("target_value", base_value)
-        if target_value <= 0 or base_value <= 0:
-            raise ValueError("Logarithmic scaling requires positive base and target values.")
-        return base_value + (target_value - base_value) * np.log2(1.0 + (1 - budget_gap))
+        base = scaling_params.get("base", 2)  # Default to base 10
+        scale_factor = scaling_params.get("scale_factor", 1.0)
+        
+        # For logarithmic interpolation: result = a + (b - a) * log(1 + k*x) / log(1 + k)
+        # where x is the input parameter (budget_gap in this case)
+        # and k is the scale_factor that controls curvature
+        k = scale_factor * (base - 1)  # Convert base to scale factor
+        
+        if k <= 0:
+            # Fall back to linear interpolation if invalid scale factor
+            return base_value + (target_value - base_value) * budget_gap
+        
+        # Logarithmic interpolation formula
+        log_term = np.log(1.0 + k * budget_gap) / np.log(1.0 + k)
+        return base_value + (target_value - base_value) * log_term
     else:
-        raise ValueError(f"Unknown scaling type: {scaling_type}. Must be one of: constant, linear, exponential, power_law, logistic")
+        raise ValueError(f"Unknown scaling type: {scaling_type}. Must be one of: constant, linear, exponential, power_law, logistic, logarithmic")
 
 def define_elicitation_bias(scenario: EvaluationScenario, config: EvaluationConfig) -> CalculatedElicitationBias:
     """
