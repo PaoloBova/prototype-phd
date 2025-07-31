@@ -335,7 +335,7 @@ def plot_sensitivity_curves(configs: List[Dict[str, Any]], group_name: str, grou
         try:
             # Create evaluation config and scenario
             eval_config = EvaluationConfig(**config)
-            scenario = create_mock_scenario(budget_fraction=1.0)
+            scenario = create_mock_scenario(budget_fraction=0)
             
             # Get calculated bias
             bias = define_elicitation_bias(scenario, eval_config)
