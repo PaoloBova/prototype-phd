@@ -230,6 +230,11 @@ class EvaluationConfig(BaseModel):
         description="Additional parameters for the sampler"
     )
     
+    coverage_ratio: float = Field(
+        0.8, 
+        description="Coverage ratio for evaluation window (default 80%)"
+    )
+    
     elicitation_bias_config: ElicitationBiasConfig = Field(
         default_factory=ElicitationBiasConfig,
         description="Elicitation bias configuration for this run"

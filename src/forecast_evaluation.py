@@ -324,9 +324,9 @@ def generate_evaluation_scenarios(
     
     return scenarios
 
-def calculate_evaluation_window(threshold: float, slope: float) -> Tuple[float, float]:
+def calculate_evaluation_window(threshold: float, slope: float, coverage_ratio: float=0.8) -> Tuple[float, float]:
     """
-    Calculate evaluation window that covers ~80% of the logistic curve.
+    Calculate evaluation window that covers coverage_ratio*100% of the logistic curve.
     
     Args:
         threshold: The 50% threshold parameter
@@ -344,13 +344,16 @@ def calculate_evaluation_window(threshold: float, slope: float) -> Tuple[float, 
     abs_slope = abs(slope)
     sign = -1 if slope < 0 else 1
     
+    # Example: For coverage_ratio = 0.8, we want to cover 80% of the curve
     # For logistic curve, we want to cover from p=0.1 to p=0.9
     # Using logit transformation: logit(p) = threshold + slope*difficulty
     # So difficulty = (logit(p) - threshold) / slope
     # logit(0.1) = ln(0.1/0.9) ≈ -2.2
     # logit(0.9) = ln(0.9/0.1) ≈ 2.2
-    
-    delta = np.log(9)  # ln(0.9/0.1) = ln(9) ≈ 2.2
+    # delta = ln(0.9/0.1) = ln(9) ≈ 2.2
+    upper_percentile = (1 + coverage_ratio) / 2
+    lower_percentile = (1 - coverage_ratio) / 2
+    delta = np.log(upper_percentile / lower_percentile)
     scale = 1.0 / abs_slope
     
     # Lower difficulty corresponds to lower performance (p=0.1)
@@ -593,7 +596,9 @@ def calculate_evaluation_forecast(
     """
     # Calculate base evaluation window from ability parameters
     lower_bound, upper_bound = calculate_evaluation_window(
-        scenario.ability.threshold, scenario.ability.slope
+        scenario.ability.threshold,
+        scenario.ability.slope,
+        coverage_ratio=config.coverage_ratio
     )
     
     # Safety check: ensure window bounds are finite and properly ordered
