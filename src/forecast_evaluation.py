@@ -558,8 +558,8 @@ def define_elicitation_bias(scenario: EvaluationScenario, config: EvaluationConf
         base_threshold = scenario.ability.threshold
         slope = scenario.ability.slope
         
-        # Scale delta by budget fraction (delta shrinks as budget increases)
-        scaled_delta = parameters["delta"] * (1.0 - scenario.budget_fraction)
+        # Use delta parameter directly - budget scaling has already been applied above if enabled
+        scaled_delta = parameters["delta"]
         
         args = [base_threshold, scaled_delta, slope]
         
