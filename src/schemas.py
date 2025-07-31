@@ -125,9 +125,9 @@ class ElicitationBiasConfig(BaseModel):
     enabled: bool = Field(False, description="Whether elicitation bias is enabled")
     name: Optional[str] = Field(None, description="Optional name for this configuration")
     source_file: Optional[str] = Field(None, description="Path to data, used by some types of elicitation bias")
-    parameters: List[Union[float, bool]] = Field(
-        [0.5],
-        description="Parameters for the elicitation bias function, e.g., [threshold, slope]"
+    parameters: Dict[str, float] = Field(
+        {"sensitivity_rate": 0.5, "threshold": 0.0, "slope": 1.0},
+        description="Named parameters for elicitation bias functions. Keys: sensitivity_rate (fall_past_threshold), threshold/slope (linear/logistic)"
     )
     budget_dependent: bool = Field(False, description="Whether parameters should be scaled based on budget")
     budget_scaling: Dict[str, Dict[str, Any]] = Field(
@@ -155,7 +155,7 @@ class CalculatedElicitationBias(BaseModel):
     bias_type: str = Field(..., description="Type of elicitation bias function")
     name: Optional[str] = Field(None, description="Optional name for this configuration")
     source_file: Optional[str] = Field(None, description="Path to data file if used")
-    parameters: List[Union[float, bool]] = Field(..., description="Original configuration parameters")
+    parameters: Dict[str, float] = Field(..., description="Original configuration parameters")
     args: List[float] = Field(..., description="Calculated/scaled bias function arguments")
 
 class EvaluationDesign(BaseModel):

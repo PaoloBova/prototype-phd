@@ -21,10 +21,10 @@ from src.schemas import (
 )
 
 
-def create_elicitation_bias_sweep_config() -> Dict[str, Any]:
+def create_fall_past_threshold_sweep() -> Dict[str, Any]:
     """
-    Create a comprehensive sweep configuration covering different 
-    elicitation bias types and parameters.
+    Create sweep configuration for fall_past_threshold bias type.
+    Focuses on varying sensitivity_rate parameter with consistent budget scaling.
     
     Returns:
         Dictionary with base_config and _sweep specification
@@ -46,12 +46,12 @@ def create_elicitation_bias_sweep_config() -> Dict[str, Any]:
         "elicitation_bias_config": {
             "enabled": True,
             "bias_type": "fall_past_threshold",
-            "name": "default",
+            "name": "fall_past_threshold",
             "source_file": None,
-            "parameters": [1.0, 1.0],  # Base parameter values (enough for linear/logistic)
-            "budget_dependent": True,  # Always true as requested
+            "parameters": {"sensitivity_rate": 1.0, "threshold": 0.0, "slope": 1.0},
+            "budget_dependent": True,
             "budget_scaling": {
-                "param_0": {
+                "sensitivity_rate": {
                     "type": "linear",
                     "params": {"target_value": 0.0}
                 }
@@ -68,34 +68,146 @@ def create_elicitation_bias_sweep_config() -> Dict[str, Any]:
     sweep_config = {
         "base_config": base_config,
         "_sweep": [
-            # Sweep over bias types
+            # Sweep over sensitivity_rate values - the key parameter for fall_past_threshold
             {
-                "path": ["elicitation_bias_config", "bias_type"], 
-                "values": ["fall_past_threshold", "linear", "logistic"]
+                "path": ["elicitation_bias_config", "parameters", "sensitivity_rate"],
+                "values": [0.0, 0.2, 0.4, 0.6, 0.8, 1.0]
+            }
+        ]
+    }
+    
+    return sweep_config
+
+
+def create_linear_bias_sweep() -> Dict[str, Any]:
+    """
+    Create sweep configuration for linear bias type.
+    Focuses on varying threshold and slope parameters with consistent budget scaling.
+    
+    Returns:
+        Dictionary with base_config and _sweep specification
+    """
+    
+    base_config = {
+        "resource_constraints": {
+            "static_budgets": [1.0, 0.75, 0.5, 0.25, 0.1]
+        },
+        "scenario_generation": {
+            "include_base_scenarios": True,
+            "include_ci_scenarios": False
+        },
+        "sampler_type": "uniform",
+        "adjustment_method": "upper_bound", 
+        "repeats_per_unit": 20,
+        "sampler_params": {},
+        
+        "elicitation_bias_config": {
+            "enabled": True,
+            "bias_type": "linear",
+            "name": "linear",
+            "source_file": None,
+            "parameters": {"sensitivity_rate": 0.5, "threshold": 0.0, "slope": 1.0},
+            "budget_dependent": True,
+            "budget_scaling": {
+                "threshold": {
+                    "type": "linear",
+                    "params": {"target_value": 0.0}
+                },
+                "slope": {
+                    "type": "linear", 
+                    "params": {"target_value": 0.5}
+                }
+            }
+        },
+        
+        "alternate_ability": {
+            "enabled": False,
+            "function_type": "logistic",
+            "args": {}
+        }
+    }
+    
+    sweep_config = {
+        "base_config": base_config,
+        "_sweep": [
+            # Sweep over threshold values - key parameter for linear bias
+            {
+                "path": ["elicitation_bias_config", "parameters", "threshold"],
+                "values": [0.0, 5.0, 10.0, 15.0, 20.0, 25.0]
             },
             
-            # Sweep over budget scaling types
+            # Sweep over slope values - second key parameter for linear bias
             {
-                "path": ["elicitation_bias_config", "budget_scaling", "param_0", "type"],
-                "values": ["constant", "linear", "exponential", "logistic"]
+                "path": ["elicitation_bias_config", "parameters", "slope"],
+                "values": [0.2, 0.5, 1.0, 1.5, 2.0]
+            }
+        ]
+    }
+    
+    return sweep_config
+
+
+def create_logistic_bias_sweep() -> Dict[str, Any]:
+    """
+    Create sweep configuration for logistic bias type.
+    Focuses on varying threshold and slope parameters with consistent budget scaling.
+    
+    Returns:
+        Dictionary with base_config and _sweep specification
+    """
+    
+    base_config = {
+        "resource_constraints": {
+            "static_budgets": [1.0, 0.75, 0.5, 0.25, 0.1]
+        },
+        "scenario_generation": {
+            "include_base_scenarios": True,
+            "include_ci_scenarios": False
+        },
+        "sampler_type": "uniform",
+        "adjustment_method": "upper_bound", 
+        "repeats_per_unit": 20,
+        "sampler_params": {},
+        
+        "elicitation_bias_config": {
+            "enabled": True,
+            "bias_type": "logistic",
+            "name": "logistic",
+            "source_file": None,
+            "parameters": {"sensitivity_rate": 0.5, "threshold": 0.0, "slope": 1.0},
+            "budget_dependent": True,
+            "budget_scaling": {
+                "threshold": {
+                    "type": "linear",
+                    "params": {"target_value": 0.0}
+                },
+                "slope": {
+                    "type": "linear",
+                    "params": {"target_value": 0.5}
+                }
+            }
+        },
+        
+        "alternate_ability": {
+            "enabled": False,
+            "function_type": "logistic",
+            "args": {}
+        }
+    }
+    
+    sweep_config = {
+        "base_config": base_config,
+        "_sweep": [
+            # Sweep over threshold values - key parameter for logistic bias (inflection point)
+            {
+                "path": ["elicitation_bias_config", "parameters", "threshold"],
+                "values": [10.0, 15.0, 20.0, 25.0, 30.0]
             },
             
-            # Sweep over linear scaling target values
+            # Sweep over slope values - second key parameter for logistic bias (steepness)
             {
-                "path": ["elicitation_bias_config", "budget_scaling", "param_0", "params", "target_value"],
-                "values": [0.0, 0.25, 0.5]
-            },
-            
-            # Sweep over exponential decay rates
-            {
-                "path": ["elicitation_bias_config", "budget_scaling", "param_0", "params", "decay_rate"],
-                "values": [1.0, 2.0, 3.0]
-            },
-            
-            # Sweep over logistic scaling midpoints
-            {
-                "path": ["elicitation_bias_config", "budget_scaling", "param_0", "params", "midpoint"],
-                "values": [0.25, 0.5, 0.75]
+                "path": ["elicitation_bias_config", "parameters", "slope"],
+                "values": [-2.0, -1.0, -0.5, 0.5, 1.0, 2.0]
             }
         ]
     }
@@ -129,10 +241,10 @@ def create_budget_gap_sweep_config() -> Dict[str, Any]:
             "bias_type": "fall_past_threshold",
             "name": "budget_dependent",
             "source_file": None,
-            "parameters": [1.0, 1.0],  # Base parameter values
+            "parameters": {"sensitivity_rate": 1.0, "threshold": 0.0, "slope": 1.0},
             "budget_dependent": True,
             "budget_scaling": {
-                "param_0": {
+                "sensitivity_rate": {
                     "type": "linear",
                     "params": {"target_value": 0.0}
                 }
@@ -154,18 +266,95 @@ def create_budget_gap_sweep_config() -> Dict[str, Any]:
                 "path": ["elicitation_bias_config", "budget_scaling"],
                 "values": [
                     # Linear scaling configurations
-                    {"param_0": {"type": "linear", "params": {"target_value": 0.0}}},
-                    {"param_0": {"type": "linear", "params": {"target_value": 0.5}}},
+                    {"sensitivity_rate": {"type": "linear", "params": {"target_value": 0.0}}},
+                    {"sensitivity_rate": {"type": "linear", "params": {"target_value": 0.5}}},
                     
                     # Exponential scaling configurations  
-                    {"param_0": {"type": "exponential", "params": {"decay_rate": 1.0}}},
-                    {"param_0": {"type": "exponential", "params": {"decay_rate": 2.0}}},
-                    {"param_0": {"type": "exponential", "params": {"decay_rate": 3.0}}},
+                    {"sensitivity_rate": {"type": "exponential", "params": {"decay_rate": 1.0}}},
+                    {"sensitivity_rate": {"type": "exponential", "params": {"decay_rate": 2.0}}},
+                    {"sensitivity_rate": {"type": "exponential", "params": {"decay_rate": 3.0}}},
                     
                     # Logistic scaling configurations
-                    {"param_0": {"type": "logistic", "params": {"midpoint": 0.5, "steepness": 4.0, "min_value": 0.0, "max_value": 1.0}}},
-                    {"param_0": {"type": "logistic", "params": {"midpoint": 0.25, "steepness": 6.0, "min_value": 0.0, "max_value": 1.0}}},
-                    {"param_0": {"type": "logistic", "params": {"midpoint": 0.75, "steepness": 2.0, "min_value": 0.0, "max_value": 1.0}}}
+                    {"sensitivity_rate": {"type": "logistic", "params": {"midpoint": 0.5, "steepness": 4.0, "min_value": 0.0, "max_value": 1.0}}},
+                    {"sensitivity_rate": {"type": "logistic", "params": {"midpoint": 0.25, "steepness": 6.0, "min_value": 0.0, "max_value": 1.0}}},
+                    {"sensitivity_rate": {"type": "logistic", "params": {"midpoint": 0.75, "steepness": 2.0, "min_value": 0.0, "max_value": 1.0}}}
+                ]
+            }
+        ]
+    }
+    
+    return sweep_config
+
+
+def create_budget_scaling_sweep() -> Dict[str, Any]:
+    """
+    Create sweep configuration focused specifically on budget scaling types and parameters.
+    This is the dedicated function for exploring budget scaling behavior.
+    
+    Returns:
+        Dictionary with base_config and _sweep specification
+    """
+    
+    base_config = {
+        "resource_constraints": {
+            "static_budgets": [1.0, 0.8, 0.6, 0.4, 0.2, 0.0]
+        },
+        "scenario_generation": {
+            "include_base_scenarios": True,
+            "include_ci_scenarios": False
+        },
+        "sampler_type": "uniform",
+        "adjustment_method": "upper_bound",
+        "repeats_per_unit": 20,
+        "sampler_params": {},
+        
+        "elicitation_bias_config": {
+            "enabled": True,
+            "bias_type": "fall_past_threshold",
+            "name": "budget_scaling_study",
+            "source_file": None,
+            "parameters": {"sensitivity_rate": 1.0, "threshold": 0.0, "slope": 1.0},
+            "budget_dependent": True,
+            "budget_scaling": {
+                "sensitivity_rate": {
+                    "type": "linear",
+                    "params": {"target_value": 0.0}
+                }
+            }
+        },
+        
+        "alternate_ability": {
+            "enabled": False,
+            "function_type": "logistic", 
+            "args": {}
+        }
+    }
+    
+    sweep_config = {
+        "base_config": base_config,
+        "_sweep": [
+            # Comprehensive sweep over budget scaling types and parameters
+            {
+                "path": ["elicitation_bias_config", "budget_scaling"],
+                "values": [
+                    # Linear scaling variations
+                    {"sensitivity_rate": {"type": "linear", "params": {"target_value": 0.0}}},
+                    {"sensitivity_rate": {"type": "linear", "params": {"target_value": 0.25}}},
+                    {"sensitivity_rate": {"type": "linear", "params": {"target_value": 0.5}}},
+                    {"sensitivity_rate": {"type": "linear", "params": {"target_value": 0.75}}},
+                    
+                    # Exponential scaling variations  
+                    {"sensitivity_rate": {"type": "exponential", "params": {"decay_rate": 0.5}}},
+                    {"sensitivity_rate": {"type": "exponential", "params": {"decay_rate": 1.0}}},
+                    {"sensitivity_rate": {"type": "exponential", "params": {"decay_rate": 2.0}}},
+                    {"sensitivity_rate": {"type": "exponential", "params": {"decay_rate": 3.0}}},
+                    
+                    # Logistic scaling variations
+                    {"sensitivity_rate": {"type": "logistic", "params": {"midpoint": 0.25, "steepness": 4.0, "min_value": 0.0, "max_value": 1.0}}},
+                    {"sensitivity_rate": {"type": "logistic", "params": {"midpoint": 0.5, "steepness": 4.0, "min_value": 0.0, "max_value": 1.0}}},
+                    {"sensitivity_rate": {"type": "logistic", "params": {"midpoint": 0.75, "steepness": 4.0, "min_value": 0.0, "max_value": 1.0}}},
+                    {"sensitivity_rate": {"type": "logistic", "params": {"midpoint": 0.5, "steepness": 2.0, "min_value": 0.0, "max_value": 1.0}}},
+                    {"sensitivity_rate": {"type": "logistic", "params": {"midpoint": 0.5, "steepness": 6.0, "min_value": 0.0, "max_value": 1.0}}}
                 ]
             }
         ]
@@ -393,10 +582,18 @@ def plot_budget_gap_impact(configs: List[Dict[str, Any]],
     
     for config in configs:
         bias_config = config["elicitation_bias_config"]
-        scaling_config = bias_config.get("budget_scaling", {}).get("param_0", {})
-        scaling_type = scaling_config.get("type", "unknown")
-        if scaling_type in scaling_groups:
-            scaling_groups[scaling_type].append(config)
+        scaling_config = bias_config.get("budget_scaling", {})
+        
+        # Look for the scaling type in sensitivity_rate parameter
+        if "sensitivity_rate" in scaling_config:
+            scaling_type = scaling_config["sensitivity_rate"].get("type", "unknown")
+            if scaling_type in scaling_groups:
+                scaling_groups[scaling_type].append(config)
+        # Fallback: also check param_0 format if present
+        elif "param_0" in scaling_config:
+            scaling_type = scaling_config["param_0"].get("type", "unknown")
+            if scaling_type in scaling_groups:
+                scaling_groups[scaling_type].append(config)
     
     # Plot each scaling type
     scaling_types = ["linear", "exponential", "logistic"]
@@ -411,20 +608,29 @@ def plot_budget_gap_impact(configs: List[Dict[str, Any]],
         if scaling_groups[scaling_type]:
             type_config = scaling_groups[scaling_type][0]
         else:
-            # Create default config
-            type_config = copy.deepcopy(configs[0]) if configs else {
+            # Create a minimal default config for this scaling type
+            type_config = {
+                "resource_constraints": {"static_budgets": [1.0, 0.75, 0.5, 0.25, 0.0]},
+                "scenario_generation": {"include_base_scenarios": True, "include_ci_scenarios": False},
+                "sampler_type": "uniform",
+                "adjustment_method": "upper_bound",
+                "repeats_per_unit": 20,
+                "sampler_params": {},
                 "elicitation_bias_config": {
                     "enabled": True,
                     "bias_type": "fall_past_threshold",
-                    "parameters": [1.0],
+                    "parameters": {"sensitivity_rate": 1.0, "threshold": 0.0, "slope": 1.0},
                     "budget_dependent": True,
                     "budget_scaling": {
-                        "param_0": {
+                        "sensitivity_rate": {
                             "type": scaling_type,
-                            "params": {"target_value": 0.0, "decay_rate": 2.0, "steepness": 4.0, "midpoint": 0.5}
+                            "params": {"target_value": 0.0} if scaling_type == "linear" else 
+                                     {"decay_rate": 2.0} if scaling_type == "exponential" else
+                                     {"midpoint": 0.5, "steepness": 4.0, "min_value": 0.0, "max_value": 1.0}
                         }
                     }
-                }
+                },
+                "alternate_ability": {"enabled": False, "function_type": "logistic", "args": {}}
             }
         
         # Plot for different budget fractions
@@ -543,7 +749,7 @@ def plot_success_probability_comparison(configs: List[Dict[str, Any]],
             label = f'With Bias ({param_str})'
             
             ax.plot(x, biased_probs, color=colors[i], linewidth=2, alpha=0.8, label=label)
-            break  # Just show one example per bias type
+            # break  # Just show one example per bias type
         
         # Add vertical line at ability threshold
         ax.axvline(x=threshold, color='black', linestyle='-', alpha=0.3, label='Ability Threshold')
@@ -591,25 +797,37 @@ def plot_success_probability_comparison(configs: List[Dict[str, Any]],
 if __name__ == "__main__":
     print("Generating elicitation bias visualizations...")
     
-    # Create and expand sweep configurations
-    print("Creating sweep configurations...")
-    bias_sweep = create_elicitation_bias_sweep_config()
-    bias_configs = expand_sweep_config(bias_sweep)
+    # Create and expand sweep configurations for each bias type
+    print("Creating bias-type-specific sweep configurations...")
     
-    budget_sweep = create_budget_gap_sweep_config()
-    budget_configs = expand_sweep_config(budget_sweep)
+    fall_past_configs = expand_sweep_config(create_fall_past_threshold_sweep())
+    linear_configs = expand_sweep_config(create_linear_bias_sweep())
+    logistic_configs = expand_sweep_config(create_logistic_bias_sweep())
     
-    print(f"Generated {len(bias_configs)} bias configurations")
-    print(f"Generated {len(budget_configs)} budget configurations")
+    # Create budget scaling focused configurations
+    budget_scaling_configs = expand_sweep_config(create_budget_scaling_sweep())
+    
+    # Combine all bias configurations
+    all_bias_configs = fall_past_configs + linear_configs + logistic_configs
+    
+    # Legacy budget gap configurations (kept for compatibility)
+    budget_configs = expand_sweep_config(create_budget_gap_sweep_config())
+    
+    print(f"Generated {len(fall_past_configs)} fall_past_threshold configurations")
+    print(f"Generated {len(linear_configs)} linear configurations")
+    print(f"Generated {len(logistic_configs)} logistic configurations")
+    print(f"Generated {len(budget_scaling_configs)} budget scaling configurations")
+    print(f"Total: {len(all_bias_configs)} bias configurations")
+    print(f"Generated {len(budget_configs)} legacy budget configurations")
     
     # Generate all plots
     print("1. Plotting elicitation bias curves...")
-    plot_elicitation_bias_curves(bias_configs)
+    plot_elicitation_bias_curves(all_bias_configs)
     
-    print("2. Plotting budget gap impact...")
-    plot_budget_gap_impact(budget_configs)
+    print("2. Plotting budget gap impact (using dedicated scaling configs)...")
+    plot_budget_gap_impact(budget_scaling_configs)
     
     print("3. Plotting success probability comparison...")
-    plot_success_probability_comparison(bias_configs)
+    plot_success_probability_comparison(all_bias_configs)
     
     print("All visualizations complete!")

@@ -512,25 +512,7 @@ def define_elicitation_bias(scenario: EvaluationScenario, config: EvaluationConf
     
     # Use the bias type and parameters from the schema directly
     bias_type = bias_config.bias_type.value
-    args = list(bias_config.parameters)
-    
-    # Handle file-based configuration if provided
-    if bias_config.source_file:
-        try:
-            with open(bias_config.source_file, 'r') as f:
-                file_config = json.load(f)
-                
-            # Override with file configuration if available
-            if "type" in file_config:
-                bias_type = file_config["type"]
-            if "args" in file_config:
-                args = file_config["args"]
-                
-        except (FileNotFoundError, json.JSONDecodeError) as e:
-            logging.warning(f"Could not load elicitation bias config from {bias_config.source_file}: {e}")
-            # Continue with schema-based configuration
-    
-    # Handle budget-dependent bias scaling
+    parameters = bias_config.parameters.copy()
     
     # Validate bias type
     from .schemas import ElicitationBiasType
@@ -538,37 +520,35 @@ def define_elicitation_bias(scenario: EvaluationScenario, config: EvaluationConf
     if bias_type not in valid_types:
         raise ValueError(f"Invalid elicitation bias type: {bias_type}. Must be one of {valid_types}")
     
-    # Validate argument counts for each bias type
-    if bias_type == "fall_past_threshold" and len(args) != 1:
-        raise ValueError(f"fall_past_threshold bias type requires exactly 1 argument, got {len(args)}")
-    elif bias_type == "linear" and len(args) != 2:
-        raise ValueError(f"linear bias type requires exactly 2 arguments, got {len(args)}")
-    elif bias_type == "logistic" and len(args) != 2:
-        raise ValueError(f"logistic bias type requires exactly 2 arguments, got {len(args)}")
-    
     if bias_config.budget_dependent:
         # Calculate budget gap: 1.0 = no budget (100% gap), 0.0 = full budget (no gap)
         budget_gap = 1.0 - scenario.budget_fraction
-        
-        # Get budget scaling configuration
         budget_scaling = bias_config.budget_scaling
 
-        # Apply functional scaling to each parameter
-        scaled_args = []
-        for i, base_value in enumerate(args):
-            param_name = f"param_{i}"
+        # Apply functional scaling to named parameters
+        for param_name, base_value in parameters.items():
             if param_name in budget_scaling:
                 param_config = budget_scaling[param_name]
                 scaling_type = param_config.get("type", "constant")
                 scaling_params = param_config.get("params", {})
-                # Apply budget scaling function
                 scaled_value = _apply_budget_scaling(base_value, budget_gap, scaling_type, scaling_params)
-                scaled_args.append(scaled_value)
-            else:
-                # No scaling for this parameter, use base value
-                scaled_args.append(base_value)
+                parameters[param_name] = scaled_value
+    
+    # Extract final args based on bias type
+    if bias_type == "fall_past_threshold":
+        if "sensitivity_rate" not in parameters:
+            raise ValueError(f"fall_past_threshold bias type requires 'sensitivity_rate' parameter")
+        args = [parameters["sensitivity_rate"]]
         
-        args = scaled_args
+    elif bias_type == "linear":
+        if "threshold" not in parameters or "slope" not in parameters:
+            raise ValueError(f"linear bias type requires 'threshold' and 'slope' parameters")
+        args = [parameters["threshold"], parameters["slope"]]
+        
+    elif bias_type == "logistic":
+        if "threshold" not in parameters or "slope" not in parameters:
+            raise ValueError(f"logistic bias type requires 'threshold' and 'slope' parameters")
+        args = [parameters["threshold"], parameters["slope"]]
     
     return CalculatedElicitationBias(
         enabled=bias_config.enabled,
