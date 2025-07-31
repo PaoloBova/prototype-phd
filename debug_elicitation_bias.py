@@ -8,6 +8,8 @@ Uses config group filtering to organize plots by related parameter variations.
 import os
 import numpy as np
 import matplotlib.pyplot as plt
+import matplotlib as mpl
+import seaborn as sns
 from datetime import datetime
 from typing import Dict, List, Any, Optional
 from pathlib import Path
@@ -23,6 +25,78 @@ from src.schemas import (
     EvaluationConfig, EvaluationScenario, AbilityForecast, 
     CalculatedElicitationBias
 )
+
+
+# Global plotting style parameters
+FONT_SIZE = 20  # Default font size
+TITLE_ENABLED = False  # Whether to show titles in plots
+FILL_AREA = False  # Whether to fill area under the curve
+
+def _apply_font_styles():
+    """Apply font size settings before creating plot elements."""
+    mpl.rcParams.update({
+        'axes.labelsize': FONT_SIZE,
+        'axes.titlesize': FONT_SIZE,
+        'xtick.labelsize': FONT_SIZE * 0.8,
+        'ytick.labelsize': FONT_SIZE * 0.8,
+        'legend.fontsize': FONT_SIZE * 0.8,
+        'figure.titlesize': FONT_SIZE * 1.2
+    })
+
+def _remove_titles_if_needed():
+    """Remove titles from plots if TITLE_ENABLED is False."""
+    if not TITLE_ENABLED:
+        # Remove titles from the current figure
+        fig = plt.gcf()
+        fig.suptitle("")  # Remove figure suptitle
+        for ax in fig.axes:
+            ax.set_title("")  # Remove axis title
+
+
+def get_plot_colors(n_colors: int, plot_type: str = 'categorical') -> List[str]:
+    """
+    Get colorblind-friendly colors for plots.
+    
+    Args:
+        n_colors: Number of colors needed
+        plot_type: Type of plot ('categorical' or 'sequential')
+        
+    Returns:
+        List of color codes/names
+    """
+    if plot_type == 'categorical':
+        # Use seaborn's colorblind-friendly palette for categorical data
+        if n_colors <= 6:
+            # Use the colorblind palette (6 distinct colors)
+            colors = sns.color_palette('colorblind', n_colors=n_colors)
+        else:
+            # Fall back to tab10 for more colors (still colorblind-friendly)
+            colors = sns.color_palette('tab10', n_colors=n_colors)
+    
+    elif plot_type == 'sequential':
+        # Use cividis for sequential data (more colorblind-friendly than viridis)
+        colors = sns.color_palette('cividis', n_colors=n_colors)
+    
+    else:
+        raise ValueError(f"Unsupported plot_type: {plot_type}. Use 'categorical' or 'sequential'")
+    
+    return colors
+
+
+def get_line_styles(n_styles: int) -> List[str]:
+    """
+    Get distinct line styles for additional visual distinction.
+    
+    Args:
+        n_styles: Number of line styles needed
+        
+    Returns:
+        List of line style codes
+    """
+    base_styles = ['-', '--', '-.', ':', (0, (3, 1, 1, 1)), (0, (5, 1))]
+    
+    # Repeat styles if we need more than available
+    return (base_styles * ((n_styles // len(base_styles)) + 1))[:n_styles]
 
 
 def get_nested_value(config: Dict[str, Any], path: List[str]) -> Any:
@@ -103,7 +177,7 @@ def create_simple_sweep_configs() -> Dict[str, Dict[str, Any]]:
                 "bias_type": "logistic_ability_shift",
                 "name": "logistic_ability_shift",
                 "source_file": None,
-                "parameters": {"delta": 2.0, "elicitation_threshold": 0.0, "sensitivity_rate_after": 0.5},
+                "parameters":{"elicitation_threshold": 11.0, "sensitivity_rate_after": 0.0, "delta": 1.5},
                 "budget_dependent": False,  # Disable budget scaling for cleaner debugging
                 "budget_scaling": {}
             },
@@ -116,7 +190,7 @@ def create_simple_sweep_configs() -> Dict[str, Dict[str, Any]]:
         "_sweep": [
             {
                 "path": ["elicitation_bias_config", "parameters", "delta"],
-                "values": [0.5, 1.0, 2.0, 3.0, 4.0]
+                "values": [0.75, 1.5]
             }
         ]
     }
@@ -140,7 +214,7 @@ def create_simple_sweep_configs() -> Dict[str, Dict[str, Any]]:
                 "bias_type": "task_filter",
                 "name": "task_filter",
                 "source_file": None,
-                "parameters": {"elicitation_threshold": 15.0, "sensitivity_rate_after": 0.5, "delta": 1.0},
+                "parameters": {"elicitation_threshold": 11.0, "sensitivity_rate_after": 0.0, "delta": 1.5},
                 "budget_dependent": False,  # Disable budget scaling for cleaner debugging
                 "budget_scaling": {}
             },
@@ -153,12 +227,12 @@ def create_simple_sweep_configs() -> Dict[str, Dict[str, Any]]:
         "_sweep": [
             {
                 "path": ["elicitation_bias_config", "parameters", "elicitation_threshold"],
-                "values": [10.0, 15.0, 20.0, 25.0, 30.0]
+                "values": [10.0, 15.0, 20.0]
             }
         ]
     }
     
-    # Budget scaling sweep - test budget dependent behavior
+    # Budget scaling sweep - test budget dependent behavior (linear)
     budget_scaling_sweep = {
         "base_config": {
             "resource_constraints": {
@@ -175,17 +249,16 @@ def create_simple_sweep_configs() -> Dict[str, Dict[str, Any]]:
             "elicitation_bias_config": {
                 "enabled": True,
                 "bias_type": "logistic_ability_shift",
-                "name": "budget_scaling_test",
+                "name": "budget_scaling_linear",
                 "source_file": None,
-                "parameters": {"delta": 3.0,
-                               "elicitation_threshold": 0.0,
-                               "sensitivity_rate_after": 0.5},
+                "parameters": {"delta": 1.5,
+                               "elicitation_threshold": 11.0,
+                               "sensitivity_rate_after": 0.0},
                 "budget_dependent": True,
                 "budget_scaling": {
                     "delta": {
                         "type": "linear",
-                        "params": {"target_value": 0.0,
-                                   "target_type": "upper_bound"}
+                        "params": {"target_value": 0.0}
                     },
                     "elicitation_threshold": {
                         "type": "linear",
@@ -207,10 +280,63 @@ def create_simple_sweep_configs() -> Dict[str, Dict[str, Any]]:
         ]
     }
     
+    # Logarithmic budget scaling sweep - test logarithmic scaling behavior
+    logarithmic_budget_scaling_sweep = {
+        "base_config": {
+            "resource_constraints": {
+                "static_budgets": [1.0, 0.8, 0.6, 0.4, 0.2, 0.1, 0.05, 0.0]
+            },
+            "scenario_generation": {
+                "include_base_scenarios": True,
+                "include_ci_scenarios": False
+            },
+            "sampler_type": "uniform",
+            "adjustment_method": "upper_bound", 
+            "repeats_per_unit": 20,
+            "sampler_params": {},
+            "elicitation_bias_config": {
+                "enabled": True,
+                "bias_type": "logistic_ability_shift",
+                "name": "budget_scaling_logarithmic",
+                "source_file": None,
+                "parameters": {"delta": 2.0,
+                               "elicitation_threshold": 11.0,
+                               "sensitivity_rate_after": 0.0},
+                "budget_dependent": True,
+                "budget_scaling": {
+                    "delta": {
+                        "type": "log2",
+                        "params": {
+                            "target_value": 0.0,
+                        }
+                    },
+                    "elicitation_threshold": {
+                        "type": "log2",
+                        "params": {
+                            "target_type": "upper_bound",
+                        }
+                    }
+                }
+            },
+            "alternate_ability": {
+                "enabled": False,
+                "function_type": "logistic",
+                "args": {}
+            }
+        },
+        "_sweep": [
+            {
+                "path": ["elicitation_bias_config", "bias_type"],
+                "values": ["logistic_ability_shift", "task_filter"]
+            }
+        ]
+    }
+    
     return {
         "logistic_ability_shift": logistic_ability_shift_sweep,
         "task_filter": task_filter_sweep,
-        "budget_scaling": budget_scaling_sweep
+        "budget_scaling": budget_scaling_sweep,
+        "logarithmic_budget_scaling": logarithmic_budget_scaling_sweep
     }
 
 
@@ -253,6 +379,24 @@ def define_config_groups() -> Dict[str, Dict[str, Any]]:
                 {"path": ["elicitation_bias_config", "bias_type"], "value": "task_filter"},
                 {"path": ["elicitation_bias_config", "budget_dependent"], "value": True}
             ]
+        },
+        "logarithmic_budget_scaling_logistic_ability_shift": {
+            "name": "Logarithmic Budget Scaling - Logistic Ability Shift",
+            "description": "Shows how logarithmic budget scaling affects logistic ability shift bias",
+            "filters": [
+                {"path": ["elicitation_bias_config", "bias_type"], "value": "logistic_ability_shift"},
+                {"path": ["elicitation_bias_config", "budget_dependent"], "value": True},
+                {"path": ["elicitation_bias_config", "name"], "value": "budget_scaling_logarithmic"}
+            ]
+        },
+        "logarithmic_budget_scaling_task_filter": {
+            "name": "Logarithmic Budget Scaling - Task Filter",
+            "description": "Shows how logarithmic budget scaling affects task filter bias",
+            "filters": [
+                {"path": ["elicitation_bias_config", "bias_type"], "value": "task_filter"},
+                {"path": ["elicitation_bias_config", "budget_dependent"], "value": True},
+                {"path": ["elicitation_bias_config", "name"], "value": "budget_scaling_logarithmic"}
+            ]
         }
     }
 
@@ -272,14 +416,14 @@ def create_mock_scenario(budget_fraction: float = 1.0) -> EvaluationScenario:
     ability = AbilityForecast(
         date=datetime.now(),
         threshold=20.0,
-        slope=-0.6,
+        slope=-0.665,
         scenario="mock_scenario",
         model="mock_model"
     )
     
     scenario = EvaluationScenario(
         ability=ability,
-        doubling_rate=2.0,
+        doubling_rate=1.0,
         intercept=1.0,
         budget_fraction=budget_fraction,
         ability_id="mock_ability",
@@ -312,14 +456,17 @@ def plot_sensitivity_curves(configs: List[Dict[str, Any]], group_name: str, grou
         print(f"No configurations found for group: {group_name}")
         return
     
+    # Apply font styles before creating any plot elements
+    _apply_font_styles()
+    
     # Create figure
     fig, ax = plt.subplots(1, 1, figsize=(12, 8))
     fig.suptitle(f'Sensitivity Curves: {group_info["name"]}', fontsize=14, fontweight='bold')
     
     # Create task difficulty range
-    x = np.linspace(10, 30, 200)
-    threshold = 20.0  # Mock ability threshold
-    colors = plt.cm.tab10(np.linspace(0, 1, len(configs)))
+    x = np.linspace(0, 30, 2000)
+    colors = get_plot_colors(len(configs), plot_type='categorical')
+    line_styles = get_line_styles(len(configs))
     
     ax.set_title(group_info["description"], fontsize=12)
     ax.set_xlabel('Task Difficulty')
@@ -332,6 +479,7 @@ def plot_sensitivity_curves(configs: List[Dict[str, Any]], group_name: str, grou
             # Create evaluation config and scenario
             eval_config = EvaluationConfig(**config)
             scenario = create_mock_scenario(budget_fraction=0)
+            threshold = scenario.ability.threshold
             
             # Get calculated bias
             bias = define_elicitation_bias(scenario, eval_config)
@@ -365,6 +513,9 @@ def plot_sensitivity_curves(configs: List[Dict[str, Any]], group_name: str, grou
             print(f"Error calculating sensitivity for {bias.bias_type}: {e}")
             continue
 
+        # Add filled area under the curve
+        if FILL_AREA:
+            ax.fill_between(x, 0, y, color=colors[i], alpha=0.3)
         ax.plot(x, y, color=colors[i], linewidth=2, label=label)
     
     # Add vertical line at ability threshold
@@ -376,6 +527,7 @@ def plot_sensitivity_curves(configs: List[Dict[str, Any]], group_name: str, grou
     filename = f"sensitivity_curves_{group_name}.png"
     filepath = output_dir / filename
     plt.tight_layout()
+    _remove_titles_if_needed()
     plt.savefig(filepath, dpi=300, bbox_inches='tight')
     plt.close()
     
@@ -399,17 +551,20 @@ def plot_budget_scaling(configs: List[Dict[str, Any]], group_name: str, group_in
         print(f"No configurations found for group: {group_name}")
         return
     
+    # Apply font styles before creating any plot elements
+    _apply_font_styles()
+    
     # Create figure
     fig, ax = plt.subplots(1, 1, figsize=(12, 8))
     fig.suptitle(f'Budget Scaling: {group_info["name"]}', fontsize=14, fontweight='bold')
     
     # Create task difficulty range
-    x = np.linspace(10, 30, 200)
-    threshold = 20.0  # Mock ability threshold
+    x = np.linspace(0, 30, 2000)
     
     # Budget fractions to test
-    budget_fractions = [1.0, 0.75, 0.5, 0.25, 0.0]
-    colors = plt.cm.viridis(np.linspace(0, 1, len(budget_fractions)))
+    budget_fractions = [1.0, 0.75, 0.5, 0.25]
+    colors = get_plot_colors(len(budget_fractions), plot_type='sequential')
+    line_styles = get_line_styles(len(budget_fractions))
     
     ax.set_title(group_info["description"], fontsize=12)
     ax.set_xlabel('Task Difficulty')
@@ -428,6 +583,7 @@ def plot_budget_scaling(configs: List[Dict[str, Any]], group_name: str, group_in
             # Create evaluation config and scenario with this budget
             eval_config = EvaluationConfig(**config)
             scenario = create_mock_scenario(budget_fraction=budget_fraction)
+            threshold = scenario.ability.threshold
             
             # Get calculated bias
             bias = define_elicitation_bias(scenario, eval_config)
@@ -448,7 +604,18 @@ def plot_budget_scaling(configs: List[Dict[str, Any]], group_name: str, group_in
             print(f"Error calculating sensitivity for {bias.bias_type} with budget {budget_fraction}: {e}")
             continue
             
-        label = f'Budget: {budget_fraction:.2f}'
+        # Create informative label with budget and scaled parameter
+        if bias.bias_type == "logistic_ability_shift":
+            delta = bias.args[1] if len(bias.args) > 1 else 1.0
+            label = f'Budget: {budget_fraction:.2f} (δ={delta:.2f})'
+        elif bias.bias_type == "task_filter":
+            elicitation_threshold = bias.args[0] if len(bias.args) > 0 else 0.0
+            label = f'Budget: {budget_fraction:.2f} (thresh={elicitation_threshold:.1f})'
+        else:
+            label = f'Budget: {budget_fraction:.2f}'
+        # Add filled area under the curve
+        if FILL_AREA:
+            ax.fill_between(x, 0, y, color=colors[i], alpha=0.3)
         ax.plot(x, y, color=colors[i], linewidth=2, label=label)
     
     # Add vertical line at ability threshold
@@ -460,10 +627,125 @@ def plot_budget_scaling(configs: List[Dict[str, Any]], group_name: str, group_in
     filename = f"budget_scaling_{group_name}.png"
     filepath = output_dir / filename
     plt.tight_layout()
+    _remove_titles_if_needed()
     plt.savefig(filepath, dpi=300, bbox_inches='tight')
     plt.close()
     
     print(f"Budget scaling plot saved: {filepath}")
+
+
+def plot_budget_scaling_success_rates(configs: List[Dict[str, Any]], group_name: str, group_info: Dict[str, Any], 
+                                     output_dir: Path, timestamp: str):
+    """
+    Plot success rate curves for budget scaling effects.
+    
+    Args:
+        configs: List of filtered configuration dictionaries
+        group_name: Name of the config group
+        group_info: Config group information
+        output_dir: Output directory for plots
+        timestamp: Timestamp string for filename
+    """
+    
+    if not configs:
+        print(f"No configurations found for group: {group_name}")
+        return
+    
+    # Apply font styles before creating any plot elements
+    _apply_font_styles()
+    
+    # Create figure
+    fig, ax = plt.subplots(1, 1, figsize=(12, 8))
+    fig.suptitle(f'Budget Scaling Success Rates: {group_info["name"]}', fontsize=14, fontweight='bold')
+    
+    # Create task difficulty range
+    x = np.linspace(0, 30, 2000)
+    
+    # Budget fractions to test
+    budget_fractions = [1.0, 0.75, 0.5, 0.25]
+    colors = get_plot_colors(len(budget_fractions), plot_type='sequential')
+    
+    ax.set_title(group_info["description"], fontsize=12)
+    ax.set_xlabel('Task Difficulty')
+    ax.set_ylabel('Success Probability')
+    ax.grid(True, alpha=0.3)
+    
+    # Use first configuration (they should be similar for budget scaling)
+    if not configs:
+        return
+    
+    config = configs[0]
+    
+    # Plot baseline (no bias) curve first
+    scenario_baseline = create_mock_scenario(budget_fraction=1.0)
+    threshold = scenario_baseline.ability.threshold
+    slope = scenario_baseline.ability.slope
+    baseline_probs = logistic_function(x, threshold, slope)
+    ax.plot(x, baseline_probs, 'k--', linewidth=3, alpha=0.7, label='No Bias (Budget: 1.00)')
+    
+    # Track previous line for consecutive shading
+    previous_probs = baseline_probs.copy()
+    
+    # Plot for different budget fractions
+    for i, budget_fraction in enumerate(budget_fractions):
+        try:
+            # Create evaluation config and scenario with this budget
+            eval_config = EvaluationConfig(**config)
+            scenario = create_mock_scenario(budget_fraction=budget_fraction)
+            
+            # Get calculated bias
+            bias = define_elicitation_bias(scenario, eval_config)
+            
+            print(f"Budget {budget_fraction}: Bias type={bias.bias_type}, Args={bias.args}")
+            
+        except Exception as e:
+            print(f"Error processing budget fraction {budget_fraction} for {group_name}: {e}")
+            continue
+        
+        # Calculate success probabilities with bias applied
+        try:
+            # Create a full forecast object for the modular function
+            forecast = calculate_evaluation_forecast(scenario, eval_config)
+            
+            # Calculate sensitivity rates and apply to baseline probabilities
+            sensitivity_rates = calculate_sensitivity_rates(x, bias.bias_type, bias.args, forecast)
+            biased_probs = apply_sensitivity_to_probabilities(baseline_probs, sensitivity_rates)
+            
+        except Exception as e:
+            print(f"Error calculating success probabilities for {bias.bias_type} with budget {budget_fraction}: {e}")
+            continue
+            
+        # Create informative label with budget and scaled parameter
+        if bias.bias_type == "logistic_ability_shift":
+            delta = bias.args[1] if len(bias.args) > 1 else 1.0
+            label = f'Budget: {budget_fraction:.2f} (δ={delta:.2f})'
+        elif bias.bias_type == "task_filter":
+            elicitation_threshold = bias.args[0] if len(bias.args) > 0 else 0.0
+            label = f'Budget: {budget_fraction:.2f} (thresh={elicitation_threshold:.1f})'
+        else:
+            label = f'Budget: {budget_fraction:.2f}'
+            
+        # Add filled area under the curve (always for this function)
+        ax.fill_between(x, biased_probs, previous_probs, color=colors[i], alpha=0.3)
+        ax.plot(x, biased_probs, color=colors[i], linewidth=2, label=label)
+        
+        # Update previous_probs for next iteration
+        previous_probs = biased_probs.copy()
+    
+    # Add vertical line at ability threshold
+    ax.axvline(x=threshold, color='black', linestyle='--', alpha=0.7, label='Ability Threshold')
+    ax.legend()
+    ax.set_ylim(-0.05, 1.05)
+    
+    # Save plot
+    filename = f"budget_scaling_success_rates_{group_name}.png"
+    filepath = output_dir / filename
+    plt.tight_layout()
+    _remove_titles_if_needed()
+    plt.savefig(filepath, dpi=300, bbox_inches='tight')
+    plt.close()
+    
+    print(f"Budget scaling success rates plot saved: {filepath}")
 
 
 def plot_success_probability_comparison(configs: List[Dict[str, Any]], group_name: str, group_info: Dict[str, Any], 
@@ -483,16 +765,22 @@ def plot_success_probability_comparison(configs: List[Dict[str, Any]], group_nam
         print(f"No configurations found for group: {group_name}")
         return
     
+    # Apply font styles before creating any plot elements
+    _apply_font_styles()
+    
     # Create figure
     fig, ax = plt.subplots(1, 1, figsize=(12, 8))
     fig.suptitle(f'Success Probability Impact: {group_info["name"]}', fontsize=14, fontweight='bold')
     
     # Create task difficulty range
-    x = np.linspace(10, 30, 200)
-    threshold = 20.0  # Mock ability threshold
-    slope = -0.6     # Mock ability slope
+    x = np.linspace(0, 30, 2000)
     
+
+    # Create evaluation config and scenario
+    scenario = create_mock_scenario(budget_fraction=0.0)
     # Calculate baseline success probabilities (logistic curve)
+    threshold = scenario.ability.threshold
+    slope = scenario.ability.slope
     baseline_probs = logistic_function(x, threshold, slope)
     
     ax.set_title(group_info["description"], fontsize=12)
@@ -503,16 +791,14 @@ def plot_success_probability_comparison(configs: List[Dict[str, Any]], group_nam
     # Plot baseline curve
     ax.plot(x, baseline_probs, 'k--', linewidth=3, alpha=0.7, label='Original (No Bias)')
     
-    colors = plt.cm.tab10(np.linspace(0, 1, len(configs)))
+    colors = get_plot_colors(len(configs), plot_type='categorical')
+    line_styles = get_line_styles(len(configs))
     
     # Plot each configuration
-    for i, config in enumerate(configs[:5]):  # Limit to 5 configs for readability
+    for i, config in enumerate(configs):
         try:
-            # Create evaluation config and scenario
-            eval_config = EvaluationConfig(**config)
-            scenario = create_mock_scenario(budget_fraction=0.5)  # 50% budget constraint
-            
             # Get calculated bias
+            eval_config = EvaluationConfig(**config)
             bias = define_elicitation_bias(scenario, eval_config)
             
         except Exception as e:
@@ -542,6 +828,9 @@ def plot_success_probability_comparison(configs: List[Dict[str, Any]], group_nam
             print(f"Error applying bias for {bias.bias_type}: {e}")
             continue
         
+        # Add filled area under the curve
+        if FILL_AREA:
+            ax.fill_between(x, 0, biased_probs, color=colors[i], alpha=0.3)
         ax.plot(x, biased_probs, color=colors[i], linewidth=2, alpha=0.8, label=label)
     
     # Add vertical line at ability threshold
@@ -553,6 +842,7 @@ def plot_success_probability_comparison(configs: List[Dict[str, Any]], group_nam
     filename = f"success_probability_{group_name}.png"
     filepath = output_dir / filename
     plt.tight_layout()
+    _remove_titles_if_needed()
     plt.savefig(filepath, dpi=300, bbox_inches='tight')
     plt.close()
     
@@ -612,6 +902,14 @@ def main():
                 plot_function(filtered_configs, group_name, group_info, output_dir, timestamp)
             except Exception as e:
                 print(f"Error creating {plot_type} plot for {group_name}: {e}")
+        
+        # Create additional budget scaling success rate plots for budget scaling groups
+        if "budget_scaling" in group_name:
+            print(f"Creating budget scaling success rates plot for {group_name}...")
+            try:
+                plot_budget_scaling_success_rates(filtered_configs, group_name, group_info, output_dir, timestamp)
+            except Exception as e:
+                print(f"Error creating budget scaling success rates plot for {group_name}: {e}")
     
     print(f"\nAll plots saved to: {output_dir}")
     print("Debug visualization complete!")
