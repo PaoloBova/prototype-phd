@@ -139,9 +139,9 @@ class ElicitationBiasConfig(BaseModel):
 
 class AlternateAbilityType(str, Enum):
     """Types of alternate ability functions."""
+    RICHARDS = "richards_generalized_logistic"
     EXPONENTIAL = "exponential"
     POWER_LAW = "power_law"
-    TANGENT = "tangent"
     LOGISTIC = "logistic"
 
 class AlternateAbility(BaseModel):
