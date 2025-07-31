@@ -84,7 +84,7 @@ def create_simple_sweep_configs() -> Dict[str, Dict[str, Any]]:
         Dictionary of sweep configuration functions
     """
     
-    # Logistic ability shift sweep - vary delta parameter
+    # Logistic ability shift sweep - vary shift_multiplier parameter
     logistic_ability_shift_sweep = {
         "base_config": {
             "resource_constraints": {
@@ -103,7 +103,7 @@ def create_simple_sweep_configs() -> Dict[str, Dict[str, Any]]:
                 "bias_type": "logistic_ability_shift",
                 "name": "logistic_ability_shift",
                 "source_file": None,
-                "parameters": {"delta": 2.0, "elicitation_threshold": 0.0, "sensitivity_rate_after": 0.5},
+                "parameters": {"shift_multiplier": 2.0, "elicitation_threshold": 0.0, "sensitivity_rate_after": 0.5},
                 "budget_dependent": False,  # Disable budget scaling for cleaner debugging
                 "budget_scaling": {}
             },
@@ -115,7 +115,7 @@ def create_simple_sweep_configs() -> Dict[str, Dict[str, Any]]:
         },
         "_sweep": [
             {
-                "path": ["elicitation_bias_config", "parameters", "delta"],
+                "path": ["elicitation_bias_config", "parameters", "shift_multiplier"],
                 "values": [0.5, 1.0, 2.0, 3.0, 4.0]
             }
         ]
@@ -140,7 +140,7 @@ def create_simple_sweep_configs() -> Dict[str, Dict[str, Any]]:
                 "bias_type": "task_filter",
                 "name": "task_filter",
                 "source_file": None,
-                "parameters": {"elicitation_threshold": 15.0, "sensitivity_rate_after": 0.5, "delta": 1.0},
+                "parameters": {"elicitation_threshold": 15.0, "sensitivity_rate_after": 0.5, "shift_multiplier": 1.0},
                 "budget_dependent": False,  # Disable budget scaling for cleaner debugging
                 "budget_scaling": {}
             },
@@ -177,12 +177,12 @@ def create_simple_sweep_configs() -> Dict[str, Dict[str, Any]]:
                 "bias_type": "logistic_ability_shift",
                 "name": "budget_scaling_test",
                 "source_file": None,
-                "parameters": {"delta": 3.0,
+                "parameters": {"shift_multiplier": 3.0,
                                "elicitation_threshold": 0.0,
                                "sensitivity_rate_after": 0.5},
                 "budget_dependent": True,
                 "budget_scaling": {
-                    "delta": {
+                    "shift_multiplier": {
                         "type": "linear",
                         "params": {"target_value": 0.0,
                                    "target_type": "upper_bound"}
@@ -222,9 +222,9 @@ def define_config_groups() -> Dict[str, Dict[str, Any]]:
         Dictionary of config group specifications
     """
     return {
-        "logistic_ability_shift_delta_sweep": {
-            "name": "Logistic Ability Shift - Delta Variations",
-            "description": "Shows how different delta values affect the logistic ability shift bias",
+        "logistic_ability_shift_shift_multiplier_sweep": {
+            "name": "Logistic Ability Shift - shift_multiplier Variations",
+            "description": "Shows how different shift_multiplier values affect the logistic ability shift bias",
             "filters": [
                 {"path": ["elicitation_bias_config", "bias_type"], "value": "logistic_ability_shift"},
                 {"path": ["elicitation_bias_config", "budget_dependent"], "value": False}
@@ -352,8 +352,8 @@ def plot_sensitivity_curves(configs: List[Dict[str, Any]], group_name: str, grou
             
             # Create appropriate label based on bias type
             if bias.bias_type == "logistic_ability_shift":
-                delta = bias.args[1] if len(bias.args) > 1 else 1.0
-                label = f'Delta: {delta:.1f}'
+                shift_multiplier = bias.args[1] if len(bias.args) > 1 else 1.0
+                label = f'shift_multiplier: {shift_multiplier:.1f}'
             elif bias.bias_type == "task_filter":
                 elicitation_threshold = bias.args[0] if len(bias.args) > 0 else 0.0
                 sensitivity_rate_after = bias.args[1] if len(bias.args) > 1 else 0.5
@@ -530,8 +530,8 @@ def plot_success_probability_comparison(configs: List[Dict[str, Any]], group_nam
             
             # Create appropriate label based on bias type
             if bias.bias_type == "logistic_ability_shift":
-                delta = bias.args[1] if len(bias.args) > 1 else 1.0
-                label = f'Delta: {delta:.1f}'
+                shift_multiplier = bias.args[1] if len(bias.args) > 1 else 1.0
+                label = f'shift_multiplier: {shift_multiplier:.1f}'
             elif bias.bias_type == "task_filter":
                 elicitation_threshold = bias.args[0] if len(bias.args) > 0 else 0.0
                 label = f'Thresh: {elicitation_threshold:.1f}'
