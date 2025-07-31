@@ -14,7 +14,8 @@ from pathlib import Path
 
 # Import required modules from the project
 from prototype_phd.utils import expand_sweep_config
-from src.forecast_evaluation import define_elicitation_bias
+from src.forecast_evaluation import define_elicitation_bias, calculate_evaluation_forecast
+from src.simulation import generate_task_samples, generate_success_outcomes, logistic_function
 from src.schemas import (
     EvaluationConfig, EvaluationScenario, AbilityForecast, 
     CalculatedElicitationBias
@@ -173,12 +174,15 @@ def create_simple_sweep_configs() -> Dict[str, Dict[str, Any]]:
                 "bias_type": "logistic_ability_shift",
                 "name": "budget_scaling_test",
                 "source_file": None,
-                "parameters": {"delta": 3.0, "elicitation_threshold": 0.0, "sensitivity_rate_after": 0.5},
+                "parameters": {"delta": 3.0,
+                               "elicitation_threshold": 0.0,
+                               "sensitivity_rate_after": 0.5},
                 "budget_dependent": True,
                 "budget_scaling": {
                     "delta": {
                         "type": "linear",
-                        "params": {"target_value": 0.0}
+                        "params": {"target_value": 0.0,
+                                   "target_type": "upper_bound"}
                     }
                 }
             },
@@ -284,21 +288,6 @@ def create_mock_scenario(budget_fraction: float = 1.0) -> EvaluationScenario:
     return scenario
 
 
-def logistic_function(x: np.ndarray, threshold: float, slope: float) -> np.ndarray:
-    """
-    Calculate logistic function values.
-    
-    Args:
-        x: Input values (task difficulties)
-        threshold: Threshold parameter (inflection point)
-        slope: Slope parameter (steepness, negative for declining)
-    
-    Returns:
-        Array of logistic function values
-    """
-    return 1.0 / (1.0 + np.exp(-slope * (x - threshold)))
-
-
 def plot_sensitivity_curves(configs: List[Dict[str, Any]], group_name: str, group_info: Dict[str, Any], 
                            output_dir: Path, timestamp: str):
     """
@@ -340,6 +329,8 @@ def plot_sensitivity_curves(configs: List[Dict[str, Any]], group_name: str, grou
             # Get calculated bias
             bias = define_elicitation_bias(scenario, eval_config)
             
+            
+            
             print(f"Config {i}: Bias type={bias.bias_type}, Args={bias.args}")
             
         except Exception as e:
@@ -349,20 +340,17 @@ def plot_sensitivity_curves(configs: List[Dict[str, Any]], group_name: str, grou
         # Calculate sensitivity for this configuration
         if bias.bias_type == "logistic_ability_shift":
             # Ratio of two logistic curves: full elicitation vs reduced elicitation
-            base_threshold = bias.args[0] if len(bias.args) > 0 else 0.0
+            base_threshold = bias.args[0] if len(bias.args) > 0 else scenario.ability.threshold
             delta = bias.args[1] if len(bias.args) > 1 else 1.0
-            slope = bias.args[2] if len(bias.args) > 2 else 1.0
+            slope = bias.args[2] if len(bias.args) > 2 else scenario.ability.slope
             
             # Calculate numerator (full elicitation) and denominator (reduced elicitation)
-            numerator = logistic_function(x, base_threshold, slope)
-            denominator = logistic_function(x, base_threshold - delta, slope)
-            
-            # Handle division by zero
-            epsilon = 1e-10
-            y = np.where(denominator < epsilon, 1.0, numerator / (denominator + epsilon))
-            y = np.clip(y, 0, 1)
+            numerator = logistic_function(x, base_threshold - delta, slope)
+            denominator = logistic_function(x, base_threshold, slope)
+
+            y = np.clip(numerator / denominator, 0, 1)
             label = f'Delta: {delta:.1f}'
-            
+
         elif bias.bias_type == "task_filter":
             # Step function: full sensitivity before threshold, reduced after
             elicitation_threshold = bias.args[0] if len(bias.args) > 0 else 0.0
@@ -382,7 +370,7 @@ def plot_sensitivity_curves(configs: List[Dict[str, Any]], group_name: str, grou
     ax.set_ylim(-0.05, 1.05)
     
     # Save plot
-    filename = f"sensitivity_curves_{group_name}_{timestamp}.png"
+    filename = f"sensitivity_curves_{group_name}.png"
     filepath = output_dir / filename
     plt.tight_layout()
     plt.savefig(filepath, dpi=300, bbox_inches='tight')
@@ -455,8 +443,8 @@ def plot_budget_scaling(configs: List[Dict[str, Any]], group_name: str, group_in
             slope = bias.args[2] if len(bias.args) > 2 else 1.0
             
             # Calculate numerator (full elicitation) and denominator (reduced elicitation)
-            numerator = logistic_function(x, base_threshold, slope)
-            denominator = logistic_function(x, base_threshold - delta, slope)
+            numerator = logistic_function(x, base_threshold - delta, slope)
+            denominator = logistic_function(x, base_threshold, slope)
             
             # Handle numeric stability
             epsilon = 1e-10
@@ -482,7 +470,7 @@ def plot_budget_scaling(configs: List[Dict[str, Any]], group_name: str, group_in
     ax.set_ylim(-0.05, 1.05)
     
     # Save plot
-    filename = f"budget_scaling_{group_name}_{timestamp}.png"
+    filename = f"budget_scaling_{group_name}.png"
     filepath = output_dir / filename
     plt.tight_layout()
     plt.savefig(filepath, dpi=300, bbox_inches='tight')
@@ -584,7 +572,7 @@ def plot_success_probability_comparison(configs: List[Dict[str, Any]], group_nam
     ax.set_ylim(-0.05, 1.05)
     
     # Save plot
-    filename = f"success_probability_{group_name}_{timestamp}.png"
+    filename = f"success_probability_{group_name}.png"
     filepath = output_dir / filename
     plt.tight_layout()
     plt.savefig(filepath, dpi=300, bbox_inches='tight')
@@ -599,7 +587,7 @@ def main():
     print("Starting elicitation bias debug visualization...")
     
     # Create output directory
-    output_dir = Path("plots/elicitation_bias_debug")
+    output_dir = Path("elicitation_bias_debug")
     output_dir.mkdir(parents=True, exist_ok=True)
     
     # Generate timestamp for filenames
