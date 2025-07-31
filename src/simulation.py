@@ -152,8 +152,8 @@ def calculate_sensitivity_rates(
         slope = bias_args[2] if len(bias_args) > 2 else 1.0
         
         # Calculate numerator (full elicitation) and denominator (reduced elicitation)
-        numerator = logistic_function(task_difficulties, base_threshold, slope)
-        denominator = logistic_function(task_difficulties, base_threshold - delta, slope)
+        numerator = logistic_function(task_difficulties, base_threshold - delta, slope)
+        denominator = logistic_function(task_difficulties, base_threshold, slope)
         
         # Handle numeric stability: when both are near 0, ratio approaches 1
         # Use small epsilon to avoid division by zero
