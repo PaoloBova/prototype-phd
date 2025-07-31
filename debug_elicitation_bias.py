@@ -15,7 +15,10 @@ from pathlib import Path
 # Import required modules from the project
 from prototype_phd.utils import expand_sweep_config
 from src.forecast_evaluation import define_elicitation_bias, calculate_evaluation_forecast
-from src.simulation import generate_task_samples, generate_success_outcomes, logistic_function
+from src.simulation import (
+    generate_task_samples, generate_success_outcomes, logistic_function,
+    calculate_sensitivity_rates, apply_sensitivity_to_probabilities
+)
 from src.schemas import (
     EvaluationConfig, EvaluationScenario, AbilityForecast, 
     CalculatedElicitationBias
@@ -183,6 +186,10 @@ def create_simple_sweep_configs() -> Dict[str, Dict[str, Any]]:
                         "type": "linear",
                         "params": {"target_value": 0.0,
                                    "target_type": "upper_bound"}
+                    },
+                    "elicitation_threshold": {
+                        "type": "linear",
+                        "params": {"target_type": "upper_bound"}
                     }
                 }
             },
@@ -337,29 +344,25 @@ def plot_sensitivity_curves(configs: List[Dict[str, Any]], group_name: str, grou
             print(f"Error processing config {i} for {group_name}: {e}")
             continue
         
-        # Calculate sensitivity for this configuration
-        if bias.bias_type == "logistic_ability_shift":
-            # Ratio of two logistic curves: full elicitation vs reduced elicitation
-            base_threshold = bias.args[0] if len(bias.args) > 0 else scenario.ability.threshold
-            delta = bias.args[1] if len(bias.args) > 1 else 1.0
-            slope = bias.args[2] if len(bias.args) > 2 else scenario.ability.slope
+        # Calculate sensitivity using the modular function from simulation.py
+        try:
+            # Create a full forecast object for the modular function
+            forecast = calculate_evaluation_forecast(scenario, eval_config)
+            y = calculate_sensitivity_rates(x, bias.bias_type, bias.args, forecast)
             
-            # Calculate numerator (full elicitation) and denominator (reduced elicitation)
-            numerator = logistic_function(x, base_threshold - delta, slope)
-            denominator = logistic_function(x, base_threshold, slope)
-
-            y = np.clip(numerator / denominator, 0, 1)
-            label = f'Delta: {delta:.1f}'
-
-        elif bias.bias_type == "task_filter":
-            # Step function: full sensitivity before threshold, reduced after
-            elicitation_threshold = bias.args[0] if len(bias.args) > 0 else 0.0
-            sensitivity_rate_after = bias.args[1] if len(bias.args) > 1 else 0.5
-            y = np.where(x <= elicitation_threshold, 1.0, sensitivity_rate_after)
-            label = f'Thresh: {elicitation_threshold:.1f}, Rate: {sensitivity_rate_after:.2f}'
-        
-        else:
-            print(f"Unsupported bias type: {bias.bias_type}")
+            # Create appropriate label based on bias type
+            if bias.bias_type == "logistic_ability_shift":
+                delta = bias.args[1] if len(bias.args) > 1 else 1.0
+                label = f'Delta: {delta:.1f}'
+            elif bias.bias_type == "task_filter":
+                elicitation_threshold = bias.args[0] if len(bias.args) > 0 else 0.0
+                sensitivity_rate_after = bias.args[1] if len(bias.args) > 1 else 0.5
+                label = f'Thresh: {elicitation_threshold:.1f}, Rate: {sensitivity_rate_after:.2f}'
+            else:
+                label = f'Bias: {bias.bias_type}'
+                
+        except Exception as e:
+            print(f"Error calculating sensitivity for {bias.bias_type}: {e}")
             continue
 
         ax.plot(x, y, color=colors[i], linewidth=2, label=label)
@@ -435,30 +438,14 @@ def plot_budget_scaling(configs: List[Dict[str, Any]], group_name: str, group_in
             print(f"Error processing budget fraction {budget_fraction} for {group_name}: {e}")
             continue
         
-        # Calculate sensitivity for this budget
-        if bias.bias_type == "logistic_ability_shift":
-            # Ratio of two logistic curves: full elicitation vs reduced elicitation
-            base_threshold = bias.args[0] if len(bias.args) > 0 else 0.0
-            delta = bias.args[1] if len(bias.args) > 1 else 1.0
-            slope = bias.args[2] if len(bias.args) > 2 else 1.0
+        # Calculate sensitivity using the modular function from simulation.py
+        try:
+            # Create a full forecast object for the modular function
+            forecast = calculate_evaluation_forecast(scenario, eval_config)
+            y = calculate_sensitivity_rates(x, bias.bias_type, bias.args, forecast)
             
-            # Calculate numerator (full elicitation) and denominator (reduced elicitation)
-            numerator = logistic_function(x, base_threshold - delta, slope)
-            denominator = logistic_function(x, base_threshold, slope)
-            
-            # Handle numeric stability
-            epsilon = 1e-10
-            y = np.where(denominator < epsilon, 1.0, numerator / (denominator + epsilon))
-            y = np.clip(y, 0, 1)
-            
-        elif bias.bias_type == "task_filter":
-            # Step function: full sensitivity before threshold, reduced after
-            elicitation_threshold = bias.args[0] if len(bias.args) > 0 else 0.0
-            sensitivity_rate_after = bias.args[1] if len(bias.args) > 1 else 0.5
-            y = np.where(x <= elicitation_threshold, 1.0, sensitivity_rate_after)
-        
-        else:
-            print(f"Unsupported bias type: {bias.bias_type}")
+        except Exception as e:
+            print(f"Error calculating sensitivity for {bias.bias_type} with budget {budget_fraction}: {e}")
             continue
             
         label = f'Budget: {budget_fraction:.2f}'
@@ -532,36 +519,27 @@ def plot_success_probability_comparison(configs: List[Dict[str, Any]], group_nam
             print(f"Error processing config {i} for {group_name}: {e}")
             continue
         
-        # Apply bias to baseline probabilities
-        if bias.bias_type == "logistic_ability_shift":
-            # Ratio of two logistic curves: full elicitation vs reduced elicitation
-            base_threshold = bias.args[0] if len(bias.args) > 0 else 0.0
-            delta = bias.args[1] if len(bias.args) > 1 else 1.0
-            slope_bias = bias.args[2] if len(bias.args) > 2 else 1.0
+        # Apply bias to baseline probabilities using modular functions
+        try:
+            # Create a full forecast object for the modular function
+            forecast = calculate_evaluation_forecast(scenario, eval_config)
             
-            # Calculate numerator (full elicitation) and denominator (reduced elicitation)
-            numerator = logistic_function(x, base_threshold, slope_bias)
-            denominator = logistic_function(x, base_threshold - delta, slope_bias)
+            # Calculate sensitivity rates and apply to probabilities
+            sensitivity_rates = calculate_sensitivity_rates(x, bias.bias_type, bias.args, forecast)
+            biased_probs = apply_sensitivity_to_probabilities(baseline_probs, sensitivity_rates)
             
-            # Handle division by zero and apply bias
-            epsilon = 1e-10
-            keep_probs = np.where(denominator < epsilon, 1.0, numerator / (denominator + epsilon))
-            keep_probs = np.clip(keep_probs, 0, 1)
-            biased_probs = baseline_probs * keep_probs
-            
-            label = f'Delta: {delta:.1f}'
-            
-        elif bias.bias_type == "task_filter":
-            # Step function: full sensitivity before threshold, reduced after
-            elicitation_threshold = bias.args[0] if len(bias.args) > 0 else 0.0
-            sensitivity_rate_after = bias.args[1] if len(bias.args) > 1 else 0.5
-            keep_probs = np.where(x <= elicitation_threshold, 1.0, sensitivity_rate_after)
-            biased_probs = baseline_probs * keep_probs
-            
-            label = f'Thresh: {elicitation_threshold:.1f}'
-        
-        else:
-            print(f"Unsupported bias type: {bias.bias_type}")
+            # Create appropriate label based on bias type
+            if bias.bias_type == "logistic_ability_shift":
+                delta = bias.args[1] if len(bias.args) > 1 else 1.0
+                label = f'Delta: {delta:.1f}'
+            elif bias.bias_type == "task_filter":
+                elicitation_threshold = bias.args[0] if len(bias.args) > 0 else 0.0
+                label = f'Thresh: {elicitation_threshold:.1f}'
+            else:
+                label = f'Bias: {bias.bias_type}'
+                
+        except Exception as e:
+            print(f"Error applying bias for {bias.bias_type}: {e}")
             continue
         
         ax.plot(x, biased_probs, color=colors[i], linewidth=2, alpha=0.8, label=label)
