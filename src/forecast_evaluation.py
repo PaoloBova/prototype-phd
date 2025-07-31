@@ -11,7 +11,7 @@ import numpy as np
 import prototype_phd.data_utils as data_utils
 from datetime import datetime
 from typing import List, Tuple, Dict, Optional, Union, Any, Callable
-from prototype_phd.utils import expand_sweep_config
+from prototype_phd.utils import expand_sweep_config, get_in
 from .schemas import (
     AbilityForecast,
     WindowAdjustmentMethod, 
@@ -528,6 +528,30 @@ def define_elicitation_bias(scenario: EvaluationScenario, config: EvaluationConf
     if bias_type not in valid_types:
         raise ValueError(f"Invalid elicitation bias type: {bias_type}. Must be one of {valid_types}")
     
+    if bias_type == "task_filter":
+        # We need to ensure budget scaling has the correct target value based on the scenario
+        _, upper_bound = calculate_evaluation_window(
+            scenario.ability.threshold,
+            scenario.ability.slope,
+            coverage_ratio=config.coverage_ratio
+        )
+        # Alternatively, set target value to scenario.threshold instead.
+        target_type = get_in(bias_config.budget_scaling,
+                             ["elicitation_threshold", "params", "target_type"],
+                             default="upper_bound")
+        if target_type == "upper_bound":
+            # Use upper bound as target value
+            target_value = upper_bound
+        elif target_type == "threshold":
+            target_value = scenario.ability.threshold
+        else:
+            target_value = scenario.ability.threshold  # Default to threshold if unknown
+        if "elicitation_threshold" in budget_scaling:
+            if "params" not in budget_scaling["elicitation_threshold"]:
+                budget_scaling["elicitation_threshold"]["params"] = {"target_value": target_value}
+            else:
+                budget_scaling["elicitation_threshold"]["params"]["target_value"] = target_value
+
     if bias_config.budget_dependent:
         # Calculate budget gap: 1.0 = no budget (100% gap), 0.0 = full budget (no gap)
         budget_gap = 1.0 - scenario.budget_fraction
