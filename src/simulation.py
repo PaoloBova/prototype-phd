@@ -195,6 +195,27 @@ def generate_success_outcomes(
             elicitation_threshold = elicitation_bias_args[0] if len(elicitation_bias_args) > 0 else 0.0
             elicitation_slope = elicitation_bias_args[1] if len(elicitation_bias_args) > 1 else 1.0
             keep_probs = logistic_function(task_difficulties, elicitation_threshold, elicitation_slope)
+        elif elicitation_bias_type == "logistic_ability_shift":
+            # Ratio of two logistic curves: full elicitation vs reduced elicitation
+            base_threshold = elicitation_bias_args[0] if len(elicitation_bias_args) > 0 else 0.0
+            delta = elicitation_bias_args[1] if len(elicitation_bias_args) > 1 else 1.0
+            slope = elicitation_bias_args[2] if len(elicitation_bias_args) > 2 else 1.0
+            
+            # Calculate numerator (full elicitation) and denominator (reduced elicitation)
+            numerator = logistic_function(task_difficulties, base_threshold, slope)
+            denominator = logistic_function(task_difficulties, base_threshold - delta, slope)
+            
+            # Handle numeric stability: when both are near 0, ratio approaches 1
+            # Use small epsilon to avoid division by zero
+            epsilon = 1e-10
+            keep_probs = np.where(denominator < epsilon, 1.0, numerator / (denominator + epsilon))
+            keep_probs = np.clip(keep_probs, 0, 1)
+            
+        elif elicitation_bias_type == "task_filter":
+            # Step function: full sensitivity before threshold, reduced after
+            elicitation_threshold = elicitation_bias_args[0] if len(elicitation_bias_args) > 0 else 0.0
+            sensitivity_rate_after = elicitation_bias_args[1] if len(elicitation_bias_args) > 1 else 0.5
+            keep_probs = np.where(task_difficulties <= elicitation_threshold, 1.0, sensitivity_rate_after)
         else:
             raise ValueError(f"Unsupported elicitation bias type: {elicitation_bias_type}")
         

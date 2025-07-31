@@ -118,6 +118,8 @@ class ElicitationBiasType(str, Enum):
     FALL_PAST_THRESHOLD = "fall_past_threshold"
     LINEAR = "linear"
     LOGISTIC = "logistic"
+    LOGISTIC_ABILITY_SHIFT = "logistic_ability_shift"
+    TASK_FILTER = "task_filter"
 
 class ElicitationBiasConfig(BaseModel):
     """Configuration for elicitation bias parameters."""
@@ -126,8 +128,8 @@ class ElicitationBiasConfig(BaseModel):
     name: Optional[str] = Field(None, description="Optional name for this configuration")
     source_file: Optional[str] = Field(None, description="Path to data, used by some types of elicitation bias")
     parameters: Dict[str, float] = Field(
-        {"sensitivity_rate": 0.5, "threshold": 0.0, "slope": 1.0},
-        description="Named parameters for elicitation bias functions. Keys: sensitivity_rate (fall_past_threshold), threshold/slope (linear/logistic)"
+        {"sensitivity_rate": 0.5, "threshold": 0.0, "slope": 1.0, "delta": 1.0, "elicitation_threshold": 0.0, "sensitivity_rate_after": 0.5},
+        description="Named parameters for elicitation bias functions. Keys: sensitivity_rate (fall_past_threshold), threshold/slope (linear/logistic), delta (logistic_ability_shift), elicitation_threshold/sensitivity_rate_after (task_filter)"
     )
     budget_dependent: bool = Field(False, description="Whether parameters should be scaled based on budget")
     budget_scaling: Dict[str, Dict[str, Any]] = Field(

@@ -549,6 +549,24 @@ def define_elicitation_bias(scenario: EvaluationScenario, config: EvaluationConf
         if "threshold" not in parameters or "slope" not in parameters:
             raise ValueError(f"logistic bias type requires 'threshold' and 'slope' parameters")
         args = [parameters["threshold"], parameters["slope"]]
+        
+    elif bias_type == "logistic_ability_shift":
+        if "delta" not in parameters:
+            raise ValueError(f"logistic_ability_shift bias type requires 'delta' parameter")
+        
+        # Use scenario ability parameters directly
+        base_threshold = scenario.ability.threshold
+        slope = scenario.ability.slope
+        
+        # Scale delta by budget fraction (delta shrinks as budget increases)
+        scaled_delta = parameters["delta"] * (1.0 - scenario.budget_fraction)
+        
+        args = [base_threshold, scaled_delta, slope]
+        
+    elif bias_type == "task_filter":
+        if "elicitation_threshold" not in parameters or "sensitivity_rate_after" not in parameters:
+            raise ValueError(f"task_filter bias type requires 'elicitation_threshold' and 'sensitivity_rate_after' parameters")
+        args = [parameters["elicitation_threshold"], parameters["sensitivity_rate_after"]]
     
     return CalculatedElicitationBias(
         enabled=bias_config.enabled,
