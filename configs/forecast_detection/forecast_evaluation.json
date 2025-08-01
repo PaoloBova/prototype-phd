@@ -18,23 +18,13 @@
         }
       }
     },
+    "coverage_ratio": 0.8,
     "elicitation_bias_config": {
-      "enabled": true,
-      "bias_type": "task_filter",
-      "name": "task_filter_sweep",
-      "source_file": null,
-      "budget_dependent": true,
-      "budget_scaling": {
-        "elicitation_threshold": {
-          "type": "linear",
-          "params": {"target_type": "upper_bound"}
-        }
-      },
-      "parameters": {
-        "delta": 1.5,
-        "elicitation_threshold": 11.0,
-        "sensitivity_rate_after": 0.0
-      }
+      "enabled": false,
+      "bias_type": "fall_past_threshold",
+      "budget_dependent": false,
+      "budget_scaling": {},
+      "parameters": {}
     },
     "alternate_ability": {
       "enabled": false,
@@ -49,8 +39,8 @@
   },
   "_sweep": [
     {
-      "path": ["elicitation_bias_config", "budget_scaling", "elicitation_threshold", "type"], 
-      "values": ["linear", "logarithmic"]
+      "path": ["coverage_ratio"],
+      "values": [0.6, 0.7, 0.8, 0.9]
     }
   ]
 }
