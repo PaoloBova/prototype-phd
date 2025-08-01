@@ -20,7 +20,7 @@
     },
     "elicitation_bias_config": {
       "enabled": false,
-      "bias_type": "fall_past_threshold",
+      "bias_type": "task_filter",
       "budget_dependent": false,
       "budget_scaling": {},
       "parameters": {}
