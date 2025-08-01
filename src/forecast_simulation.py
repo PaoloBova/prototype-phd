@@ -24,6 +24,15 @@ from .simulation import (
     SimulationConfig,
     run_simulation, calculate_simulation_statistics, weighted_score_estimator
 )
+from .alternate_ability import (
+    logistic_function,
+    richards_function,
+    richards_percentile,
+    exponential_function,
+    power_law_function,
+    calculate_alternate_ability_threshold as calc_alt_threshold,
+    evaluate_alternate_ability
+)
 
 import prototype_phd.stats
 
@@ -122,168 +131,6 @@ def calculate_true_weighted_score(threshold: float, slope: float, config: Dict[s
     return weighted_score
 
 
-def richards_function(x: np.ndarray, x0: float, k: float, nu: float, 
-                     lower_asymptote: float = 0.0, upper_asymptote: float = 1.0) -> np.ndarray:
-    """
-    Calculate Richards generalized logistic function values.
-    
-    Args:
-        x: Input values (difficulties)
-        x0: Threshold parameter
-        k: Slope parameter 
-        nu: Asymmetry parameter
-        lower_asymptote: Lower asymptote
-        upper_asymptote: Upper asymptote
-    
-    Returns:
-        Array of Richards function values
-    """
-    denom = (1 + nu * np.exp(-k * (x - x0))) ** (1.0 / nu)
-    return lower_asymptote + (upper_asymptote - lower_asymptote) / denom
-
-
-def richards_percentile(p: float, x0: float, k: float, nu: float, 
-                       lower: float = 0.0, upper: float = 1.0) -> float:
-    """
-    Returns x such that Richards(x; x0,k,nu,lower,upper) == lower + p*(upper-lower).
-    
-    Args:
-        p: Percentile (must be between 0 and 1). For 50% point, use p=0.5.
-        x0: Threshold parameter
-        k: Slope parameter
-        nu: Asymmetry parameter
-        lower: Lower asymptote
-        upper: Upper asymptote
-        
-    Returns:
-        The x value where the Richards function equals the given percentile
-    """
-    if not (0 < p < 1):
-        raise ValueError("p must be between 0 and 1")
-
-    # Invert the normalized fraction p and apply the closed-form formula:
-    # x = x0 - (1/k) * ln((p^(-nu) - 1) / nu)
-    numerator = p**(-nu) - 1.0
-    
-    # Avoid division by zero if nu or numerator are problematic
-    if numerator <= 0:
-        raise ValueError("Invalid parameters lead to non-positive numerator")
-
-    return x0 - (1.0 / k) * np.log(numerator / nu)
-
-
-def exponential_function(x: np.ndarray, rate_param: float, convert_from_log2: bool = True) -> np.ndarray:
-    """
-    Calculate exponential survival function values.
-    
-    Args:
-        x: Input values (difficulties)
-        rate_param: Rate parameter (λ)
-        convert_from_log2: Whether to convert from log2 space to linear space
-    
-    Returns:
-        Array of exponential function values
-    """
-    if convert_from_log2:
-        linear_difficulties = np.exp2(x)
-    else:
-        linear_difficulties = x
-    return np.exp(-rate_param * linear_difficulties)
-
-
-def power_law_function(x: np.ndarray, threshold: float, exponent: float) -> np.ndarray:
-    """
-    Calculate power law function values.
-    
-    Args:
-        x: Input values (difficulties)
-        threshold: Threshold parameter
-        exponent: Power law exponent
-    
-    Returns:
-        Array of power law function values
-    """
-    # Avoid division by zero and ensure positive values
-    threshold_safe = max(threshold, 1e-6)
-    ratio = np.maximum(x, 1e-6) / threshold_safe
-    return ratio ** (-exponent)
-
-
-def calculate_alternate_ability_threshold(alternate_ability_config: Dict[str, Any], 
-                                          base_threshold: float,
-                                          base_slope: float) -> float:
-    """
-    Calculate the effective 50% threshold for alternate ability functions.
-    
-    For non-logistic functions, this may differ from the base threshold parameter.
-    
-    Args:
-        alternate_ability_config: Alternate ability configuration
-        base_threshold: Base threshold from ability forecast
-        
-    Returns:
-        Effective 50% threshold for the alternate ability function
-    """
-    function_type = alternate_ability_config.get("function_type", "logistic")
-    args = alternate_ability_config.get("args", {})
-    
-    if function_type == "richards_generalized_logistic":
-        # For Richards curve: use the correct percentile formula
-        x0 = args.get("threshold", base_threshold)
-        k = args.get("slope", base_slope)
-        nu = args.get("nu", 1.0)
-        lower_asymptote = args.get("lower_asymptote", 0.0)
-        upper_asymptote = args.get("upper_asymptote", 1.0)
-        
-        try:
-            # Use the correct Richards percentile formula for 50% point
-            threshold_50 = richards_percentile(0.5, x0, k, nu, lower_asymptote, upper_asymptote)
-            return threshold_50
-            
-        except (ValueError, ZeroDivisionError, OverflowError) as e:
-            logging.warning(f"Could not calculate Richards 50% threshold with ν={nu}, k={k}: {e}")
-            return x0
-            
-    elif function_type == "exponential":
-        # For exponential: S(x) = exp(-λx) = 0.5 => x = ln(2)/λ
-        rate_param = args.get("rate_param", 1.0)
-        convert_from_log2 = args.get("convert_from_log2", True)
-        
-        if rate_param <= 0:
-            logging.warning(f"Invalid rate parameter {rate_param} for exponential function")
-            return base_threshold
-            
-        threshold_50_linear = np.log(2) / rate_param
-        
-        if convert_from_log2:
-            # Convert back to log2 space
-            threshold_50 = np.log2(threshold_50_linear)
-        else:
-            threshold_50 = threshold_50_linear
-            
-        return threshold_50
-        
-    elif function_type == "power_law":
-        # For power law: (x/x0)^(-α) = 0.5 => x = x0 * 2^(1/α)
-        threshold = args.get("threshold", base_threshold)
-        exponent = args.get("exponent", 1.0)
-        
-        if exponent <= 0:
-            logging.warning(f"Invalid exponent {exponent} for power law function")
-            return threshold
-            
-        threshold_50 = threshold * (2 ** (1/exponent))
-        return threshold_50
-        
-    elif function_type == "logistic":
-        # For logistic, use the provided or base threshold
-        return args.get("threshold", base_threshold)
-        
-    else:
-        logging.warning(f"Unknown alternate ability function type: {function_type}")
-        return base_threshold
-
-
 def calculate_true_weighted_score_alternate(alternate_ability_config: Dict[str, Any], 
                                           base_threshold: float, base_slope: float,
                                           config: Dict[str, Any]) -> float:
@@ -310,35 +157,10 @@ def calculate_true_weighted_score_alternate(alternate_ability_config: Dict[str, 
     function_type = alternate_ability_config.get("function_type", "logistic")
     args = alternate_ability_config.get("args", {})
     
-    if function_type == "richards_generalized_logistic":
-        x0 = args.get("threshold", base_threshold)
-        k = args.get("slope", base_slope)
-        nu = args.get("nu", 1.0)
-        lower_asymptote = args.get("lower_asymptote", 0.0)
-        upper_asymptote = args.get("upper_asymptote", 1.0)
-        
-        probs = richards_function(diff_grid, x0, k, nu, lower_asymptote, upper_asymptote)
-        
-    elif function_type == "exponential":
-        rate_param = args.get("rate_param", 1.0)
-        convert_from_log2 = args.get("convert_from_log2", True)
-        
-        probs = exponential_function(diff_grid, rate_param, convert_from_log2)
-        
-    elif function_type == "power_law":
-        threshold = args.get("threshold", base_threshold)
-        exponent = args.get("exponent", 1.0)
-        
-        probs = power_law_function(diff_grid, threshold, exponent)
-        
-    elif function_type == "logistic":
-        alt_threshold = args.get("threshold", base_threshold)
-        alt_slope = args.get("slope", base_slope)
-        
-        probs = logistic_function(diff_grid, alt_threshold, alt_slope)
-        
-    else:
-        raise ValueError(f"Unsupported alternate ability function: {function_type}")
+    try:
+        probs = evaluate_alternate_ability(diff_grid, function_type, args, base_threshold, base_slope)
+    except Exception as e:
+        raise ValueError(f"Error evaluating alternate ability function {function_type}: {e}")
     
     # Clip probabilities to valid range
     probs = np.clip(probs, 0, 1)
@@ -524,9 +346,9 @@ def calculate_true_value(estimator: str, forecast: EvaluationForecast, config: D
                 "function_type": alternate_ability.function_type,
                 "args": alternate_ability.args
             }
-            return calculate_alternate_ability_threshold(alt_config,
-                                                         forecast.scenario.ability.threshold,
-                                                         forecast.scenario.ability.slope)
+            return calc_alt_threshold(alt_config,
+                                              forecast.scenario.ability.threshold,
+                                              forecast.scenario.ability.slope)
         else:
             # Use the standard threshold
             return forecast.scenario.ability.threshold

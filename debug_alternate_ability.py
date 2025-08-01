@@ -21,6 +21,10 @@ from src.simulation import (
     generate_task_samples, generate_success_outcomes, logistic_function,
     calculate_sensitivity_rates, apply_sensitivity_to_probabilities
 )
+from src.alternate_ability import (
+    evaluate_alternate_ability,
+    calculate_alternate_ability_threshold
+)
 from src.schemas import (
     EvaluationConfig, EvaluationScenario, AbilityForecast, 
     CalculatedElicitationBias, AlternateAbilityType
@@ -416,9 +420,9 @@ def create_mock_scenario(budget_fraction: float = 1.0) -> EvaluationScenario:
     return scenario
 
 
-def evaluate_alternate_ability(x: np.ndarray, function_type: str, args: Dict[str, float]) -> np.ndarray:
+def evaluate_alternate_ability_local(x: np.ndarray, function_type: str, args: Dict[str, float]) -> np.ndarray:
     """
-    Evaluate alternate ability function at given difficulty values.
+    Evaluate alternate ability function at given difficulty values using shared functions.
     
     Args:
         x: Array of difficulty values
@@ -428,42 +432,28 @@ def evaluate_alternate_ability(x: np.ndarray, function_type: str, args: Dict[str
     Returns:
         Array of success probabilities
     """
-    if function_type == "logistic":
-        threshold = args.get("threshold", 20.0)
-        slope = args.get("slope", -0.665)
-        return logistic_function(x, threshold, slope)
+    return evaluate_alternate_ability(x, function_type, args)
+
+
+def calculate_true_threshold_50(function_type: str, args: Dict[str, float], 
+                               base_threshold: float = 20.0, base_slope: float = -0.665) -> float:
+    """
+    Calculate the true 50% threshold for alternate ability functions.
     
-    elif function_type == "richards_generalized_logistic":
-        threshold = args.get("threshold", 20.0)
-        slope = args.get("slope", -0.665)
-        asymmetry = args.get("asymmetry", 1.0)
-        growth_rate = args.get("growth_rate", 1.0)
+    Args:
+        function_type: Type of alternate ability function
+        args: Function arguments
+        base_threshold: Base threshold parameter (fallback)
+        base_slope: Base slope parameter (fallback)
         
-        # Richards/Generalized logistic: y = (1 + asymmetry * exp(-growth_rate * slope * (x - threshold)))^(-1/asymmetry)
-        exp_term = np.exp(-growth_rate * slope * (x - threshold))
-        return (1.0 + asymmetry * exp_term) ** (-1.0 / asymmetry)
-    
-    elif function_type == "exponential":
-        threshold = args.get("threshold", 20.0)
-        decay_rate = args.get("decay_rate", 0.1)
-        asymptote = args.get("asymptote", 0.0)
-        
-        # Exponential decay: y = asymptote + (1 - asymptote) * exp(-decay_rate * (x - threshold))
-        return asymptote + (1.0 - asymptote) * np.exp(-decay_rate * np.maximum(0, x - threshold))
-    
-    elif function_type == "power_law":
-        threshold = args.get("threshold", 20.0)
-        exponent = args.get("exponent", -2.0)
-        scale = args.get("scale", 1.0)
-        
-        # Power law: y = scale * (x - threshold + 1)^exponent for x >= threshold, 1 otherwise
-        result = np.ones_like(x)
-        mask = x >= threshold
-        result[mask] = scale * np.power(x[mask] - threshold + 1.0, exponent)
-        return np.clip(result, 0.0, 1.0)
-    
-    else:
-        raise ValueError(f"Unknown alternate ability function type: {function_type}")
+    Returns:
+        True 50% threshold value
+    """
+    alt_config = {
+        "function_type": function_type,
+        "args": args
+    }
+    return calculate_alternate_ability_threshold(alt_config, base_threshold, base_slope)
 
 
 def plot_alternate_ability_curves(configs: List[Dict[str, Any]], group_name: str, group_info: Dict[str, Any], 
@@ -525,23 +515,29 @@ def plot_alternate_ability_curves(configs: List[Dict[str, Any]], group_name: str
         
         # Calculate success probabilities using alternate ability function
         try:
-            y = evaluate_alternate_ability(x, alt_ability.function_type.value, alt_ability.args)
+            y = evaluate_alternate_ability_local(x, alt_ability.function_type.value, alt_ability.args)
+            
+            # Calculate true 50% threshold for this configuration
+            true_threshold_50 = calculate_true_threshold_50(
+                alt_ability.function_type.value, alt_ability.args, 
+                base_threshold=threshold, base_slope=slope
+            )
             
             # Create appropriate label based on function type and varying parameter
             if alt_ability.function_type.value == "richards_generalized_logistic":
                 asymmetry = alt_ability.args.get("asymmetry", 1.0)
-                label = f'Richards (ν={asymmetry:.1f})'
+                label = f'Richards (ν={asymmetry:.1f}, τ₅₀={true_threshold_50:.1f})'
             elif alt_ability.function_type.value == "exponential":
                 decay_rate = alt_ability.args.get("decay_rate", 0.1)
-                label = f'Exponential (λ={decay_rate:.2f})'
+                label = f'Exponential (λ={decay_rate:.2f}, τ₅₀={true_threshold_50:.1f})'
             elif alt_ability.function_type.value == "power_law":
                 exponent = alt_ability.args.get("exponent", -2.0)
-                label = f'Power Law (α={exponent:.1f})'
+                label = f'Power Law (α={exponent:.1f}, τ₅₀={true_threshold_50:.1f})'
             elif alt_ability.function_type.value == "logistic":
                 slope_val = alt_ability.args.get("slope", -0.665)
-                label = f'Logistic (β={slope_val:.3f})'
+                label = f'Logistic (β={slope_val:.3f}, τ₅₀={true_threshold_50:.1f})'
             else:
-                label = f'{alt_ability.function_type.value}'
+                label = f'{alt_ability.function_type.value} (τ₅₀={true_threshold_50:.1f})'
                 
         except Exception as e:
             print(f"Error calculating alternate ability for {alt_ability.function_type}: {e}")
@@ -551,9 +547,12 @@ def plot_alternate_ability_curves(configs: List[Dict[str, Any]], group_name: str
         if FILL_AREA:
             ax.fill_between(x, 0, y, color=colors[i], alpha=0.3)
         ax.plot(x, y, color=colors[i], linewidth=2, linestyle=line_styles[i], label=label)
+        
+        # Add vertical line at true 50% threshold for this function
+        ax.axvline(x=true_threshold_50, color=colors[i], linestyle='--', alpha=0.6, linewidth=1)
     
-    # Add vertical line at ability threshold
-    ax.axvline(x=threshold, color='black', linestyle=':', alpha=0.7, label='Ability Threshold')
+    # Add vertical line at ability threshold (original baseline)
+    ax.axvline(x=threshold, color='black', linestyle=':', alpha=0.7, label=f'Baseline τ₅₀ ({threshold:.1f})')
     ax.legend()
     ax.set_ylim(-0.05, 1.05)
     ax.set_xlim(5, 35)

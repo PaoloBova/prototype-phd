@@ -14,6 +14,7 @@ from enum import Enum
 from typing import Callable, Dict, List, Optional, Tuple, Union
 from pydantic import BaseModel, Field
 from .schemas import TaskSamplerType, EvaluationForecast
+from .alternate_ability import evaluate_alternate_ability
 import prototype_phd.stats as stats
 
 class SimulationMethod(str, Enum):
@@ -242,50 +243,9 @@ def generate_success_outcomes(
     # Calculate success probabilities
     if alternate_ability_enabled:
         # If alternate ability function is enabled, apply it to modify probabilities
-        if alternate_ability_type == "richards_generalized_logistic":
-            # Richards generalized logistic function
-            def richards(x, x0, k, nu, lower_asymptote=0.0, upper_asymptote=1.0):
-                denom = (1 + nu * np.exp(-k * (x - x0))) ** (1.0 / nu)
-                return lower_asymptote + (upper_asymptote - lower_asymptote) / denom
-            nu = alternate_ability_args.get("nu", 1.0)
-            alt_threshold = alternate_ability_args.get("threshold",threshold)
-            alt_slope = alternate_ability_args.get("slope",slope)
-            lower_asymptote = alternate_ability_args.get("lower_asymptote", 0.0)
-            upper_asymptote = alternate_ability_args.get("upper_asymptote", 1.0)
-            probs = richards(task_difficulties, alt_threshold, alt_slope, nu, 
-                             lower_asymptote=lower_asymptote, upper_asymptote=upper_asymptote)
-            probs = np.clip(probs, 0, 1)
-
-        if alternate_ability_type == "exponential":
-            # Exponential survival function: S(x) = exp(-λx) where λ is the rate parameter
-            rate_param = alternate_ability_args.get("rate_param", 1.0)
-            convert_from_log2 = alternate_ability_args.get("convert_from_log2", True)
-
-            # Convert task difficulties from log2 space to linear space if specified
-            if convert_from_log2:
-                linear_difficulties = np.exp2(task_difficulties)
-            else:
-                linear_difficulties = task_difficulties
-                
-            probs = np.exp(-rate_param * linear_difficulties)
-            probs = np.clip(probs, 0, 1)
-        
-        elif alternate_ability_type == "power_law":
-            # Power law function
-            exponent = alternate_ability_args.get("exponent", 1.0)
-            # Avoid division by zero and ensure positive values
-            threshold_safe = max(threshold, 1e-6)
-            ratio = np.maximum(task_difficulties, 1e-6) / threshold_safe
-            probs = ratio ** (-exponent)
-            probs = np.clip(probs, 0, 1)
-        elif alternate_ability_type == "logistic":
-            # Logistic function with custom parameters
-            alt_threshold = alternate_ability_args.get("threshold",threshold)
-            alt_slope = alternate_ability_args.get("slope",slope)
-            probs = logistic_function(task_difficulties, alt_threshold, alt_slope)
-            probs = np.clip(probs, 0, 1)
-        else:
-            raise ValueError(f"Unsupported alternate ability function: {alternate_ability_type}")
+        function_type = alternate_ability_type.value if hasattr(alternate_ability_type, 'value') else str(alternate_ability_type)
+        probs = evaluate_alternate_ability(task_difficulties, function_type, alternate_ability_args, threshold, slope)
+        probs = np.clip(probs, 0, 1)
     else:
         # Default logistic function probabilities
         probs = logistic_function(task_difficulties, threshold, slope)
