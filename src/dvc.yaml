@@ -59,6 +59,7 @@ stages:
       - configs/forecast_detection/forecast_simulation.json
       - src/simulation.py
       - src/schemas.py
+      - src/alternate_ability.py
     outs:
       - output/forecast_detection/simulation_results.csv
       - output/forecast_detection/raw_simulation_results.h5
