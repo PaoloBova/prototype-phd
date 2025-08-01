@@ -24,6 +24,7 @@ TITLE_ENABLED = True  # Whether to show titles in plots
 ESSENTIAL_KEYS = [
     "estimator", "ability_variant", "cost_variant", "ability_scenario", 
     "elicitation_bias_type", "elicitation_bias_enabled", "elicitation_bias_scaling",
+    "elicitation_bias_params",
     "alternate_ability_type", "alternate_ability_enabled", "alternate_ability_args",
     "coverage_ratio", "sampler_type", "threshold"
 ]
