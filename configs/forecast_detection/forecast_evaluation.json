@@ -32,7 +32,11 @@
           "params": {"target_type": "upper_bound"}
         }
       },
-      "parameters": [1, 1]
+      "parameters": {
+        "delta": 1.5,
+        "elicitation_threshold": 11.0,
+        "sensitivity_rate_after": 0.0
+      }
     },
     "alternate_ability": {
       "enabled": false,
