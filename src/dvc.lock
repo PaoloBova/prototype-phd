@@ -156,18 +156,18 @@ stages:
     deps:
     - path: output/forecast_detection/evaluation_forecasts.json
       hash: md5
-      md5: 3de3e21f2dbb250b2b476b2c88130d6c
-      size: 216321
+      md5: 9b76e05923d08bccb333b52441a6f078
+      size: 1587548
     - path: src/tools/explore_evaluation_forecasts.py
       hash: md5
-      md5: e9d613194204f2a2efcb78686c455c36
-      size: 50057
+      md5: 29178da9485472df81e718b6a38e3f21
+      size: 52353
     outs:
     - path: reports/forecast_detection/evaluation_visualizations
       hash: md5
-      md5: 0487e09b6ddb37be68e8f29cd964f810.dir
-      size: 222831
-      nfiles: 1
+      md5: 34311486f41b3f3964842d8a726a6aaa.dir
+      size: 1067247
+      nfiles: 4
   forecast_simulation:
     cmd: python -m src.forecast_simulation --in output/forecast_detection/evaluation_forecasts.json
       --out output/forecast_detection/simulation_results.csv --raw output/forecast_detection/raw_simulation_results.h5
