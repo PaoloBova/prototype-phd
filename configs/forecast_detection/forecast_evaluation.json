@@ -19,29 +19,26 @@
       }
     },
     "elicitation_bias_config": {
-      "enabled": true,
+      "enabled": false,
       "bias_type": "fall_past_threshold",
       "budget_dependent": true,
       "budget_scaling": {
-        "param_0": {
+        "delta": {
           "type": "linear",
-          "base": 0.0,
-          "slope": 0.5
+          "params": {"target_value": 0}
         },
-        "param_1": {
+        "elicitation_threshold": {
           "type": "linear",
-          "base": 1.0,
-          "slope": 0.0
+          "params": {"target_type": "upper_bound"}
         }
       },
       "parameters": [1, 1]
     },
     "alternate_ability": {
       "enabled": false,
-      "function_type": "logistic",
+      "function_type": "richards_generalized_logistic",
       "args": {
-        "slope": 0.0,
-        "threshold": 1.0
+        "nu": 1.0
       }
     },
     "scenario_generation": {
@@ -51,7 +48,7 @@
     "save_detailed_json": false
   },
   "_sweep": [
-    { "path": ["elicitation_bias_config", "enabled"], "values": [false, true] },
-    { "path": ["alternate_ability", "enabled"], "values": [false, true] }
+    { "path": ["elicitation_bias_config", "enabled"], "values": [false] },
+    { "path": ["alternate_ability", "enabled"], "values": [false] }
   ]
 }
