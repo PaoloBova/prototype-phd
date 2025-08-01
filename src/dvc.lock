@@ -226,8 +226,8 @@ stages:
       nfiles: 14
   explore_simulations:
     cmd: python -m src.tools.explore_simulations --raw output/forecast_detection/raw_simulation_results.h5
-      --output reports/forecast_detection/exploration_results --font-size 24 --config
-      configs/forecast_detection/explore_simulations.json
+      --output reports/forecast_detection/exploration_results --font-size 24 --disable-titles
+      --config configs/forecast_detection/explore_simulations.json
     deps:
     - path: configs/forecast_detection/explore_simulations.json
       hash: md5
@@ -244,8 +244,8 @@ stages:
     outs:
     - path: reports/forecast_detection/exploration_results
       hash: md5
-      md5: a6e43e490810db1bee3bf538b48bb2e6.dir
-      size: 21623367
+      md5: 700e12c5456ef728b3186da38f324e2d.dir
+      size: 10421860
       nfiles: 38
   explore_logistic_fits:
     cmd: python -m src.tools.explore_logistic_fits --fits output/forecast_detection/logistic_fit_results.json
