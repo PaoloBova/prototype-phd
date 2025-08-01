@@ -50,6 +50,23 @@ def _style_plots():
         print(f"Warning: Error applying plot styles: {e}")
         # Continue anyway - don't let styling issues break the plotting
 
+def get_figure_size(base_width: float, base_height: float) -> tuple:
+    """
+    Get appropriate figure size based on whether titles are enabled.
+    When titles are enabled, double the height to accommodate multi-line titles.
+    
+    Args:
+        base_width: Base width in inches
+        base_height: Base height in inches
+        
+    Returns:
+        Tuple of (width, height) for figure size
+    """
+    if TITLE_ENABLED:
+        return (base_width * 1.5, base_height * 2.0)
+    else:
+        return (base_width, base_height)
+
 def parse_args():
     """Parse command line arguments."""
     parser = argparse.ArgumentParser(description="Explore simulation results")
@@ -380,7 +397,7 @@ def visualize_simulation_distribution(
         output_path: Path to save the visualization
         config: Optional configuration dictionary
     """
-    plt.figure(figsize=(12, 8))
+    plt.figure(figsize=get_figure_size(12, 8))
     
     # Filter out NaN values for the histogram
     valid_results = results[~np.isnan(results)]
@@ -584,7 +601,7 @@ def plot_bias_variance_tradeoff(h5_file: h5py.File, output_dir: str) -> None:
     df = pd.DataFrame(results)
     
     # Plot bias vs. variance by estimator
-    plt.figure(figsize=(12, 8))
+    plt.figure(figsize=get_figure_size(12, 8))
     
     # Use different markers for different estimators
     for estimator, group in df.groupby('estimator'):
@@ -614,7 +631,7 @@ def plot_bias_variance_tradeoff(h5_file: h5py.File, output_dir: str) -> None:
     
     # Plot bias vs. variance by budget fraction
     if len(df['budget_fraction'].unique()) > 1:
-        plt.figure(figsize=(12, 8))
+        plt.figure(figsize=get_figure_size(12, 8))
         
         scatter = plt.scatter(
             df['bias'], df['variance'],
@@ -825,7 +842,7 @@ def get_axis_label(variable_name: str) -> str:
     
     return label_mapping.get(variable_name, variable_name.replace('_', ' ').title())
 
-def create_title_description(params: Dict[str, Any], max_param_length: int = 25, max_line_length: int = 60) -> str:
+def create_title_description(params: Dict[str, Any], max_param_length: int = 75, max_line_length: int = 180) -> str:
     """
     Create a readable description for plot titles with intelligent line breaking.
     
@@ -837,7 +854,7 @@ def create_title_description(params: Dict[str, Any], max_param_length: int = 25,
     Returns:
         Formatted description string with line breaks for readability
     """
-    def abbreviate_long_value(value: str, max_length: int = 25) -> str:
+    def abbreviate_long_value(value: str, max_length: int = 75) -> str:
         """Abbreviate long parameter values for titles."""
         if len(str(value)) <= max_length:
             return str(value)
@@ -861,8 +878,8 @@ def create_title_description(params: Dict[str, Any], max_param_length: int = 25,
         
         result = ", ".join(items)
         # If too long, abbreviate
-        if len(result) > 35:
-            return f"{result[:32]}..."
+        if len(result) > 105:
+            return f"{result[:102]}..."
         return result
     
     param_parts = []
@@ -954,7 +971,7 @@ def plot_exceedance_probability(
     
     # Create one plot per threshold for this parameter group
     for threshold, thresh_group in df.groupby('threshold'):
-        plt.figure(figsize=(10, 6))
+        plt.figure(figsize=get_figure_size(10, 6))
         
         # Get budget fractions and create distinct visual styles
         budget_fractions = sorted(thresh_group['budget_fraction'].dropna().unique())
@@ -1206,7 +1223,7 @@ def plot_enhanced_detection_metrics(
     estimator = group_info.get('fixed_params', {}).get('estimator', 'unknown')
     
     # 1. Plot conditional median detection lag vs budget
-    plt.figure(figsize=(10, 6))
+    plt.figure(figsize=get_figure_size(10, 6))
     
     for threshold, thresh_group in metrics_df[metrics_df['conditional'] == True].groupby('threshold'):
         median_group = thresh_group[thresh_group['detection_probability'] == 0.5]
@@ -1256,7 +1273,7 @@ def plot_enhanced_detection_metrics(
     print(f"Saved conditional median detection lag plot to {output_path}")
     
     # 2. Plot probability of no detection vs budget
-    plt.figure(figsize=(10, 6))
+    plt.figure(figsize=get_figure_size(10, 6))
     
     for threshold, thresh_group in metrics_df.groupby('threshold'):
         # Take the first occurrence for each budget fraction (they should all be the same)
@@ -1303,7 +1320,7 @@ def plot_enhanced_detection_metrics(
     print(f"Saved no detection probability plot to {output_path}")
     
     # 3. Plot early detection rate vs budget
-    plt.figure(figsize=(10, 6))
+    plt.figure(figsize=get_figure_size(10, 6))
     
     for threshold, thresh_group in metrics_df.groupby('threshold'):
         # Take the first occurrence for each budget fraction (they should all be the same)
