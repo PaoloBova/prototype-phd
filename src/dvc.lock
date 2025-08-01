@@ -130,8 +130,8 @@ stages:
     deps:
     - path: configs/forecast_detection/forecast_evaluation.json
       hash: md5
-      md5: f172fcab273ea1ab4234b11b9baa4663
-      size: 1585
+      md5: ee1392ca0c398937331c39b538e179f0
+      size: 1019
     - path: output/forecast_detection/ability_forecasts.csv
       hash: md5
       md5: 6687806c0540c305bfecb28abf017f77
@@ -142,13 +142,13 @@ stages:
       size: 191
     - path: src/forecast_evaluation.py
       hash: md5
-      md5: d891a1554042726567843bbabc53bbfd
-      size: 39464
+      md5: a11455918c132747884e3ef1c8024c7a
+      size: 39469
     outs:
     - path: output/forecast_detection/evaluation_forecasts.json
       hash: md5
-      md5: 9b76e05923d08bccb333b52441a6f078
-      size: 1587548
+      md5: fef0d5868379fb80267f35267e271cec
+      size: 335286
   explore_evaluation_forecasts:
     cmd: python -m src.tools.explore_evaluation_forecasts --input output/forecast_detection/evaluation_forecasts.json
       --output reports/forecast_detection/evaluation_visualizations --font-size 24
@@ -179,8 +179,8 @@ stages:
       size: 981
     - path: output/forecast_detection/evaluation_forecasts.json
       hash: md5
-      md5: 9b76e05923d08bccb333b52441a6f078
-      size: 1587548
+      md5: fef0d5868379fb80267f35267e271cec
+      size: 335286
     - path: src/alternate_ability.py
       hash: md5
       md5: 3b0f0d3fac94b928497a4dc4f3449c17
@@ -200,12 +200,12 @@ stages:
     outs:
     - path: output/forecast_detection/raw_simulation_results.h5
       hash: md5
-      md5: 1ba5de2c5956f9ba6b582982a3e58922
-      size: 13888232
+      md5: 1d52b6bf864b74dcbaf126068c88d519
+      size: 3696424
     - path: output/forecast_detection/simulation_results.csv
       hash: md5
-      md5: 89ebf598eaa7e69816c4d05688edcd24
-      size: 627321
+      md5: c9e8f1d1035338449d710e04d5f6b05f
+      size: 156779
   analyze_bias:
     cmd: python -m src.tools.analyze_bias --input output/forecast_detection/simulation_results.csv
       --output reports/bias_analysis --remove-outliers
@@ -235,8 +235,8 @@ stages:
       size: 1191
     - path: output/forecast_detection/raw_simulation_results.h5
       hash: md5
-      md5: 1ba5de2c5956f9ba6b582982a3e58922
-      size: 13888232
+      md5: 1d52b6bf864b74dcbaf126068c88d519
+      size: 3696424
     - path: src/tools/explore_simulations.py
       hash: md5
       md5: 1e087b1183f40626c08fe82288956f03
@@ -244,9 +244,9 @@ stages:
     outs:
     - path: reports/forecast_detection/exploration_results
       hash: md5
-      md5: a10fed5a1664f51610d692b9c5decb8d.dir
-      size: 20339345
-      nfiles: 76
+      md5: 8f1df35b1d28ab72970b896ceb9d9dfc.dir
+      size: 5526676
+      nfiles: 19
   explore_logistic_fits:
     cmd: python -m src.tools.explore_logistic_fits --fits output/forecast_detection/logistic_fit_results.json
       --data output/forecast_detection/processed_data.csv --output reports/forecast_detection/logistic_fit_visualizations

@@ -35,5 +35,6 @@
       "include_ci_scenarios": false
     },
     "save_detailed_json": false
-  }
+  },
+  "_sweep": []
 }

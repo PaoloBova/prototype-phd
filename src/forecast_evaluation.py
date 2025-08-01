@@ -308,7 +308,7 @@ def generate_evaluation_scenarios(
                 # Create scenario with all fields including variant metadata
                 scenario = EvaluationScenario(
                     ability=ability_variant['forecast'],
-                    doubling_rate=cost_variant['cost_params']['doubling_rate'],
+                    doubling_rate= 2 * cost_variant['cost_params']['doubling_rate'],
                     intercept=cost_variant['cost_params']['intercept'],
                     budget_fraction=budget_fraction,
                     ability_id=ability_variant['variant_id'],
