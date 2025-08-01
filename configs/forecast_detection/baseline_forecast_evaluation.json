@@ -23,7 +23,7 @@
       "bias_type": "fall_past_threshold",
       "budget_dependent": false,
       "budget_scaling": {},
-      "parameters": []
+      "parameters": {}
     },
     "alternate_ability": {
       "enabled": false,
