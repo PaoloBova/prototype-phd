@@ -24,7 +24,7 @@ TITLE_ENABLED = True  # Whether to show titles in plots
 ESSENTIAL_KEYS = [
     "estimator", "ability_variant", "cost_variant", "ability_scenario", 
     "elicitation_bias_type", "elicitation_bias_enabled", 
-    "alternate_ability_type", "alternate_ability_enabled",
+    "alternate_ability_type", "alternate_ability_enabled", "alternate_ability_args",
     "coverage_ratio", "sampler_type", "threshold"
 ]
 
@@ -683,13 +683,15 @@ def get_line_styles(n_styles: int) -> List[str]:
     # Repeat styles if we need more than available
     return (base_styles * ((n_styles // len(base_styles)) + 1))[:n_styles]
 
-def create_safe_filename(base_name: str, params: Dict[str, Any]) -> str:
+def create_safe_filename(base_name: str, params: Dict[str, Any], max_filename_length: int = 200) -> str:
     """
     Create a safe filename from a base name and parameter dictionary.
+    Automatically falls back to more compact format if filename is too long.
     
     Args:
         base_name: Base filename
         params: Dictionary of parameters to include in filename
+        max_filename_length: Maximum allowed filename length (excluding .png extension)
         
     Returns:
         Safe filename string
@@ -702,6 +704,59 @@ def create_safe_filename(base_name: str, params: Dict[str, Any]) -> str:
         hash_obj = hashlib.md5(str(value).encode())
         return hash_obj.hexdigest()[:8]  # Use first 8 characters of MD5 hash
     
+    def format_dict_for_filename(d: dict) -> str:
+        """Convert a dictionary to a filename-safe string."""
+        if not d:
+            return "empty"
+        
+        # Sort items for consistency
+        items = []
+        for k, v in sorted(d.items()):
+            # Format values appropriately
+            if isinstance(v, float):
+                v_str = f"{v:.3f}".rstrip('0').rstrip('.')
+            else:
+                v_str = str(v)
+            items.append(f"{k}{v_str}")
+        
+        # Join with dashes and ensure it's not too long
+        result = "-".join(items)
+        if len(result) > 20:  # If too long, hash it
+            return hash_long_value(result, 20)
+        return result
+    
+    def create_compact_filename(base_name: str, params: Dict[str, Any]) -> str:
+        """Create a more compact filename using only values, not parameter names."""
+        parts = [base_name]
+        
+        # Add parameters in a consistent order, but only values
+        for key in sorted(params.keys()):
+            value = params[key]
+            # Skip None values and 'unknown' values
+            if value is None or value == "unknown":
+                continue
+            
+            # Format values appropriately based on type
+            if isinstance(value, dict):
+                value_str = format_dict_for_filename(value)
+            elif isinstance(value, float):
+                value_str = f"{value:.2f}".rstrip('0').rstrip('.')
+            else:
+                value_str = str(value)
+            
+            # Hash long values
+            if key == "ability_scenario" or len(value_str) > 15:
+                value_str = hash_long_value(value_str)
+            
+            # Add only the value, not the key name
+            parts.append(value_str)
+        
+        # Join and sanitize
+        filename = "_".join(parts)
+        safe_filename = "".join(c if c.isalnum() or c in "_-." else "_" for c in filename)
+        return safe_filename
+    
+    # First, try the full filename with parameter names
     parts = [base_name]
     
     # Add parameters in a consistent order
@@ -711,8 +766,10 @@ def create_safe_filename(base_name: str, params: Dict[str, Any]) -> str:
         if value is None or value == "unknown":
             continue
         
-        # Format values appropriately
-        if isinstance(value, float):
+        # Format values appropriately based on type
+        if isinstance(value, dict):
+            value_str = format_dict_for_filename(value)
+        elif isinstance(value, float):
             value_str = f"{value:.2f}".rstrip('0').rstrip('.')
         else:
             value_str = str(value)
@@ -727,6 +784,18 @@ def create_safe_filename(base_name: str, params: Dict[str, Any]) -> str:
     # Join and sanitize
     filename = "_".join(parts)
     safe_filename = "".join(c if c.isalnum() or c in "_-." else "_" for c in filename)
+    
+    # Check if filename is too long
+    if len(safe_filename) > max_filename_length:
+        print(f"Warning: Filename too long ({len(safe_filename)} chars), using compact format")
+        safe_filename = create_compact_filename(base_name, params)
+        
+        # If still too long, use hash of the full parameter set
+        if len(safe_filename) > max_filename_length:
+            param_hash = hash_long_value(str(sorted(params.items())), 16)
+            safe_filename = f"{base_name}_{param_hash}"
+            print(f"Warning: Even compact filename too long, using hash: {safe_filename}")
+    
     return safe_filename
 
 def get_axis_label(variable_name: str) -> str:
@@ -770,6 +839,27 @@ def create_title_description(params: Dict[str, Any], max_param_length: int = 20)
         # For titles, we can be more descriptive than filenames
         return f"{str(value)[:max_length-3]}..."
     
+    def format_dict_for_title(d: dict) -> str:
+        """Convert a dictionary to a readable string for titles."""
+        if not d:
+            return "default"
+        
+        # Sort items for consistency and create readable format
+        items = []
+        for k, v in sorted(d.items()):
+            # Format values appropriately
+            if isinstance(v, float):
+                v_str = f"{v:.3f}".rstrip('0').rstrip('.')
+            else:
+                v_str = str(v)
+            items.append(f"{k}={v_str}")
+        
+        result = ", ".join(items)
+        # If too long, abbreviate
+        if len(result) > 30:
+            return f"{result[:27]}..."
+        return result
+    
     param_parts = []
     for key, value in sorted(params.items()):
         if value is None or value == "unknown":
@@ -778,8 +868,10 @@ def create_title_description(params: Dict[str, Any], max_param_length: int = 20)
         # Format the key nicely using the new function
         nice_key = get_axis_label(key)
         
-        # Format the value
-        if isinstance(value, float):
+        # Format the value based on type
+        if isinstance(value, dict):
+            value_str = format_dict_for_title(value)
+        elif isinstance(value, float):
             value_str = f"{value:.2f}".rstrip('0').rstrip('.')
         else:
             value_str = str(value)
