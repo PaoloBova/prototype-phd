@@ -11,12 +11,22 @@ import os
 import pandas as pd
 import json
 import logging
+import hashlib
 from typing import Dict, List, Optional, Tuple, Any, Union
 import seaborn as sns
 
 # Global plotting style parameters
 FONT_SIZE = 12  # Default font size
 TITLE_ENABLED = True  # Whether to show titles in plots
+
+# Use relevant parameters except those in vary_params
+# Only use parameters that are meaningful for grouping plots
+ESSENTIAL_KEYS = [
+    "estimator", "ability_variant", "cost_variant", "ability_scenario", 
+    "elicitation_bias_type", "elicitation_bias_enabled", 
+    "alternate_ability_type", "alternate_ability_enabled",
+    "coverage_ratio", "sampler_type", "threshold"
+]
 
 def _style_plots():
     """Apply font size settings and optionally remove titles from plots."""
@@ -680,6 +690,14 @@ def create_safe_filename(base_name: str, params: Dict[str, Any]) -> str:
     Returns:
         Safe filename string
     """
+    def hash_long_value(value: str, max_length: int = 12) -> str:
+        """Create a short hash for long parameter values."""
+        if len(str(value)) <= max_length:
+            return str(value)
+        # Create a short hash of the value
+        hash_obj = hashlib.md5(str(value).encode())
+        return hash_obj.hexdigest()[:8]  # Use first 8 characters of MD5 hash
+    
     parts = [base_name]
     
     # Add parameters in a consistent order
@@ -688,11 +706,17 @@ def create_safe_filename(base_name: str, params: Dict[str, Any]) -> str:
         # Skip None values and 'unknown' values
         if value is None or value == "unknown":
             continue
+        
         # Format values appropriately
         if isinstance(value, float):
             value_str = f"{value:.2f}".rstrip('0').rstrip('.')
         else:
             value_str = str(value)
+        
+        # Hash long values (especially ability_scenario which can be very long)
+        if key == "ability_scenario" or len(value_str) > 15:
+            value_str = hash_long_value(value_str)
+        
         # Add to parts
         parts.append(f"{key}_{value_str}")
     
@@ -700,6 +724,46 @@ def create_safe_filename(base_name: str, params: Dict[str, Any]) -> str:
     filename = "_".join(parts)
     safe_filename = "".join(c if c.isalnum() or c in "_-." else "_" for c in filename)
     return safe_filename
+
+def create_title_description(params: Dict[str, Any], max_param_length: int = 20) -> str:
+    """
+    Create a readable description for plot titles.
+    
+    Args:
+        params: Dictionary of parameters
+        max_param_length: Maximum length before abbreviating parameter values
+        
+    Returns:
+        Formatted description string
+    """
+    def abbreviate_long_value(value: str, max_length: int = 20) -> str:
+        """Abbreviate long parameter values for titles."""
+        if len(str(value)) <= max_length:
+            return str(value)
+        # For titles, we can be more descriptive than filenames
+        return f"{str(value)[:max_length-3]}..."
+    
+    param_parts = []
+    for key, value in sorted(params.items()):
+        if value is None or value == "unknown":
+            continue
+        
+        # Format the key nicely
+        nice_key = key.replace('_', ' ').title()
+        
+        # Format the value
+        if isinstance(value, float):
+            value_str = f"{value:.2f}".rstrip('0').rstrip('.')
+        else:
+            value_str = str(value)
+        
+        # Abbreviate long values for readability
+        if len(value_str) > max_param_length:
+            value_str = abbreviate_long_value(value_str, max_param_length)
+        
+        param_parts.append(f"{nice_key}: {value_str}")
+    
+    return ", ".join(param_parts)
 
 def plot_exceedance_probability(
     h5_file: h5py.File,
@@ -764,8 +828,10 @@ def plot_exceedance_probability(
         # Create title from group info
         if TITLE_ENABLED:
             title_parts = [f"Exceedance Probability vs {group_by.replace('_', ' ').title()}"]
-            if group_info.get('description'):
-                title_parts.append(group_info['description'])
+            # Use the new title description function
+            title_description = create_title_description(group_info.get('fixed_params', {}))
+            if title_description:
+                title_parts.append(title_description)
             title_parts.append(f"Threshold: {threshold}")
             plt.title("\n".join(title_parts))
         
@@ -782,9 +848,20 @@ def plot_exceedance_probability(
         # Fix y-axis range for consistency
         plt.ylim(-0.05, 1.05)
         
-        # Create filename from group parameters and threshold
-        filename_params = {**group_info.get('fixed_params', {}), "threshold": threshold}
-        safe_filename = create_safe_filename('exceedance', filename_params)
+        # Create filename from essential group parameters and threshold
+        # Only use the most important parameters to avoid long filenames
+        essential_params = {}
+        fixed_params = group_info.get('fixed_params', {})
+        
+        # Include only the most essential parameters for filename
+        essential_keys = ESSENTIAL_KEYS
+        for key in essential_keys:
+            if key == 'threshold':
+                essential_params[key] = threshold
+            elif key in fixed_params and fixed_params[key] != "unknown":
+                essential_params[key] = fixed_params[key]
+        
+        safe_filename = create_safe_filename('exceedance', essential_params)
         output_path = os.path.join(output_dir, f"{safe_filename}.png")
         
         plt.tight_layout()
@@ -992,16 +1069,28 @@ def plot_enhanced_detection_metrics(
     
     if TITLE_ENABLED:
         title_parts = ['Conditional Median Detection Lag vs Budget Fraction']
-        if group_info.get('description'):
-            title_parts.append(group_info['description'])
+        # Use the new title description function
+        title_description = create_title_description(group_info.get('fixed_params', {}))
+        if title_description:
+            title_parts.append(title_description)
         title_parts.append('True Value at 50% of Successful Detections')
         plt.title('\n'.join(title_parts))
     
     plt.grid(True, alpha=0.3)
     plt.legend()
     
-    filename_params = {**group_info.get('fixed_params', {}), "metric": "conditional_median_lag"}
-    filename = create_safe_filename('detection', filename_params)
+    # Create essential filename from key parameters only
+    essential_params = {}
+    fixed_params = group_info.get('fixed_params', {})
+    
+    # Include only the most essential parameters for filename
+    essential_keys = ESSENTIAL_KEYS
+    for key in essential_keys:
+        if key in fixed_params and fixed_params[key] != "unknown":
+            essential_params[key] = fixed_params[key]
+    
+    essential_params["metric"] = "conditional_median_lag"
+    filename = create_safe_filename('detection', essential_params)
     output_path = os.path.join(output_dir, f"{filename}.png")
     plt.tight_layout()
     _style_plots()  # Apply font and title settings
@@ -1028,15 +1117,27 @@ def plot_enhanced_detection_metrics(
     
     if TITLE_ENABLED:
         title_parts = ['Probability of No Detection vs Budget Fraction']
-        if group_info.get('description'):
-            title_parts.append(group_info['description'])
+        # Use the new title description function
+        title_description = create_title_description(group_info.get('fixed_params', {}))
+        if title_description:
+            title_parts.append(title_description)
         plt.title('\n'.join(title_parts))
     
     plt.grid(True, alpha=0.3)
     plt.legend()
     
-    filename_params = {**group_info.get('fixed_params', {}), "metric": "no_detection_prob"}
-    filename = create_safe_filename('detection', filename_params)
+    # Create essential filename from key parameters only  
+    essential_params = {}
+    fixed_params = group_info.get('fixed_params', {})
+    
+    # Include only the most essential parameters for filename
+    essential_keys = ESSENTIAL_KEYS
+    for key in essential_keys:
+        if key in fixed_params and fixed_params[key] != "unknown":
+            essential_params[key] = fixed_params[key]
+    
+    essential_params["metric"] = "no_detection_prob"
+    filename = create_safe_filename('detection', essential_params)
     output_path = os.path.join(output_dir, f"{filename}.png")
     plt.tight_layout()
     _style_plots()  # Apply font and title settings
@@ -1063,15 +1164,27 @@ def plot_enhanced_detection_metrics(
     
     if TITLE_ENABLED:
         title_parts = ['Detection Rate at Threshold vs Budget Fraction']
-        if group_info.get('description'):
-            title_parts.append(group_info['description'])
+        # Use the new title description function
+        title_description = create_title_description(group_info.get('fixed_params', {}))
+        if title_description:
+            title_parts.append(title_description)
         plt.title('\n'.join(title_parts))
     
     plt.grid(True, alpha=0.3)
     plt.legend()
     
-    filename_params = {**group_info.get('fixed_params', {}), "metric": "early_detection_rate"}
-    filename = create_safe_filename('detection', filename_params)
+    # Create essential filename from key parameters only
+    essential_params = {}
+    fixed_params = group_info.get('fixed_params', {})
+    
+    # Include only the most essential parameters for filename
+    essential_keys = ESSENTIAL_KEYS
+    for key in essential_keys:
+        if key in fixed_params and fixed_params[key] != "unknown":
+            essential_params[key] = fixed_params[key]
+    
+    essential_params["metric"] = "early_detection_rate"
+    filename = create_safe_filename('detection', essential_params)
     output_path = os.path.join(output_dir, f"{filename}.png")
     plt.tight_layout()
     _style_plots()  # Apply font and title settings
@@ -1117,9 +1230,8 @@ def group_simulation_paths_by_fixed_params(
         # Use all parameters except those in vary_params
         fixed_params = [p for p in all_params if p not in vary_params]
     elif fixed_params is None:
-        # Default behavior: group by key parameters that affect plot structure
-        fixed_params = ["estimator", "ability_variant", "cost_variant", 
-                       "elicitation_bias_type", "alternate_ability_type"]
+        fixed_params = []
+    print(f"Grouping by fixed parameters: {fixed_params}")
     
     # Group paths by fixed parameters
     groups = {}
@@ -1298,11 +1410,24 @@ def main():
         rt_cfg = config.get("risk_thresholds", {}) if config else {}
         
         # Group simulation paths for exceedance plots (vary budget_fraction within groups)
+        VARY_PARAMS = ["budget_fraction", "true_value"]
+        VARY_PARAMS.extend([# The following parameters are computed per time step so should
+                            # vary within groups
+                            "slope",
+                            "threshold",
+                            "date",
+                            "budget",
+                            "total_samples",
+                            "window_lower",
+                            "window_upper",
+                            ])
         if rt_cfg:
             path_groups = group_simulation_paths_by_fixed_params(
                 h5_file, 
-                vary_params=["budget_fraction"]  # Allow budget_fraction to vary within groups
+                vary_params=VARY_PARAMS
             )
+            print(f"Grouped {len(path_groups)} parameter groups for exceedance analysis")
+            print(f"Parameter groups: {list(path_groups.keys())}")
             
             for group_name, group_info in path_groups.items():
                 # Get estimator for this group to find appropriate thresholds
