@@ -19,19 +19,31 @@
       }
     },
     "elicitation_bias_config": {
-      "enabled": false,
-      "bias_type": "fall_past_threshold",
-      "budget_dependent": false,
-      "budget_scaling": {},
-      "parameters": {}
+      "enabled": true,
+      "bias_type": "logistic_ability_shift",
+      "name": "logistic_ability_shift_sweep",
+      "source_file": null,
+      "budget_dependent": true,
+      "budget_scaling": {
+        "delta": {
+          "type": "linear",
+          "params": {"target_value": 0.0}
+        },
+        "elicitation_threshold": {
+          "type": "linear", 
+          "params": {"target_type": "upper_bound"}
+        }
+      },
+      "parameters": {
+        "delta": 1.5,
+        "elicitation_threshold": 11.0,
+        "sensitivity_rate_after": 0.0
+      }
     },
     "alternate_ability": {
-      "enabled": true,
-      "function_type": "richards_generalized_logistic",
-      "name": "richards_sweep",
-      "args": {
-        "nu": 1.0
-      }
+      "enabled": false,
+      "function_type": "logistic",
+      "args": {}
     },
     "scenario_generation": {
       "include_base_scenarios": true,
@@ -41,8 +53,8 @@
   },
   "_sweep": [
     {
-      "path": ["alternate_ability", "args", "nu"],
-      "values": [0.5, 1.0, 2.0, 5.0]
+      "path": ["elicitation_bias_config", "budget_scaling", "delta", "type"], 
+      "values": ["linear", "logarithmic"]
     }
   ]
 }
