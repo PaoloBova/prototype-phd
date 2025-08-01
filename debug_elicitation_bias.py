@@ -309,7 +309,7 @@ def create_simple_sweep_configs() -> Dict[str, Dict[str, Any]]:
                         "params": {
                             "target_value": 0.0,
                             "base": 2,  # Default to base 2 for logarithmic scaling
-                            "scale_factor": 1.0
+                            "scale_factor": 1.0 # This is typically the cost doubling rate
                         }
                     },
                     "elicitation_threshold": {
@@ -317,7 +317,7 @@ def create_simple_sweep_configs() -> Dict[str, Dict[str, Any]]:
                         "params": {
                             "target_type": "upper_bound",
                             "base": 2,  # Default to base 2 for logarithmic scaling
-                            "scale_factor": 1.0
+                            "scale_factor": 1.0 # This is typically the cost doubling rate
                         }
                     }
                 }
@@ -566,7 +566,12 @@ def plot_budget_scaling(configs: List[Dict[str, Any]], group_name: str, group_in
     x = np.linspace(0, 30, 2000)
     
     # Budget fractions to test
-    budget_fractions = [1.0, 0.75, 0.5, 0.25]
+    budget_fractions = [1.0, 0.75, 0.5, 0.25, 0.0]
+    # budget_fractions = np.linspace(0.0, 1.0, num=10)
+    # # Ensure fractions are between 0 and 1
+    # budget_fractions = np.clip(budget_fractions, 0.0, 1.0)
+    # budget_fractions = np.unique(budget_fractions)
+    # budget_fractions = np.round(budget_fractions, 2)
     colors = get_plot_colors(len(budget_fractions), plot_type='sequential')
     line_styles = get_line_styles(len(budget_fractions))
     
@@ -666,7 +671,12 @@ def plot_budget_scaling_success_rates(configs: List[Dict[str, Any]], group_name:
     x = np.linspace(0, 30, 2000)
     
     # Budget fractions to test
-    budget_fractions = [1.0, 0.75, 0.5, 0.25]
+    budget_fractions = [1.0, 0.75, 0.5, 0.25, 0.0]
+    # budget_fractions = np.linspace(0.0, 1.0, num=10)
+    # # Ensure fractions are between 0 and 1
+    # budget_fractions = np.clip(budget_fractions, 0.0, 1.0)
+    # budget_fractions = np.unique(budget_fractions)
+    # budget_fractions = np.round(budget_fractions, 2)
     colors = get_plot_colors(len(budget_fractions), plot_type='sequential')
     
     ax.set_title(group_info["description"], fontsize=12)
