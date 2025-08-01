@@ -30,20 +30,24 @@ ESSENTIAL_KEYS = [
 
 def _style_plots():
     """Apply font size settings and optionally remove titles from plots."""
-    mpl.rcParams.update({
-        'axes.labelsize': FONT_SIZE,
-        'axes.titlesize': FONT_SIZE,
-        'xtick.labelsize': FONT_SIZE * 0.8,
-        'ytick.labelsize': FONT_SIZE * 0.8,
-        'legend.fontsize': FONT_SIZE * 0.8
-    })
-    
-    if not TITLE_ENABLED:
-        # Remove titles from the current figure
-        fig = plt.gcf()
-        fig.suptitle("")  # Remove figure suptitle
-        for ax in fig.axes:
-            ax.set_title("")  # Remove axis title
+    try:
+        mpl.rcParams.update({
+            'axes.labelsize': FONT_SIZE,
+            'axes.titlesize': FONT_SIZE,
+            'xtick.labelsize': FONT_SIZE * 0.8,
+            'ytick.labelsize': FONT_SIZE * 0.8,
+            'legend.fontsize': FONT_SIZE * 0.8
+        })
+        
+        if not TITLE_ENABLED:
+            # Remove titles from the current figure
+            fig = plt.gcf()
+            fig.suptitle("")  # Remove figure suptitle
+            for ax in fig.axes:
+                ax.set_title("")  # Remove axis title
+    except Exception as e:
+        print(f"Warning: Error applying plot styles: {e}")
+        # Continue anyway - don't let styling issues break the plotting
 
 def parse_args():
     """Parse command line arguments."""
@@ -848,6 +852,9 @@ def plot_exceedance_probability(
         # Fix y-axis range for consistency
         plt.ylim(-0.05, 1.05)
         
+        # Apply styling before creating filename to ensure all plot elements are set
+        _style_plots()  # Apply font and title settings
+        
         # Create filename from essential group parameters and threshold
         # Only use the most important parameters to avoid long filenames
         essential_params = {}
@@ -865,7 +872,6 @@ def plot_exceedance_probability(
         output_path = os.path.join(output_dir, f"{safe_filename}.png")
         
         plt.tight_layout()
-        _style_plots()  # Apply font and title settings
         plt.savefig(output_path, dpi=300, bbox_inches='tight')
         plt.close()
         print(f"Saved exceedance probability plot to {output_path}")
