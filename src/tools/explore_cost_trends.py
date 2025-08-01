@@ -4,11 +4,55 @@ Utilities for exploring and visualizing cost trend data.
 
 import argparse
 import matplotlib.pyplot as plt
+import matplotlib as mpl
 import numpy as np
 import os
 import pandas as pd
 import seaborn as sns
 from typing import Dict, List, Optional, Tuple
+
+# Global plotting style parameters
+FONT_SIZE = 12  # Default font size
+TITLE_ENABLED = True  # Whether to show titles in plots
+
+def _style_plots():
+    """Apply font size settings and optionally remove titles from plots."""
+    try:
+        mpl.rcParams.update({
+            'axes.labelsize': FONT_SIZE,
+            # Force titles to be max 10pt (titles only used for debugging so styling should optimize for long debug titles)
+            'axes.titlesize': min(FONT_SIZE, 10),
+            'xtick.labelsize': FONT_SIZE * 0.8,
+            'ytick.labelsize': FONT_SIZE * 0.8,
+            'legend.fontsize': FONT_SIZE * 0.8
+        })
+        
+        if not TITLE_ENABLED:
+            # Remove titles from the current figure
+            fig = plt.gcf()
+            fig.suptitle("")  # Remove figure suptitle
+            for ax in fig.axes:
+                ax.set_title("")  # Remove axis title
+    except Exception as e:
+        print(f"Warning: Error applying plot styles: {e}")
+        # Continue anyway - don't let styling issues break the plotting
+
+def get_figure_size(base_width: float, base_height: float) -> tuple:
+    """
+    Get appropriate figure size based on whether titles are enabled.
+    When titles are enabled, double the height to accommodate multi-line titles.
+    
+    Args:
+        base_width: Base width in inches
+        base_height: Base height in inches
+        
+    Returns:
+        Tuple of (width, height) for figure size
+    """
+    if TITLE_ENABLED:
+        return (base_width * 1.5, base_height * 2.0)
+    else:
+        return (base_width, base_height)
 
 def parse_args():
     """Parse command line arguments."""
@@ -18,6 +62,10 @@ def parse_args():
     parser.add_argument("--output", default="reports/cost_trend_visualizations",
                         help="Output directory for visualizations")
     parser.add_argument("--format", default="png", help="Output format (png, pdf, svg)")
+    parser.add_argument("--font-size", type=int, default=12,
+                        help="Base font size for all plot text")
+    parser.add_argument("--disable-titles", action="store_true",
+                        help="Strip all titles from plots for publication style")
     return parser.parse_args()
 
 def plot_doubling_rates(df: pd.DataFrame, output_dir: str, fmt: str = "png"):
@@ -29,7 +77,7 @@ def plot_doubling_rates(df: pd.DataFrame, output_dir: str, fmt: str = "png"):
         output_dir: Directory to save plot
         fmt: File format for output
     """
-    plt.figure(figsize=(12, 7))
+    plt.figure(figsize=get_figure_size(12, 7))
     
     # Sort by doubling rate for better visualization
     sorted_df = df.sort_values("doubling_rate")
@@ -82,6 +130,7 @@ def plot_doubling_rates(df: pd.DataFrame, output_dir: str, fmt: str = "png"):
     # Save figure
     output_path = os.path.join(output_dir, f"doubling_rates.{fmt}")
     os.makedirs(os.path.dirname(output_path), exist_ok=True)
+    _style_plots()
     plt.savefig(output_path, dpi=300)
     plt.close()
     
@@ -96,7 +145,7 @@ def plot_doubling_rates_vs_r_squared(df: pd.DataFrame, output_dir: str, fmt: str
         output_dir: Directory to save plot
         fmt: File format for output
     """
-    plt.figure(figsize=(10, 6))
+    plt.figure(figsize=get_figure_size(10, 6))
     
     plt.scatter(df["r_squared"], df["doubling_rate"], alpha=0.7)
     
@@ -117,6 +166,7 @@ def plot_doubling_rates_vs_r_squared(df: pd.DataFrame, output_dir: str, fmt: str
     # Save figure
     output_path = os.path.join(output_dir, f"doubling_rates_vs_r_squared.{fmt}")
     os.makedirs(os.path.dirname(output_path), exist_ok=True)
+    _style_plots()
     plt.savefig(output_path, dpi=300)
     plt.close()
     
@@ -131,7 +181,7 @@ def plot_cost_growth_comparison(df: pd.DataFrame, output_dir: str, fmt: str = "p
         output_dir: Directory to save plot
         fmt: File format for output
     """
-    plt.figure(figsize=(12, 8))
+    plt.figure(figsize=get_figure_size(12, 8))
     
     # Generate difficulty range
     difficulty_range = np.linspace(0, 15, 1000)
@@ -194,6 +244,7 @@ def plot_cost_growth_comparison(df: pd.DataFrame, output_dir: str, fmt: str = "p
     # Save figure
     output_path = os.path.join(output_dir, f"cost_growth_comparison.{fmt}")
     os.makedirs(os.path.dirname(output_path), exist_ok=True)
+    _style_plots()
     plt.savefig(output_path, dpi=300)
     plt.close()
     
@@ -212,7 +263,7 @@ def plot_cost_forecasts(forecasts_df: pd.DataFrame, output_dir: str, fmt: str = 
         print("No forecast data available, skipping forecast plots")
         return
         
-    plt.figure(figsize=(12, 8))
+    plt.figure(figsize=get_figure_size(12, 8))
     
     # Check if confidence intervals are available
     has_ci = ("cost_ci_lower" in forecasts_df.columns and 
@@ -269,6 +320,7 @@ def plot_cost_forecasts(forecasts_df: pd.DataFrame, output_dir: str, fmt: str = 
     # Save figure
     output_path = os.path.join(output_dir, f"cost_forecasts.{fmt}")
     os.makedirs(os.path.dirname(output_path), exist_ok=True)
+    _style_plots()
     plt.savefig(output_path, dpi=300)
     plt.close()
     
@@ -346,7 +398,7 @@ def plot_doubling_rates_by_aggregation(df: pd.DataFrame, output_dir: str, fmt: s
     # Sort by doubling rate for better visualization
     agg_df = agg_df.sort_values("doubling_rate")
     
-    plt.figure(figsize=(10, 6))
+    plt.figure(figsize=get_figure_size(10, 6))
     
     # Check if confidence intervals are available
     has_ci = ("doubling_rate_ci_lower" in agg_df.columns and 
@@ -396,6 +448,7 @@ def plot_doubling_rates_by_aggregation(df: pd.DataFrame, output_dir: str, fmt: s
     # Save figure
     output_path = os.path.join(output_dir, f"doubling_rates_by_aggregation.{fmt}")
     os.makedirs(os.path.dirname(output_path), exist_ok=True)
+    _style_plots()
     plt.savefig(output_path, dpi=300)
     plt.close()
     
@@ -429,7 +482,7 @@ def plot_cost_trends_by_aggregation(df: pd.DataFrame, output_dir: str, fmt: str 
     # Generate difficulty range
     difficulty_range = np.linspace(0, 15, 1000)
     
-    plt.figure(figsize=(12, 8))
+    plt.figure(figsize=get_figure_size(12, 8))
     
     # Check if confidence intervals are available
     has_ci = include_ci and ("doubling_rate_ci_lower" in plot_df.columns and 
@@ -497,6 +550,7 @@ def plot_cost_trends_by_aggregation(df: pd.DataFrame, output_dir: str, fmt: str 
         
     output_path = os.path.join(output_dir, f"{filename}.{fmt}")
     os.makedirs(os.path.dirname(output_path), exist_ok=True)
+    _style_plots()
     plt.savefig(output_path, dpi=300)
     plt.close()
     
@@ -529,7 +583,7 @@ def plot_forecast_comparison_by_aggregation(forecasts_df: pd.DataFrame, output_d
     # Filter dataframe to only include selected models
     plot_df = forecasts_df[forecasts_df["model"].isin(plot_models)].copy()
     
-    plt.figure(figsize=(12, 8))
+    plt.figure(figsize=get_figure_size(12, 8))
     
     # Check if confidence intervals are available
     has_ci = include_ci and ("cost_ci_lower" in plot_df.columns and 
@@ -590,6 +644,7 @@ def plot_forecast_comparison_by_aggregation(forecasts_df: pd.DataFrame, output_d
         
     output_path = os.path.join(output_dir, f"{filename}.{fmt}")
     os.makedirs(os.path.dirname(output_path), exist_ok=True)
+    _style_plots()
     plt.savefig(output_path, dpi=300)
     plt.close()
     
@@ -598,6 +653,11 @@ def plot_forecast_comparison_by_aggregation(forecasts_df: pd.DataFrame, output_d
 def main():
     """Main entry point."""
     args = parse_args()
+    
+    # Set global plotting parameters
+    global FONT_SIZE, TITLE_ENABLED
+    FONT_SIZE = args.font_size
+    TITLE_ENABLED = not args.disable_titles
     
     print(f"Loading cost trends from {args.trends}")
     trends_df = pd.read_csv(args.trends)

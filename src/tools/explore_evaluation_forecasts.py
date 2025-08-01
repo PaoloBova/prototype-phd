@@ -19,20 +19,42 @@ TITLE_ENABLED = True  # Whether to show titles in plots
 
 def _style_plots():
     """Apply font size settings and optionally remove titles from plots."""
-    mpl.rcParams.update({
-        'axes.labelsize': FONT_SIZE,
-        'axes.titlesize': FONT_SIZE,
-        'xtick.labelsize': FONT_SIZE * 0.8,
-        'ytick.labelsize': FONT_SIZE * 0.8,
-        'legend.fontsize': FONT_SIZE * 0.8
-    })
+    try:
+        mpl.rcParams.update({
+            'axes.labelsize': FONT_SIZE,
+            # Force titles to be max 10pt (titles only used for debugging so styling should optimize for long debug titles)
+            'axes.titlesize': min(FONT_SIZE, 10),
+            'xtick.labelsize': FONT_SIZE * 0.8,
+            'ytick.labelsize': FONT_SIZE * 0.8,
+            'legend.fontsize': FONT_SIZE * 0.8
+        })
+        
+        if not TITLE_ENABLED:
+            # Remove titles from the current figure
+            fig = plt.gcf()
+            fig.suptitle("")  # Remove figure suptitle
+            for ax in fig.axes:
+                ax.set_title("")  # Remove axis title
+    except Exception as e:
+        print(f"Warning: Error applying plot styles: {e}")
+        # Continue anyway - don't let styling issues break the plotting
+
+def get_figure_size(base_width: float, base_height: float) -> tuple:
+    """
+    Get appropriate figure size based on whether titles are enabled.
+    When titles are enabled, double the height to accommodate multi-line titles.
     
-    if not TITLE_ENABLED:
-        # Remove titles from the current figure
-        fig = plt.gcf()
-        fig.suptitle("")  # Remove figure suptitle
-        for ax in fig.axes:
-            ax.set_title("")  # Remove axis title
+    Args:
+        base_width: Base width in inches
+        base_height: Base height in inches
+        
+    Returns:
+        Tuple of (width, height) for figure size
+    """
+    if TITLE_ENABLED:
+        return (base_width * 1.5, base_height * 2.0)
+    else:
+        return (base_width, base_height)
 
 def parse_args():
     """Parse command line arguments."""
@@ -82,67 +104,85 @@ def plot_evaluation_windows(df: pd.DataFrame, output_dir: str, fmt: str = "png")
         for cost_id in cost_ids[:2]:  # Limit to first 2 cost IDs
             cost_info = df[df["scenario_cost_id"] == cost_id].iloc[0]
             
-            for design_id in design_ids[:2]:  # Limit to first 2 design IDs
-                design_info = df[df["design_id"] == design_id].iloc[0]
-                
-                # Filter data for this combination
-                filtered_df = df[
-                    (df["scenario_ability_id"] == ability_id) & 
-                    (df["scenario_cost_id"] == cost_id) & 
-                    (df["design_id"] == design_id)
-                ]
-                
-                if len(filtered_df) == 0:
-                    continue
-                
-                plt.figure(figsize=(12, 8))
-                
-                # Group by budget and sort by budget fraction
-                filtered_df = filtered_df.sort_values("scenario_budget_fraction")
-                
-                # Plot the original and adjusted evaluation windows for each budget scenario
-                for i, (_, row) in enumerate(filtered_df.iterrows()):
-                    budget_fraction = row["scenario_budget_fraction"]
-                    
-                    # Original window (semi-transparent)
-                    plt.plot([row["design_original_window_lower"], row["design_original_window_upper"]], 
-                            [budget_fraction, budget_fraction], 
-                            linewidth=2, alpha=0.3, color='blue',
-                            label="Original Window" if i == 0 else "")
-                    
-                    # Adjusted window (solid)
-                    plt.plot([row["design_window_lower"], row["design_window_upper"]], 
-                            [budget_fraction, budget_fraction], 
-                            linewidth=2, marker='|', color='red',
-                            label=f"{budget_fraction*100:.0f}% Budget")
-                    
-                # Mark the threshold with a vertical line
-                threshold = ability_info["scenario_ability_threshold"]
-                plt.axvline(threshold, color='green', linestyle='--', label="Ability Threshold")
+            # Filter data for this ability-cost combination (across all designs)
+            filtered_df = df[
+                (df["scenario_ability_id"] == ability_id) & 
+                (df["scenario_cost_id"] == cost_id)
+            ]
             
-                plt.xlabel("Task Difficulty")
-                plt.ylabel("Budget Fraction")
-                plt.title(f"Evaluation Windows by Budget\n"
-                         f"Model: {ability_info['scenario_ability_model']}, Scenario: {ability_info['scenario_ability_scenario']}\n"
-                         f"Cost: {cost_info['scenario_cost_model']}, Method: {design_info['design_adjustment_method']}")
-                plt.grid(True, axis='x', alpha=0.3)
+            if len(filtered_df) == 0:
+                continue
+            
+            # Debug: Print budget fractions found
+            budget_fractions = sorted(filtered_df["scenario_budget_fraction"].unique())
+            design_ids_found = sorted(filtered_df["design_id"].unique())
+            print(f"Budget fractions for ability={ability_id}, cost={cost_id}: {budget_fractions}")
+            print(f"Design IDs found: {design_ids_found}")
+            
+            plt.figure(figsize=get_figure_size(12, 8))
+            
+            _style_plots()  # Apply font and title settings
+            
+            # Group by budget fraction to avoid duplicates and clean up the plot
+            budget_groups = filtered_df.groupby("scenario_budget_fraction")
+            
+            # Track if we've shown legend items
+            shown_original = False
+            
+            # Plot the original and adjusted evaluation windows for each budget scenario
+            for i, (budget_fraction, group) in enumerate(budget_groups):
+                # Use one representative row for this budget level
+                row = group.iloc[0]
                 
-                # Customize legend to avoid duplicates
-                handles, labels = plt.gca().get_legend_handles_labels()
-                by_label = dict(zip(labels, handles))
-                plt.legend(by_label.values(), by_label.keys())
+                # Use professional colorblind-friendly colors
+                color_map = plt.cm.tab10(i / 10)
                 
-                plt.tight_layout()
+                # Original window (semi-transparent) - only show in legend once
+                plt.plot([row["design_original_window_lower"], row["design_original_window_upper"]], 
+                        [budget_fraction, budget_fraction], 
+                        linewidth=2, alpha=0.3, color='gray',
+                        label="Original Window" if not shown_original else "")
+                shown_original = True
                 
-                # Save figure with ID-based filename
-                safe_filename = f"windows_ability_{ability_id}_cost_{cost_id}_design_{design_id}.{fmt}".replace(" ", "_")
-                output_path = os.path.join(output_dir, "windows", safe_filename)
-                os.makedirs(os.path.dirname(output_path), exist_ok=True)
-                _style_plots()  # Apply font and title settings
-                plt.savefig(output_path, dpi=300)
-                plt.close()
+                # Adjusted window (solid) - each budget gets its own legend entry
+                plt.plot([row["design_window_lower"], row["design_window_upper"]], 
+                        [budget_fraction, budget_fraction], 
+                        linewidth=3, marker='|', markersize=8, color=color_map,
+                        label=f"{budget_fraction*100:.0f}% Budget")
                 
-                print(f"Saved evaluation windows plot to {output_path}")
+                # Add clean text annotation showing just budget percentage
+                mid_x = (row["design_window_lower"] + row["design_window_upper"]) / 2
+                plt.text(mid_x, budget_fraction + 0.01, f"{budget_fraction*100:.0f}%", 
+                        ha='center', va='bottom', fontsize=10, weight='bold',
+                        bbox=dict(boxstyle="round,pad=0.2", facecolor='white', alpha=0.8, edgecolor='none'))
+            
+            # Mark the threshold with a vertical line (outside the loop)
+            threshold = ability_info["scenario_ability_threshold"]
+            plt.axvline(threshold, color='green', linestyle='--', label="Ability Threshold")
+            
+            plt.xlabel("Task Difficulty")
+            plt.ylabel("Budget Fraction")
+            plt.title(f"Evaluation Windows by Budget\n"
+                     f"Model: {ability_info['scenario_ability_model']}, Scenario: {ability_info['scenario_ability_scenario']}\n"
+                     f"Cost: {cost_info['scenario_cost_model']}")
+            plt.grid(True, axis='x', alpha=0.3)
+            
+            # Customize legend to avoid duplicates
+            handles, labels = plt.gca().get_legend_handles_labels()
+            by_label = dict(zip(labels, handles))
+            plt.legend(by_label.values(), by_label.keys())
+            
+            plt.tight_layout()
+            
+            # Save figure with ID-based filename
+            safe_filename = f"windows_ability_{ability_id}_cost_{cost_id}.{fmt}".replace(" ", "_")
+            output_path = os.path.join(output_dir, "windows", safe_filename)
+            os.makedirs(os.path.dirname(output_path), exist_ok=True)
+            _style_plots()  # Apply font and title settings
+            plt.savefig(output_path, dpi=300)
+            plt.close()
+            
+            print(f"Saved evaluation windows plot to {output_path}")
 
 def plot_window_adjustments(df: pd.DataFrame, output_dir: str, fmt: str = "png"):
     """
@@ -180,7 +220,7 @@ def plot_window_adjustments(df: pd.DataFrame, output_dir: str, fmt: str = "png")
         # Sort by budget fraction
         filtered_df = filtered_df.sort_values("scenario_budget_fraction")
         
-        plt.figure(figsize=(10, 6))
+        plt.figure(figsize=get_figure_size(10, 6))
         
         # Plot relationship between budget fraction and window width
         plt.scatter(filtered_df["scenario_budget_fraction"], filtered_df["window_width"], 
@@ -205,6 +245,7 @@ def plot_window_adjustments(df: pd.DataFrame, output_dir: str, fmt: str = "png")
         safe_filename = safe_filename.replace(" ", "_")
         output_path = os.path.join(output_dir, "window_adjustments", safe_filename)
         os.makedirs(os.path.dirname(output_path), exist_ok=True)
+        _style_plots()
         plt.savefig(output_path, dpi=300)
         plt.close()
         
@@ -244,7 +285,7 @@ def plot_task_density(df: pd.DataFrame, output_dir: str, fmt: str = "png"):
                 if len(filtered_df) == 0:
                     continue
                 
-                plt.figure(figsize=(12, 6))
+                plt.figure(figsize=get_figure_size(12, 6))
                 
                 # Group by budget scenario and sort by budget fraction
                 filtered_df = filtered_df.sort_values("scenario_budget_fraction", ascending=False)
@@ -306,6 +347,7 @@ def plot_task_density(df: pd.DataFrame, output_dir: str, fmt: str = "png"):
                 safe_filename = safe_filename.replace(" ", "_")
                 output_path = os.path.join(output_dir, "density", safe_filename)
                 os.makedirs(os.path.dirname(output_path), exist_ok=True)
+                _style_plots()
                 plt.savefig(output_path, dpi=300)
                 plt.close()
                 
@@ -340,7 +382,7 @@ def plot_sample_counts(df: pd.DataFrame, output_dir: str, fmt: str = "png"):
             if len(scenario_df) == 0:
                 continue
             
-            plt.figure(figsize=(12, 6))
+            plt.figure(figsize=get_figure_size(12, 6))
             
             # Create a design label combining adjustment method and sampler type
             scenario_df = scenario_df.copy()  # Create copy to avoid SettingWithCopyWarning
@@ -368,6 +410,7 @@ def plot_sample_counts(df: pd.DataFrame, output_dir: str, fmt: str = "png"):
             safe_filename = f"sample_counts_ability_{ability_id}_cost_{cost_id}.{fmt}".replace(" ", "_")
             output_path = os.path.join(output_dir, "samples", safe_filename)
             os.makedirs(os.path.dirname(output_path), exist_ok=True)
+            _style_plots()
             plt.savefig(output_path, dpi=300)
             plt.close()
             
@@ -402,7 +445,7 @@ def plot_cost_allocation(df: pd.DataFrame, output_dir: str, fmt: str = "png"):
             if len(scenario_df) == 0:
                 continue
             
-            plt.figure(figsize=(10, 6))
+            plt.figure(figsize=get_figure_size(10, 6))
             
             # Create a design label combining adjustment method and sampler type
             scenario_df = scenario_df.copy()  # Create copy to avoid SettingWithCopyWarning
@@ -430,6 +473,7 @@ def plot_cost_allocation(df: pd.DataFrame, output_dir: str, fmt: str = "png"):
             safe_filename = f"cost_allocation_ability_{ability_id}_cost_{cost_id}.{fmt}".replace(" ", "_")
             output_path = os.path.join(output_dir, "costs", safe_filename)
             os.makedirs(os.path.dirname(output_path), exist_ok=True)
+            _style_plots()
             plt.savefig(output_path, dpi=300)
             plt.close()
             
@@ -468,8 +512,11 @@ def plot_costs_over_time(df: pd.DataFrame, output_dir: str, fmt: str = "png"):
         if grp["scenario_ability_date"].nunique() < 2:
             print(f"Skipping group {key} with only one date; not enough data for cost-over-time plot.")
             continue
+        # Filter out any date after Jan 1, 2030
+        grp = grp[grp["scenario_ability_date"] <= "2030-01-31"]
         grp = grp.sort_values("scenario_ability_date")
-        plt.figure(figsize=(10,6))
+        _style_plots()
+        plt.figure(figsize=get_figure_size(10, 6))
         # plot gold standard
         gold = grp.groupby("scenario_ability_date")["design_gold_standard_cost"].first()
         plt.plot(gold.index, gold.values, "k-o", label="Gold Standard")
@@ -481,14 +528,16 @@ def plot_costs_over_time(df: pd.DataFrame, output_dir: str, fmt: str = "png"):
             plt.plot(sub["scenario_ability_date"], sub["design_available_budget"], "-o", label=label)
         title_parts = [f"{col}={key[i]}" for i, col in enumerate(key_cols)]
         plt.title("Evaluation Cost Over Time\n" + ", ".join(title_parts))
+        # Use log y-axis for better visibility of cost differences
+        plt.yscale("log")
         plt.xlabel("Date")
-        plt.ylabel("Cost")
+        plt.ylabel("Cost ($)")
         plt.legend(loc="best")
         plt.grid(alpha=0.3)
+        _style_plots()
         outdir = os.path.join(output_dir, "costs_over_time")
         os.makedirs(outdir, exist_ok=True)
         fname = "__".join(str(k) for k in key) + f".{fmt}"
-        _style_plots()
         plt.savefig(os.path.join(outdir, fname), dpi=300, bbox_inches="tight")
         plt.close()
         print(f"Saved cost-over-time plot to {outdir}/{fname}")
@@ -607,6 +656,7 @@ def plot_ability_scenario_comparison(plot_df: pd.DataFrame, output_dir: str, fmt
             safe_filename = safe_filename.replace(" ", "_")
             output_path = os.path.join(output_dir, "scenario_comparison", safe_filename)
             os.makedirs(os.path.dirname(output_path), exist_ok=True)
+            _style_plots()
             plt.savefig(output_path, dpi=300)
             plt.close()
             
@@ -678,6 +728,8 @@ def plot_cost_scenario_comparison(plot_df: pd.DataFrame, output_dir: str, fmt: s
             if len(variants_present) < 2:
                 print(f"Skipping cost plot for {ability_model}/{cost_model} - not enough variants")
                 continue
+            
+            _style_plots()
                 
             # Plot window comparison
             plt.figure(figsize=(12, 8))
@@ -815,7 +867,7 @@ def plot_combined_scenario_comparison(plot_df: pd.DataFrame, output_dir: str, fm
                 continue
             
             # Create a grid plot showing combinations
-            fig = plt.figure(figsize=(16, 12))
+            fig = plt.figure(figsize=get_figure_size(16, 12))
             
             # Set up grid dimensions
             n_rows = len(ability_variants)
@@ -885,6 +937,7 @@ def plot_combined_scenario_comparison(plot_df: pd.DataFrame, output_dir: str, fm
             safe_filename = safe_filename.replace(" ", "_")
             output_path = os.path.join(output_dir, "scenario_comparison", safe_filename)
             os.makedirs(os.path.dirname(output_path), exist_ok=True)
+            _style_plots()
             plt.savefig(output_path, dpi=300)
             plt.close()
             
@@ -1042,7 +1095,7 @@ def main():
     print(f"Filtered from {original_len} to {len(df)} records based on provided filters")
     
     # Generate visualizations
-    # plot_evaluation_windows(df, args.output, args.format)
+    plot_evaluation_windows(df, args.output, args.format)
     # plot_window_adjustments(df, args.output, args.format)
     # plot_task_density(df, args.output, args.format)
     # plot_sample_counts(df, args.output, args.format)

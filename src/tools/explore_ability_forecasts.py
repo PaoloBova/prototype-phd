@@ -17,20 +17,42 @@ TITLE_ENABLED = True  # Whether to show titles in plots
 
 def _style_plots():
     """Apply font size settings and optionally remove titles from plots."""
-    mpl.rcParams.update({
-        'axes.labelsize': FONT_SIZE,
-        'axes.titlesize': FONT_SIZE,
-        'xtick.labelsize': FONT_SIZE * 0.8,
-        'ytick.labelsize': FONT_SIZE * 0.8,
-        'legend.fontsize': FONT_SIZE * 0.8
-    })
+    try:
+        mpl.rcParams.update({
+            'axes.labelsize': FONT_SIZE,
+            # Force titles to be max 10pt (titles only used for debugging so styling should optimize for long debug titles)
+            'axes.titlesize': min(FONT_SIZE, 10),
+            'xtick.labelsize': FONT_SIZE * 0.8,
+            'ytick.labelsize': FONT_SIZE * 0.8,
+            'legend.fontsize': FONT_SIZE * 0.8
+        })
+        
+        if not TITLE_ENABLED:
+            # Remove titles from the current figure
+            fig = plt.gcf()
+            fig.suptitle("")  # Remove figure suptitle
+            for ax in fig.axes:
+                ax.set_title("")  # Remove axis title
+    except Exception as e:
+        print(f"Warning: Error applying plot styles: {e}")
+        # Continue anyway - don't let styling issues break the plotting
+
+def get_figure_size(base_width: float, base_height: float) -> tuple:
+    """
+    Get appropriate figure size based on whether titles are enabled.
+    When titles are enabled, double the height to accommodate multi-line titles.
     
-    if not TITLE_ENABLED:
-        # Remove titles from the current figure
-        fig = plt.gcf()
-        fig.suptitle("")  # Remove figure suptitle
-        for ax in fig.axes:
-            ax.set_title("")  # Remove axis title
+    Args:
+        base_width: Base width in inches
+        base_height: Base height in inches
+        
+    Returns:
+        Tuple of (width, height) for figure size
+    """
+    if TITLE_ENABLED:
+        return (base_width * 1.5, base_height * 2.0)
+    else:
+        return (base_width, base_height)
 
 def parse_args():
     """Parse command line arguments."""
@@ -58,7 +80,7 @@ def plot_threshold_timeline(df: pd.DataFrame, output_dir: str, fmt: str = "png")
         output_dir: Directory to save plot
         fmt: File format for output
     """
-    plt.figure(figsize=(10, 6))
+    plt.figure(figsize=get_figure_size(10, 6))
     
     # Group by scenario and plot each as a separate line
     for scenario, group in df.groupby("scenario"):
@@ -105,7 +127,7 @@ def plot_slope_timeline(df: pd.DataFrame, output_dir: str, fmt: str = "png"):
         output_dir: Directory to save plot
         fmt: File format for output
     """
-    plt.figure(figsize=(10, 6))
+    plt.figure(figsize=get_figure_size(10, 6))
     
     # Group by scenario and plot each as a separate line
     for scenario, group in df.groupby("scenario"):
@@ -180,7 +202,7 @@ def plot_logistic_curves_grid(df: pd.DataFrame, output_dir: str, fmt: str = "png
         n_cols = min(3, n_dates)
         n_rows = (n_dates + n_cols - 1) // n_cols
         
-        plt.figure(figsize=(5*n_cols, 4*n_rows))
+        plt.figure(figsize=get_figure_size(5*n_cols, 4*n_rows))
         
         for i, date in enumerate(sample_dates, 1):
             date_df = scenario_df[scenario_df["date"] == date]
@@ -229,7 +251,7 @@ def plot_logistic_curves_overlay(df: pd.DataFrame, output_dir: str, fmt: str = "
     """
     Plot sampled logistic curves for all scenarios on a single plot.
     """
-    plt.figure(figsize=(12, 8))
+    plt.figure(figsize=get_figure_size(12, 8))
     cmap = plt.cm.get_cmap("tab20")
     idx = 0
     for scenario, scenario_df in df.groupby("scenario"):
@@ -271,7 +293,7 @@ def plot_model_parameters(df: pd.DataFrame, output_dir: str, fmt: str = "png"):
         output_dir: Directory to save plots
         fmt: File format for output
     """
-    plt.figure(figsize=(10, 8))
+    plt.figure(figsize=get_figure_size(10, 8))
     
     # Group by scenario for different colors
     for scenario, group in df.groupby("scenario"):
@@ -326,7 +348,7 @@ def validate_slope_trends(df: pd.DataFrame, output_dir: str, fmt: str = "png"):
         output_dir: Directory to save plot
         fmt: File format for output
     """
-    plt.figure(figsize=(12, 8))
+    plt.figure(figsize=get_figure_size(12, 8))
     
     # Left subplot: Distribution of slope values
     plt.subplot(2, 2, 1)
@@ -416,7 +438,7 @@ def generate_frequency_comparison(df: pd.DataFrame, output_dir: str, fmt: str = 
             print(f"No data for trend type {trend}, skipping comparison plot")
             continue
         
-        plt.figure(figsize=(15, 10))
+        plt.figure(figsize=get_figure_size(15, 10))
         
         # Create two subplots for threshold and slope comparisons
         plt.subplot(2, 1, 1)
@@ -464,7 +486,7 @@ def generate_frequency_comparison(df: pd.DataFrame, output_dir: str, fmt: str = 
     
     # Create comparison across trend types (one plot per frequency)
     for freq in frequencies:
-        plt.figure(figsize=(15, 10))
+        plt.figure(figsize=get_figure_size(15, 10))
         
         # Create two subplots for threshold and slope comparisons
         plt.subplot(2, 1, 1)
@@ -538,7 +560,7 @@ def plot_confidence_intervals(df: pd.DataFrame, output_dir: str, fmt: str = "png
         if len(scenario_df) == 0:
             continue
         
-        plt.figure(figsize=(12, 10))
+        plt.figure(figsize=get_figure_size(12, 10))
         
         # Plot threshold confidence intervals
         if has_threshold_ci:

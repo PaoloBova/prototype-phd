@@ -85,7 +85,7 @@ stages:
 
   explore_cost_trends:
     wdir: ..
-    cmd: python -m src.tools.explore_cost_trends --trends output/forecast_detection/cost_trends.csv --forecasts output/forecast_detection/cost_forecasts.csv --output reports/forecast_detection/cost_visualizations
+    cmd: python -m src.tools.explore_cost_trends --trends output/forecast_detection/cost_trends.csv --forecasts output/forecast_detection/cost_forecasts.csv --output reports/forecast_detection/cost_visualizations --font-size 24 --disable-titles
     deps:
       - output/forecast_detection/cost_trends.csv
       - output/forecast_detection/cost_forecasts.csv
