@@ -153,12 +153,12 @@ class AlternateAbility(BaseModel):
 
 class CalculatedElicitationBias(BaseModel):
     """Calculated elicitation bias with derived parameters."""
-    enabled: bool = Field(..., description="Whether elicitation bias is enabled")
-    bias_type: str = Field(..., description="Type of elicitation bias function")
+    enabled: bool = Field(False, description="Whether elicitation bias is enabled")
+    bias_type: ElicitationBiasType = Field(ElicitationBiasType.FALL_PAST_THRESHOLD, description="Type of elicitation bias function to use")
     name: Optional[str] = Field(None, description="Optional name for this configuration")
     source_file: Optional[str] = Field(None, description="Path to data file if used")
-    parameters: Dict[str, float] = Field(..., description="Original configuration parameters")
-    args: List[float] = Field(..., description="Calculated/scaled bias function arguments")
+    parameters: Dict[str, float] = Field({}, description="Original configuration parameters")
+    args: List[float] = Field([], description="Calculated/scaled bias function arguments")
 
 class EvaluationDesign(BaseModel):
     """Evaluation design containing both parameters and calculated results."""
