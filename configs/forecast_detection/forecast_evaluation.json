@@ -20,17 +20,13 @@
     },
     "elicitation_bias_config": {
       "enabled": true,
-      "bias_type": "logistic_ability_shift",
-      "name": "logistic_ability_shift_sweep",
+      "bias_type": "task_filter",
+      "name": "task_filter_sweep",
       "source_file": null,
       "budget_dependent": true,
       "budget_scaling": {
-        "delta": {
-          "type": "linear",
-          "params": {"target_value": 0.0}
-        },
         "elicitation_threshold": {
-          "type": "linear", 
+          "type": "linear",
           "params": {"target_type": "upper_bound"}
         }
       },
@@ -53,7 +49,7 @@
   },
   "_sweep": [
     {
-      "path": ["elicitation_bias_config", "budget_scaling", "delta", "type"], 
+      "path": ["elicitation_bias_config", "budget_scaling", "elicitation_threshold", "type"], 
       "values": ["linear", "logarithmic"]
     }
   ]
