@@ -104,13 +104,13 @@ stages:
 
   explore_simulations:
     wdir: ..
-    cmd: python -m src.tools.explore_simulations --raw output/forecast_detection/raw_simulation_results.h5 --output reports/forecast_detection/exploration_results.csv --font-size 24 --disable-titles --config configs/forecast_detection/explore_simulations.json
+    cmd: python -m src.tools.explore_simulations --raw output/forecast_detection/raw_simulation_results.h5 --output reports/forecast_detection/exploration_results --font-size 24 --disable-titles --config configs/forecast_detection/explore_simulations.json
     deps:
       - output/forecast_detection/raw_simulation_results.h5
       - src/tools/explore_simulations.py
       - configs/forecast_detection/explore_simulations.json
     outs:
-      - reports/forecast_detection/exploration_results.csv
+      - reports/forecast_detection/exploration_results
 
   analyze_bias:
     wdir: ..
