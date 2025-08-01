@@ -729,6 +729,29 @@ def create_safe_filename(base_name: str, params: Dict[str, Any]) -> str:
     safe_filename = "".join(c if c.isalnum() or c in "_-." else "_" for c in filename)
     return safe_filename
 
+def get_axis_label(variable_name: str) -> str:
+    """
+    Convert variable names to user-friendly axis labels.
+    
+    Args:
+        variable_name: The variable name from the data
+        
+    Returns:
+        User-friendly label for axes
+    """
+    label_mapping = {
+        'true_value': 'True Ability',
+        'budget_fraction': 'Budget Fraction',
+        'threshold': 'Threshold',
+        'estimator': 'Estimator',
+        'ability_variant': 'Ability Variant',
+        'cost_variant': 'Cost Variant',
+        'detection_lag': 'Detection Lag',
+        'exceedance_probability': 'Exceedance Probability'
+    }
+    
+    return label_mapping.get(variable_name, variable_name.replace('_', ' ').title())
+
 def create_title_description(params: Dict[str, Any], max_param_length: int = 20) -> str:
     """
     Create a readable description for plot titles.
@@ -752,8 +775,8 @@ def create_title_description(params: Dict[str, Any], max_param_length: int = 20)
         if value is None or value == "unknown":
             continue
         
-        # Format the key nicely
-        nice_key = key.replace('_', ' ').title()
+        # Format the key nicely using the new function
+        nice_key = get_axis_label(key)
         
         # Format the value
         if isinstance(value, float):
@@ -826,12 +849,12 @@ def plot_exceedance_probability(
         plt.axvline(x=threshold, color='black', linestyle='-', linewidth=1,
                   label=f"Threshold={threshold}")
         
-        plt.xlabel(f"{group_by.replace('_', ' ').title()}")
+        plt.xlabel(get_axis_label(group_by))
         plt.ylabel("Exceedance Probability")
         
         # Create title from group info
         if TITLE_ENABLED:
-            title_parts = [f"Exceedance Probability vs {group_by.replace('_', ' ').title()}"]
+            title_parts = [f"Exceedance Probability vs {get_axis_label(group_by)}"]
             # Use the new title description function
             title_description = create_title_description(group_info.get('fixed_params', {}))
             if title_description:
@@ -1071,7 +1094,8 @@ def plot_enhanced_detection_metrics(
     
     plt.axhline(y=0, color='k', linestyle='--', alpha=0.5)
     plt.xlabel('Budget Fraction')
-    plt.ylabel('Conditional Median Detection Lag (capability units)')
+    # Split y-label into two lines and set smaller font size to prevent clipping
+    plt.ylabel('Conditional Median Detection Lag\n(units of true ability)', fontsize=min(FONT_SIZE, 18))
     
     if TITLE_ENABLED:
         title_parts = ['Conditional Median Detection Lag vs Budget Fraction']
