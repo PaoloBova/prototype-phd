@@ -305,15 +305,19 @@ def create_simple_sweep_configs() -> Dict[str, Dict[str, Any]]:
                 "budget_dependent": True,
                 "budget_scaling": {
                     "delta": {
-                        "type": "log2",
+                        "type": "logarithmic",
                         "params": {
                             "target_value": 0.0,
+                            "base": 2,  # Default to base 2 for logarithmic scaling
+                            "scale_factor": 1.0
                         }
                     },
                     "elicitation_threshold": {
-                        "type": "log2",
+                        "type": "logarithmic",
                         "params": {
                             "target_type": "upper_bound",
+                            "base": 2,  # Default to base 2 for logarithmic scaling
+                            "scale_factor": 1.0
                         }
                     }
                 }

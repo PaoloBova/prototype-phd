@@ -451,20 +451,20 @@ def _apply_budget_scaling(base_value: float, budget_gap: float, scaling_type: st
     elif scaling_type == "logarithmic":
         # Logarithmic scaling from base_value to target_value
         target_value = scaling_params.get("target_value", base_value)
-        base = scaling_params.get("base", 2)  # Default to base 10
+        base = scaling_params.get("base", 2)  # Default to base 2
         scale_factor = scaling_params.get("scale_factor", 1.0)
         
         # For logarithmic interpolation: result = a + (b - a) * log(1 + k*x) / log(1 + k)
-        # where x is the input parameter (budget_gap in this case)
+        # where x is the input parameter (1 - budget_gap in this case)
         # and k is the scale_factor that controls curvature
         k = scale_factor * (base - 1)  # Convert base to scale factor
         
         if k <= 0:
             # Fall back to linear interpolation if invalid scale factor
-            return base_value + (target_value - base_value) * budget_gap
+            return base_value + (target_value - base_value) * (1 - budget_gap)
         
-        # Logarithmic interpolation formula
-        log_term = np.log(1.0 + k * budget_gap) / np.log(1.0 + k)
+        # Logarithmic interpolation formula - diminishing returns near budget_gap=0
+        log_term = 1.0 - (np.log(1.0 + k * (1 - budget_gap)) / np.log(1.0 + k))
         return base_value + (target_value - base_value) * log_term
     else:
         raise ValueError(f"Unknown scaling type: {scaling_type}. Must be one of: constant, linear, exponential, power_law, logistic, logarithmic")

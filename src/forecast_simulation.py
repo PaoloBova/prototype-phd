@@ -121,7 +121,6 @@ def calculate_true_weighted_score(threshold: float, slope: float, config: Dict[s
                                               normalize=normalize)
     return weighted_score
 
-
 def simulate_estimator(
     forecast: EvaluationForecast,
     simulation_config: SimulationConfig,
