@@ -1,12 +1,13 @@
 {
   "simulation": {
-    "n_samples": 200,
+    "n_samples": 500,
     "method": "monte_carlo",
     "seed": 42
   },
   "methods_to_run": [
     "weighted_score",
-    "threshold"
+    "threshold",
+    "logistic_weighted"
   ],
   "filters": {
     "ability_variants": ["base", "lower", "upper"],
