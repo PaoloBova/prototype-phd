@@ -194,7 +194,11 @@ def get_simulation_paths(
     date: Optional[str] = None,
     estimator: Optional[str] = None,
     ability_variant: Optional[str] = None,
-    cost_variant: Optional[str] = None
+    cost_variant: Optional[str] = None,
+    bias_type: Optional[str] = None,
+    bias_scaling: Optional[str] = None,
+    alt_ability: Optional[str] = None,
+    coverage_ratio: Optional[float] = None
 ) -> List[str]:
     """
     Get paths to simulation results matching the specified criteria.
@@ -626,6 +630,45 @@ def calculate_exceedance_probability(results: np.ndarray, threshold: float) -> f
         return 0.0
     return float((valid > threshold).sum() / len(valid))
 
+def get_plot_colors(n_colors: int, plot_type: str = 'categorical') -> List[str]:
+    """
+    Get colorblind-friendly colors for plots.
+    
+    Args:
+        n_colors: Number of colors needed
+        plot_type: Type of plot ('categorical' or 'sequential')
+        
+    Returns:
+        List of color codes/names
+    """
+    if plot_type == 'categorical':
+        if n_colors <= 6:
+            colors = sns.color_palette('colorblind', n_colors=n_colors)
+        else:
+            colors = sns.color_palette('tab10', n_colors=n_colors)
+    elif plot_type == 'sequential':
+        colors = sns.color_palette('cividis', n_colors=n_colors)
+    else:
+        raise ValueError(f"Unsupported plot_type: {plot_type}")
+    
+    return colors
+
+def get_line_styles(n_styles: int) -> List[str]:
+    """
+    Get distinct line styles for additional visual distinction.
+    
+    Args:
+        n_styles: Number of line styles needed
+        
+    Returns:
+        List of line style codes
+    """
+    # Exclude solid line since that's used for baseline
+    base_styles = ['--', '-.', ':', (0, (3, 1, 1, 1)), (0, (5, 1)), (0, (1, 1))]
+    
+    # Repeat styles if we need more than available
+    return (base_styles * ((n_styles // len(base_styles)) + 1))[:n_styles]
+
 def create_safe_filename(base_name: str, params: Dict[str, Any]) -> str:
     """
     Create a safe filename from a base name and parameter dictionary.
@@ -642,8 +685,8 @@ def create_safe_filename(base_name: str, params: Dict[str, Any]) -> str:
     # Add parameters in a consistent order
     for key in sorted(params.keys()):
         value = params[key]
-        # Skip None values
-        if value is None:
+        # Skip None values and 'unknown' values
+        if value is None or value == "unknown":
             continue
         # Format values appropriately
         if isinstance(value, float):
@@ -662,20 +705,11 @@ def plot_exceedance_probability(
     h5_file: h5py.File,
     output_dir: str,
     risk_thresholds: List[float],
-    estimator_type: Optional[str] = None,
-    ability_variant: Optional[str] = None,
-    cost_variant: Optional[str] = None,
-    budget_fraction: Optional[float] = None,
+    paths: List[str],
+    group_info: Dict[str, Any],
     group_by: str = "true_value"
 ) -> None:
-    """Plot exceedance probabilities for different risk thresholds."""
-    paths = get_simulation_paths(
-        h5_file,
-        estimator=estimator_type,
-        ability_variant=ability_variant,
-        cost_variant=cost_variant,
-        budget=budget_fraction
-    )
+    """Plot exceedance probabilities for a specific group of simulation paths."""
     plot_data = []
     
     for path in paths:
@@ -688,89 +722,76 @@ def plot_exceedance_probability(
                 'group_value': group_value,
                 'threshold': threshold,
                 'exceedance_probability': exceedance_prob,
-                'estimator': metadata.get('estimator', 'unknown'),
-                'ability_variant': metadata.get('ability_variant', 'unknown'),
-                'cost_variant': metadata.get('cost_variant', 'unknown'),
                 'budget_fraction': bf,
                 'total_samples': len(results)
             })
     
     if not plot_data:
-        print("No data for exceedance analysis")
+        print(f"No data for exceedance analysis in group {group_info.get('name', 'unknown')}")
         return
     
     df = pd.DataFrame(plot_data)
     # Create output directory
     os.makedirs(output_dir, exist_ok=True)
     
-    # Group by estimator and threshold - create one plot per threshold
-    for estimator, est_group in df.groupby('estimator'):
-        for threshold, thresh_group in est_group.groupby('threshold'):
-            plt.figure(figsize=(10, 6))
-            
-            # Get colorblind-friendly palette from seaborn
-            budget_fractions = sorted(thresh_group['budget_fraction'].dropna().unique())
-            palette = sns.color_palette("colorblind", n_colors=len(budget_fractions))
-            
-            # Use different line styles to enhance differentiation in grayscale
-            line_styles = ['-', '--', '-.', ':']
-            markers = ['o', 's', '^', 'D', 'v']
-            
-            # For each budget fraction, create a line
-            for i, bf in enumerate(sorted(thresh_group['budget_fraction'].dropna().unique())):
-                
-                                    
-                # Cycle through line styles and markers for better distinction
-                line_style = line_styles[i % len(line_styles)]
-                marker = markers[i % len(markers)]
-                
-                sub = thresh_group[thresh_group['budget_fraction'] == bf].sort_values('group_value')
-                if sub.empty:
-                    continue
-                plt.plot(
-                    sub['group_value'], sub['exceedance_probability'],
-                    marker=marker, color=palette[i], linestyle=line_style,
-                    label=f"Budget={bf:.2f}"
-                )
-            
-            # Add vertical line for threshold
-            plt.axvline(x=threshold, color='black', linestyle='-', linewidth=1,
-                      label=f"Threshold={threshold}")
-            
-            plt.xlabel(f"{group_by.replace('_', ' ').title()}")
-            plt.ylabel("Exceedance Probability")
-            plt.title(f"Exceedance Probability vs {group_by.replace('_', ' ').title()}\n(Estimator: {estimator}, Threshold: {threshold})")
-            # Improve legend with better placement
-            if len(budget_fractions) > 5:
-                plt.legend(bbox_to_anchor=(1.02, 1), loc='upper left')
-            else:
-                plt.legend(loc='best')
-            plt.grid(True, alpha=0.3)
-            
-            # Add reference line at 50% probability
-            plt.axhline(y=0.5, color='gray', linestyle='--', linewidth=0.8,
-                      alpha=0.7)
-            
-            # Fix y-axis range for consistency
-            plt.ylim(min(-0.05, np.min(sub['exceedance_probability'])), 1.05)
-            
-            
-            # Create a unique filename for this plot
-            filename_params = {
-                'estimator': estimator,
-                'threshold': threshold,
-                'ability_variant': ability_variant,
-                'cost_variant': cost_variant,
-                'group_by': group_by if group_by != "true_value" else None
-            }
-            safe_filename = create_safe_filename('exceedance', filename_params)
-            output_path = os.path.join(output_dir, f"{safe_filename}.png")
-            
-            plt.tight_layout()
-            _style_plots()  # Apply font and title settings
-            plt.savefig(output_path, dpi=300, bbox_inches='tight')
-            plt.close()
-            print(f"Saved exceedance probability plot to {output_path}")
+    # Create one plot per threshold for this parameter group
+    for threshold, thresh_group in df.groupby('threshold'):
+        plt.figure(figsize=(10, 6))
+        
+        # Get budget fractions and create distinct visual styles
+        budget_fractions = sorted(thresh_group['budget_fraction'].dropna().unique())
+        colors = get_plot_colors(len(budget_fractions), 'categorical')
+        line_styles = get_line_styles(len(budget_fractions))
+        
+        # For each budget fraction, create a line
+        for i, bf in enumerate(budget_fractions):
+            sub = thresh_group[thresh_group['budget_fraction'] == bf].sort_values('group_value')
+            if sub.empty:
+                continue
+            plt.plot(
+                sub['group_value'], sub['exceedance_probability'],
+                marker='o', color=colors[i], linestyle=line_styles[i],
+                label=f"Budget={bf:.2f}"
+            )
+        
+        # Add vertical line for threshold
+        plt.axvline(x=threshold, color='black', linestyle='-', linewidth=1,
+                  label=f"Threshold={threshold}")
+        
+        plt.xlabel(f"{group_by.replace('_', ' ').title()}")
+        plt.ylabel("Exceedance Probability")
+        
+        # Create title from group info
+        if TITLE_ENABLED:
+            title_parts = [f"Exceedance Probability vs {group_by.replace('_', ' ').title()}"]
+            if group_info.get('description'):
+                title_parts.append(group_info['description'])
+            title_parts.append(f"Threshold: {threshold}")
+            plt.title("\n".join(title_parts))
+        
+        # Improve legend with better placement
+        if len(budget_fractions) > 5:
+            plt.legend(bbox_to_anchor=(1.02, 1), loc='upper left')
+        else:
+            plt.legend(loc='best')
+        plt.grid(True, alpha=0.3)
+        
+        # Add reference line at 50% probability
+        plt.axhline(y=0.5, color='gray', linestyle='--', linewidth=0.8, alpha=0.7)
+        
+        # Fix y-axis range for consistency
+        plt.ylim(-0.05, 1.05)
+        
+        # Create filename from group parameters and threshold
+        filename_params = {**group_info.get('fixed_params', {}), "threshold": threshold}
+        safe_filename = create_safe_filename('exceedance', filename_params)
+        output_path = os.path.join(output_dir, f"{safe_filename}.png")
+        
+        plt.tight_layout()
+        _style_plots()  # Apply font and title settings
+        plt.savefig(output_path, dpi=300, bbox_inches='tight')
+        plt.close()
+        print(f"Saved exceedance probability plot to {output_path}")
 
 def calculate_detection_lag_via_interpolation(
     df: pd.DataFrame, 
@@ -788,8 +809,8 @@ def calculate_detection_lag_via_interpolation(
     """
     results = []
     
-    # Process each threshold and estimator separately
-    for (estimator, threshold), group in df.groupby(['estimator', 'threshold']):
+    # Process each threshold separately (no longer grouping by estimator)
+    for threshold, group in df.groupby('threshold'):
         # Skip if insufficient data
         if len(group) < 3:
             continue
@@ -832,7 +853,6 @@ def calculate_detection_lag_via_interpolation(
                         detection_lag = conditional_value - threshold
                         
                         results.append({
-                            'estimator': estimator,
                             'threshold': threshold,
                             'detection_probability': prob,
                             'true_value_at_detection': conditional_value,
@@ -843,7 +863,7 @@ def calculate_detection_lag_via_interpolation(
                             'max_detection_probability': max_detection_prob
                         })
                 except Exception as e:
-                    print(f"Error calculating conditional lag for {estimator}, threshold {threshold}: {e}")
+                    print(f"Error calculating conditional lag for threshold {threshold}: {e}")
         
         # Also calculate unconditional detection values
         for prob in probability_levels:
@@ -861,7 +881,6 @@ def calculate_detection_lag_via_interpolation(
                     detection_lag = unconditional_value - threshold
                     
                     results.append({
-                        'estimator': estimator,
                         'threshold': threshold,
                         'detection_probability': prob,
                         'true_value_at_detection': unconditional_value,
@@ -872,66 +891,59 @@ def calculate_detection_lag_via_interpolation(
                         'max_detection_probability': max_detection_prob
                     })
             except Exception as e:
-                print(f"Error calculating unconditional lag for {estimator}, threshold {threshold}: {e}")
+                print(f"Error calculating unconditional lag for threshold {threshold}: {e}")
     
     return pd.DataFrame(results)
 
 def plot_enhanced_detection_metrics(
     h5_file: h5py.File, 
     output_dir: str, 
-    thresholds: Dict[str, List[float]],
+    thresholds: List[float],
+    paths: List[str],
+    group_info: Dict[str, Any],
     probability_levels: List[float] = [0.5, 0.9]
 ) -> None:
     """
-    Create enhanced detection metric plots including conditional detection lag,
-    probability of no detection, and early detection rates.
+    Create enhanced detection metric plots for a specific group of simulation paths.
     
     Args:
         h5_file: Open HDF5 file
         output_dir: Directory to save plots
-        thresholds: Dictionary mapping estimator names to lists of thresholds
+        thresholds: List of thresholds for this group
+        paths: List of simulation paths for this group
+        group_info: Information about the parameter group
         probability_levels: Target probability levels for detection metrics
     """
-    # Gather exceedance probability data
+    # Gather exceedance probability data for this group
     exceedance_data = []
-    all_paths = get_simulation_paths(h5_file)
     
-    for path in all_paths:
+    for path in paths:
         results, metadata, _ = load_simulation_results(h5_file, path)
         
         # Skip empty results
         if len(results) == 0:
             continue
         
-        estimator = metadata.get('estimator', 'unknown')
         true_value = metadata.get('true_value', np.nan)
         budget_fraction = metadata.get('budget_fraction', np.nan)
         
         # Skip if key information is missing
-        if np.isnan(true_value) or np.isnan(budget_fraction) or estimator == 'unknown':
-            continue
-            
-        # Use appropriate thresholds for this estimator
-        est_thresholds = thresholds.get(estimator, [])
-        if not est_thresholds:
+        if np.isnan(true_value) or np.isnan(budget_fraction):
             continue
             
         # Calculate exceedance probability for each threshold
-        for threshold in est_thresholds:
+        for threshold in thresholds:
             exceedance_prob = calculate_exceedance_probability(results, threshold)
             
             exceedance_data.append({
-                'estimator': estimator,
                 'threshold': threshold,
                 'true_value': true_value,
                 'budget_fraction': budget_fraction,
                 'exceedance_probability': exceedance_prob,
-                'ability_variant': metadata.get('ability_variant', 'unknown'),
-                'cost_variant': metadata.get('cost_variant', 'unknown')
             })
     
     if not exceedance_data:
-        print("No data available for detection metrics analysis")
+        print(f"No data available for detection metrics analysis in group {group_info.get('name', 'unknown')}")
         return
     
     # Convert to DataFrame
@@ -943,7 +955,7 @@ def plot_enhanced_detection_metrics(
     # Calculate detection metrics for each budget fraction separately
     all_metrics = []
     
-    for (estimator, budget_fraction), budget_group in exceedance_df.groupby(['estimator', 'budget_fraction']):
+    for budget_fraction, budget_group in exceedance_df.groupby('budget_fraction'):
         # Calculate detection lag metrics
         metrics = calculate_detection_lag_via_interpolation(budget_group, probability_levels)
         
@@ -952,97 +964,203 @@ def plot_enhanced_detection_metrics(
             all_metrics.append(metrics)
     
     if not all_metrics:
-        print("Couldn't compute any detection metrics")
+        print(f"Couldn't compute any detection metrics for group {group_info.get('name', 'unknown')}")
         return
         
     metrics_df = pd.concat(all_metrics, ignore_index=True)
     
-    # Plot metrics
-    for estimator, est_group in metrics_df.groupby('estimator'):
-        # 1. Plot conditional median detection lag vs budget
-        plt.figure(figsize=(10, 6))
+    # Get estimator name from group info for filename
+    estimator = group_info.get('fixed_params', {}).get('estimator', 'unknown')
+    
+    # 1. Plot conditional median detection lag vs budget
+    plt.figure(figsize=(10, 6))
+    
+    for threshold, thresh_group in metrics_df[metrics_df['conditional'] == True].groupby('threshold'):
+        median_group = thresh_group[thresh_group['detection_probability'] == 0.5]
         
-        for threshold, thresh_group in est_group[est_group['conditional'] == True].groupby('threshold'):
-            median_group = thresh_group[thresh_group['detection_probability'] == 0.5]
-            
-            if not median_group.empty:
-                plt.plot(
-                    median_group['budget_fraction'],
-                    median_group['detection_lag'],
-                    marker='o',
-                    label=f"Threshold={threshold}"
-                )
-        
-        plt.axhline(y=0, color='k', linestyle='--', alpha=0.5)
-        plt.xlabel('Budget Fraction')
-        plt.ylabel('Conditional Median Detection Lag (capability units)')
-        plt.title(f'Conditional Median Detection Lag vs Budget Fraction ({estimator})\nTrue Value at 50% of Successful Detections')
-        plt.grid(True, alpha=0.3)
-        plt.legend()
-        
-        filename = create_safe_filename('conditional_median_lag', {'estimator': estimator})
-        output_path = os.path.join(output_dir, f"{filename}.png")
-        plt.tight_layout()
-        _style_plots()  # Apply font and title settings
-        plt.savefig(output_path, dpi=300)
-        plt.close()
-        print(f"Saved conditional median detection lag plot to {output_path}")
-        
-        # 2. Plot probability of no detection vs budget
-        plt.figure(figsize=(10, 6))
-        
-        for threshold, thresh_group in est_group.groupby('threshold'):
-            # Take the first occurrence for each budget fraction (they should all be the same)
-            no_detect_group = thresh_group.drop_duplicates(subset=['budget_fraction'])
-            
+        if not median_group.empty:
             plt.plot(
-                no_detect_group['budget_fraction'],
-                no_detect_group['no_detection_probability'] * 100,  # Convert to percentage
+                median_group['budget_fraction'],
+                median_group['detection_lag'],
                 marker='o',
                 label=f"Threshold={threshold}"
             )
+    
+    plt.axhline(y=0, color='k', linestyle='--', alpha=0.5)
+    plt.xlabel('Budget Fraction')
+    plt.ylabel('Conditional Median Detection Lag (capability units)')
+    
+    if TITLE_ENABLED:
+        title_parts = ['Conditional Median Detection Lag vs Budget Fraction']
+        if group_info.get('description'):
+            title_parts.append(group_info['description'])
+        title_parts.append('True Value at 50% of Successful Detections')
+        plt.title('\n'.join(title_parts))
+    
+    plt.grid(True, alpha=0.3)
+    plt.legend()
+    
+    filename_params = {**group_info.get('fixed_params', {}), "metric": "conditional_median_lag"}
+    filename = create_safe_filename('detection', filename_params)
+    output_path = os.path.join(output_dir, f"{filename}.png")
+    plt.tight_layout()
+    _style_plots()  # Apply font and title settings
+    plt.savefig(output_path, dpi=300)
+    plt.close()
+    print(f"Saved conditional median detection lag plot to {output_path}")
+    
+    # 2. Plot probability of no detection vs budget
+    plt.figure(figsize=(10, 6))
+    
+    for threshold, thresh_group in metrics_df.groupby('threshold'):
+        # Take the first occurrence for each budget fraction (they should all be the same)
+        no_detect_group = thresh_group.drop_duplicates(subset=['budget_fraction'])
         
-        plt.xlabel('Budget Fraction')
-        plt.ylabel('Probability of No Detection (%)')
-        plt.title(f'Probability of No Detection vs Budget Fraction ({estimator})')
-        plt.grid(True, alpha=0.3)
-        plt.legend()
+        plt.plot(
+            no_detect_group['budget_fraction'],
+            no_detect_group['no_detection_probability'] * 100,  # Convert to percentage
+            marker='o',
+            label=f"Threshold={threshold}"
+        )
+    
+    plt.xlabel('Budget Fraction')
+    plt.ylabel('Probability of No Detection (%)')
+    
+    if TITLE_ENABLED:
+        title_parts = ['Probability of No Detection vs Budget Fraction']
+        if group_info.get('description'):
+            title_parts.append(group_info['description'])
+        plt.title('\n'.join(title_parts))
+    
+    plt.grid(True, alpha=0.3)
+    plt.legend()
+    
+    filename_params = {**group_info.get('fixed_params', {}), "metric": "no_detection_prob"}
+    filename = create_safe_filename('detection', filename_params)
+    output_path = os.path.join(output_dir, f"{filename}.png")
+    plt.tight_layout()
+    _style_plots()  # Apply font and title settings
+    plt.savefig(output_path, dpi=300)
+    plt.close()
+    print(f"Saved no detection probability plot to {output_path}")
+    
+    # 3. Plot early detection rate vs budget
+    plt.figure(figsize=(10, 6))
+    
+    for threshold, thresh_group in metrics_df.groupby('threshold'):
+        # Take the first occurrence for each budget fraction (they should all be the same)
+        early_detect_group = thresh_group.drop_duplicates(subset=['budget_fraction'])
         
-        filename = create_safe_filename('no_detection_prob', {'estimator': estimator})
-        output_path = os.path.join(output_dir, f"{filename}.png")
-        plt.tight_layout()
-        _style_plots()  # Apply font and title settings
-        plt.savefig(output_path, dpi=300)
-        plt.close()
-        print(f"Saved no detection probability plot to {output_path}")
+        plt.plot(
+            early_detect_group['budget_fraction'],
+            early_detect_group['early_detection_rate'] * 100,  # Convert to percentage
+            marker='o',
+            label=f"Threshold={threshold}"
+        )
+    
+    plt.xlabel('Budget Fraction')
+    plt.ylabel('Early Detection Rate (%)')
+    
+    if TITLE_ENABLED:
+        title_parts = ['Detection Rate at Threshold vs Budget Fraction']
+        if group_info.get('description'):
+            title_parts.append(group_info['description'])
+        plt.title('\n'.join(title_parts))
+    
+    plt.grid(True, alpha=0.3)
+    plt.legend()
+    
+    filename_params = {**group_info.get('fixed_params', {}), "metric": "early_detection_rate"}
+    filename = create_safe_filename('detection', filename_params)
+    output_path = os.path.join(output_dir, f"{filename}.png")
+    plt.tight_layout()
+    _style_plots()  # Apply font and title settings
+    plt.savefig(output_path, dpi=300)
+    plt.close()
+    print(f"Saved early detection rate plot to {output_path}")
+
+def group_simulation_paths_by_fixed_params(
+    h5_file: h5py.File, 
+    fixed_params: Optional[List[str]] = None,
+    vary_params: Optional[List[str]] = None
+) -> Dict[str, Dict[str, Any]]:
+    """
+    Group simulation paths by fixed parameters, allowing specified parameters to vary within groups.
+    
+    Args:
+        h5_file: Open HDF5 file
+        fixed_params: Parameters that must be the same within each group. If None and vary_params 
+                     is provided, will use all parameters except those in vary_params.
+        vary_params: Parameters that are allowed to vary within groups. Used to derive fixed_params
+                    if fixed_params is None.
         
-        # 3. Plot early detection rate vs budget
-        plt.figure(figsize=(10, 6))
+    Returns:
+        Dictionary mapping group names to group info including paths and parameters
+    """
+    all_paths = get_simulation_paths(h5_file)
+    if not all_paths:
+        return {}
+    
+    # Collect all available parameters from metadata
+    all_params = set()
+    path_metadata = {}
+    
+    for path in all_paths:
+        _, metadata, _ = load_simulation_results(h5_file, path)
+        if not metadata:
+            continue
+        path_metadata[path] = metadata
+        all_params.update(metadata.keys())
+    
+    # Determine which parameters to group by
+    if fixed_params is None and vary_params is not None:
+        # Use all parameters except those in vary_params
+        fixed_params = [p for p in all_params if p not in vary_params]
+    elif fixed_params is None:
+        # Default behavior: group by key parameters that affect plot structure
+        fixed_params = ["estimator", "ability_variant", "cost_variant", 
+                       "elicitation_bias_type", "alternate_ability_type"]
+    
+    # Group paths by fixed parameters
+    groups = {}
+    
+    for path in all_paths:
+        metadata = path_metadata.get(path, {})
         
-        for threshold, thresh_group in est_group.groupby('threshold'):
-            # Take the first occurrence for each budget fraction (they should all be the same)
-            early_detect_group = thresh_group.drop_duplicates(subset=['budget_fraction'])
-            
-            plt.plot(
-                early_detect_group['budget_fraction'],
-                early_detect_group['early_detection_rate'] * 100,  # Convert to percentage
-                marker='o',
-                label=f"Threshold={threshold}"
-            )
+        # Create group signature from fixed parameters
+        group_signature = {}
+        for param in fixed_params:
+            value = metadata.get(param, "unknown")
+            group_signature[param] = value
         
-        plt.xlabel('Budget Fraction')
-        plt.ylabel('Early Detection Rate (%)')
-        plt.title(f'Detection Rate at Threshold vs Budget Fraction ({estimator})')
-        plt.grid(True, alpha=0.3)
-        plt.legend()
+        # Convert to hashable key
+        group_key = tuple(sorted(group_signature.items()))
         
-        filename = create_safe_filename('early_detection_rate', {'estimator': estimator})
-        output_path = os.path.join(output_dir, f"{filename}.png")
-        plt.tight_layout()
-        _style_plots()  # Apply font and title settings
-        plt.savefig(output_path, dpi=300)
-        plt.close()
-        print(f"Saved early detection rate plot to {output_path}")
+        if group_key not in groups:
+            groups[group_key] = []
+        groups[group_key].append(path)
+    
+    # Convert to readable format with descriptive names
+    readable_groups = {}
+    for group_key, paths in groups.items():
+        group_dict = dict(group_key)
+        
+        # Create descriptive group name, filtering out 'unknown' values
+        name_parts = []
+        for key, value in sorted(group_dict.items()):
+            if value != "unknown":
+                name_parts.append(f"{key}_{value}")
+        
+        group_name = "_".join(name_parts) if name_parts else "default_group"
+        
+        readable_groups[group_name] = {
+            "paths": paths,
+            "fixed_params": group_dict,
+            "name": group_name.replace('_', ' ').title(),
+            "description": f"Parameter group: {', '.join([f'{k}={v}' for k, v in group_dict.items() if v != 'unknown'])}"
+        }
+    
+    return readable_groups
 
 def main():
     """Main entry point."""
@@ -1140,6 +1258,10 @@ def main():
             budget = path_metadata.get("budget", "unknown")
             ability_variant = path_metadata.get("ability_variant", "unknown")
             cost_variant = path_metadata.get("cost_variant", "unknown")
+            bias_type = path_metadata.get("bias_type", "unknown")
+            bias_scaling = path_metadata.get("bias_scaling", "unknown")
+            alt_ability = path_metadata.get("alt_ability", "unknown")
+            coverage_ratio = path_metadata.get("coverage_ratio", 0.8)
             
             # Create descriptive filename
             filename = f"{estimator}_{ability_scenario}"
@@ -1148,6 +1270,14 @@ def main():
             filename += f"_{budget}"
             if cost_variant != "unknown":
                 filename += f"_{cost_variant}"
+            if bias_type != "unknown":
+                filename += f"_{bias_type}"
+            if bias_scaling != "unknown":
+                filename += f"_{bias_scaling}"
+            if alt_ability != "unknown":
+                filename += f"_{alt_ability}"
+            if coverage_ratio != 0.8:
+                filename += f"_coverage{coverage_ratio:.1f}"
             
             # Clean up filename to remove special characters
             safe_filename = "".join(c if c.isalnum() or c in "_-." else "_" for c in filename)
@@ -1167,19 +1297,45 @@ def main():
         # Get risk thresholds from config
         rt_cfg = config.get("risk_thresholds", {}) if config else {}
         
-        # Make plots for each estimator with its specific thresholds
-        for estimator, thresholds in rt_cfg.items():
-            if isinstance(thresholds, list) and thresholds:
-                plot_exceedance_probability(
-                    h5_file, 
-                    exceedance_dir, 
-                    thresholds, 
-                    estimator_type=estimator
-                )
+        # Group simulation paths for exceedance plots (vary budget_fraction within groups)
+        if rt_cfg:
+            path_groups = group_simulation_paths_by_fixed_params(
+                h5_file, 
+                vary_params=["budget_fraction"]  # Allow budget_fraction to vary within groups
+            )
+            
+            for group_name, group_info in path_groups.items():
+                # Get estimator for this group to find appropriate thresholds
+                estimator = group_info.get('fixed_params', {}).get('estimator', 'unknown')
+                thresholds = rt_cfg.get(estimator, [])
+                
+                if thresholds:
+                    plot_exceedance_probability(
+                        h5_file, 
+                        exceedance_dir, 
+                        thresholds,
+                        group_info['paths'],
+                        group_info
+                    )
         
         # Create detection metrics plots
         detection_dir = os.path.join(args.output, "detection_metrics")
-        plot_enhanced_detection_metrics(h5_file, detection_dir, rt_cfg)
+        
+        if rt_cfg:
+            # Group simulation paths for detection metrics (same grouping as exceedance)
+            for group_name, group_info in path_groups.items():
+                # Get estimator for this group to find appropriate thresholds
+                estimator = group_info.get('fixed_params', {}).get('estimator', 'unknown')
+                thresholds = rt_cfg.get(estimator, [])
+                
+                if thresholds:
+                    plot_enhanced_detection_metrics(
+                        h5_file, 
+                        detection_dir, 
+                        thresholds,
+                        group_info['paths'],
+                        group_info
+                    )
         
         print(f"All visualizations saved to {args.output}")
 
