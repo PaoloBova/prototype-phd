@@ -226,7 +226,7 @@ stages:
       nfiles: 14
   explore_simulations:
     cmd: python -m src.tools.explore_simulations --raw output/forecast_detection/raw_simulation_results.h5
-      --output reports/forecast_detection/exploration_results.csv --font-size 24 --disable-titles
+      --output reports/forecast_detection/exploration_results --font-size 24 --disable-titles
       --config configs/forecast_detection/explore_simulations.json
     deps:
     - path: configs/forecast_detection/explore_simulations.json
@@ -235,18 +235,18 @@ stages:
       size: 1191
     - path: output/forecast_detection/raw_simulation_results.h5
       hash: md5
-      md5: 13a274f40c963541a6866daf36f84def
-      size: 2020208
+      md5: ecc93552c4f7032c3f1e61362a03e064
+      size: 2087448
     - path: src/tools/explore_simulations.py
       hash: md5
-      md5: 4690ebfd1421f3e41e0b6c2c0af01178
-      size: 45667
+      md5: 8e6f4cde7ab8772a0c62d696ca6df71a
+      size: 55710
     outs:
-    - path: reports/forecast_detection/exploration_results.csv
+    - path: reports/forecast_detection/exploration_results
       hash: md5
-      md5: b897a2feb10113e165bccb58ec48a92a.dir
-      size: 3818933
-      nfiles: 15
+      md5: 2bdd0024800d78e7e1a8fd7e65029667.dir
+      size: 3495503
+      nfiles: 13
   explore_logistic_fits:
     cmd: python -m src.tools.explore_logistic_fits --fits output/forecast_detection/logistic_fit_results.json
       --data output/forecast_detection/processed_data.csv --output reports/forecast_detection/logistic_fit_visualizations
