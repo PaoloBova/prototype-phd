@@ -250,6 +250,7 @@ class EvaluationForecast(BaseModel):
     design_id: str = Field(..., description="Hash-based ID of the design")
     scenario: EvaluationScenario = Field(..., description="Evaluation scenario")
     design: EvaluationDesign = Field(..., description="Evaluation design with calculated results")
+    config: EvaluationConfig = Field(..., description="Full evaluation configuration including sweep parameters")
 
 class BootstrapConfig(BaseModel):
     """Configuration for bootstrap analysis."""

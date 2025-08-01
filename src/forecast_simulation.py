@@ -585,6 +585,26 @@ def create_nested_hdf5_structure(
     sim_group.attrs['ability_variant'] = forecast.scenario.ability_variant
     sim_group.attrs['cost_variant'] = forecast.scenario.cost_variant
     
+    # Store sweep parameter metadata
+    if hasattr(forecast, 'config'):
+        # Elicitation bias metadata
+        sim_group.attrs['elicitation_bias_enabled'] = forecast.config.elicitation_bias_config.enabled
+        if forecast.config.elicitation_bias_config.enabled:
+            sim_group.attrs['elicitation_bias_type'] = str(forecast.config.elicitation_bias_config.bias_type)
+            sim_group.attrs['elicitation_bias_budget_dependent'] = forecast.config.elicitation_bias_config.budget_dependent
+            sim_group.attrs['elicitation_bias_params'] = json.dumps(forecast.config.elicitation_bias_config.parameters)
+            if forecast.config.elicitation_bias_config.budget_scaling:
+                sim_group.attrs['elicitation_bias_scaling'] = json.dumps(forecast.config.elicitation_bias_config.budget_scaling)
+        
+        # Alternate ability metadata  
+        sim_group.attrs['alternate_ability_enabled'] = forecast.config.alternate_ability.enabled
+        if forecast.config.alternate_ability.enabled:
+            sim_group.attrs['alternate_ability_type'] = str(forecast.config.alternate_ability.function_type)
+            sim_group.attrs['alternate_ability_args'] = json.dumps(forecast.config.alternate_ability.args)
+        
+        # Coverage ratio
+        sim_group.attrs['coverage_ratio'] = forecast.config.coverage_ratio
+    
     # Store full statistics
     stats_group = sim_group.create_group('stats')
     for stat_name, stat_value in stats_data.items():

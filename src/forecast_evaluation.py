@@ -763,7 +763,8 @@ def calculate_evaluation_forecast(
         scenario_id=scenario_id,
         design_id=design_id,
         scenario=scenario,
-        design=design
+        design=design,
+        config=config
     )
 
 def discretize_task_allocation(forecast: EvaluationForecast) -> Dict[int, int]:
