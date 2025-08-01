@@ -530,6 +530,10 @@ def define_elicitation_bias(scenario: EvaluationScenario, config: EvaluationConf
     
     bias_config = config.elicitation_bias_config
     
+    if not bias_config.enabled:
+        # If bias is not enabled, return empty bias (disabled by default)
+        return CalculatedElicitationBias()
+    
     # Use the bias type and parameters from the schema directly
     bias_type = bias_config.bias_type.value
     parameters = bias_config.parameters.copy()
