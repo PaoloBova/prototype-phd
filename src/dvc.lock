@@ -179,8 +179,8 @@ stages:
       size: 981
     - path: output/forecast_detection/evaluation_forecasts.json
       hash: md5
-      md5: 6393e65c9a9e91c9b17e624c36b5929a
-      size: 1399518
+      md5: fbacb6bc21c4829516c17310e5faa427
+      size: 833868
     - path: src/alternate_ability.py
       hash: md5
       md5: 3b0f0d3fac94b928497a4dc4f3449c17
@@ -200,12 +200,12 @@ stages:
     outs:
     - path: output/forecast_detection/raw_simulation_results.h5
       hash: md5
-      md5: d96445a8360fa731be3ce8c6ecd7a5d6
-      size: 13241272
+      md5: 1199ab42fb7d6b13925ca720ceaa3e9e
+      size: 7277208
     - path: output/forecast_detection/simulation_results.csv
       hash: md5
-      md5: 58b049f0ed4b6a493e795f20bb976be7
-      size: 625897
+      md5: fdff953357927090a6872cde421c710b
+      size: 313583
   analyze_bias:
     cmd: python -m src.tools.analyze_bias --input output/forecast_detection/simulation_results.csv
       --output reports/bias_analysis --remove-outliers
@@ -226,8 +226,8 @@ stages:
       nfiles: 14
   explore_simulations:
     cmd: python -m src.tools.explore_simulations --raw output/forecast_detection/raw_simulation_results.h5
-      --output reports/forecast_detection/exploration_results --font-size 24 --disable-titles
-      --config configs/forecast_detection/explore_simulations.json
+      --output reports/forecast_detection/exploration_results --font-size 24 --config
+      configs/forecast_detection/explore_simulations.json
     deps:
     - path: configs/forecast_detection/explore_simulations.json
       hash: md5
@@ -235,18 +235,18 @@ stages:
       size: 1191
     - path: output/forecast_detection/raw_simulation_results.h5
       hash: md5
-      md5: d96445a8360fa731be3ce8c6ecd7a5d6
-      size: 13241272
+      md5: 1199ab42fb7d6b13925ca720ceaa3e9e
+      size: 7277208
     - path: src/tools/explore_simulations.py
       hash: md5
-      md5: 0b7b5219d42d538403a0d60e712d9a1d
-      size: 60607
+      md5: d1da1c9128c2f25cc2be29b476539f4d
+      size: 62611
     outs:
     - path: reports/forecast_detection/exploration_results
       hash: md5
-      md5: 96ee4d8b73d212fba08b74890aca5a29.dir
-      size: 21795028
-      nfiles: 76
+      md5: a6e43e490810db1bee3bf538b48bb2e6.dir
+      size: 21623367
+      nfiles: 38
   explore_logistic_fits:
     cmd: python -m src.tools.explore_logistic_fits --fits output/forecast_detection/logistic_fit_results.json
       --data output/forecast_detection/processed_data.csv --output reports/forecast_detection/logistic_fit_visualizations
