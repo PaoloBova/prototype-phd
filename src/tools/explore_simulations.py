@@ -23,7 +23,7 @@ TITLE_ENABLED = True  # Whether to show titles in plots
 # Only use parameters that are meaningful for grouping plots
 ESSENTIAL_KEYS = [
     "estimator", "ability_variant", "cost_variant", "ability_scenario", 
-    "elicitation_bias_type", "elicitation_bias_enabled", 
+    "elicitation_bias_type", "elicitation_bias_enabled", "elicitation_bias_scaling",
     "alternate_ability_type", "alternate_ability_enabled", "alternate_ability_args",
     "coverage_ratio", "sampler_type", "threshold"
 ]
@@ -33,7 +33,8 @@ def _style_plots():
     try:
         mpl.rcParams.update({
             'axes.labelsize': FONT_SIZE,
-            'axes.titlesize': FONT_SIZE,
+            # Force titles to be max 10pt (titles only used for debugging so styling should optimize for long debug titles)
+            'axes.titlesize': min(FONT_SIZE, 10),
             'xtick.labelsize': FONT_SIZE * 0.8,
             'ytick.labelsize': FONT_SIZE * 0.8,
             'legend.fontsize': FONT_SIZE * 0.8
@@ -816,23 +817,27 @@ def get_axis_label(variable_name: str) -> str:
         'ability_variant': 'Ability Variant',
         'cost_variant': 'Cost Variant',
         'detection_lag': 'Detection Lag',
-        'exceedance_probability': 'Exceedance Probability'
+        'exceedance_probability': 'Exceedance Probability',
+        'elicitation_bias_scaling': 'Budget Scaling',
+        'elicitation_bias_type': 'Elicitation Bias Type',
+        'alternate_ability_args': 'Alternate Ability Args'
     }
     
     return label_mapping.get(variable_name, variable_name.replace('_', ' ').title())
 
-def create_title_description(params: Dict[str, Any], max_param_length: int = 20) -> str:
+def create_title_description(params: Dict[str, Any], max_param_length: int = 25, max_line_length: int = 60) -> str:
     """
-    Create a readable description for plot titles.
+    Create a readable description for plot titles with intelligent line breaking.
     
     Args:
         params: Dictionary of parameters
         max_param_length: Maximum length before abbreviating parameter values
+        max_line_length: Target maximum characters per line for title wrapping
         
     Returns:
-        Formatted description string
+        Formatted description string with line breaks for readability
     """
-    def abbreviate_long_value(value: str, max_length: int = 20) -> str:
+    def abbreviate_long_value(value: str, max_length: int = 25) -> str:
         """Abbreviate long parameter values for titles."""
         if len(str(value)) <= max_length:
             return str(value)
@@ -856,8 +861,8 @@ def create_title_description(params: Dict[str, Any], max_param_length: int = 20)
         
         result = ", ".join(items)
         # If too long, abbreviate
-        if len(result) > 30:
-            return f"{result[:27]}..."
+        if len(result) > 35:
+            return f"{result[:32]}..."
         return result
     
     param_parts = []
@@ -882,7 +887,37 @@ def create_title_description(params: Dict[str, Any], max_param_length: int = 20)
         
         param_parts.append(f"{nice_key}: {value_str}")
     
-    return ", ".join(param_parts)
+    if not param_parts:
+        return ""
+    
+    # Break into multiple lines for better readability
+    full_text = ", ".join(param_parts)
+    
+    # If short enough, return as single line
+    if len(full_text) <= max_line_length:
+        return full_text
+    
+    # Otherwise, break into multiple lines intelligently
+    lines = []
+    current_line = ""
+    
+    for i, part in enumerate(param_parts):
+        # Check if adding this part would exceed line length
+        test_line = current_line + (", " if current_line else "") + part
+        
+        if len(test_line) <= max_line_length:
+            current_line = test_line
+        else:
+            # Start new line
+            if current_line:
+                lines.append(current_line)
+            current_line = part
+    
+    # Add the last line
+    if current_line:
+        lines.append(current_line)
+    
+    return "\n".join(lines)
 
 def plot_exceedance_probability(
     h5_file: h5py.File,
