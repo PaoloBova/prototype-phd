@@ -26,11 +26,7 @@ from .simulation import (
 )
 from .alternate_ability import (
     logistic_function,
-    richards_function,
-    richards_percentile,
-    exponential_function,
-    power_law_function,
-    calculate_alternate_ability_threshold as calc_alt_threshold,
+    calculate_alternate_ability_threshold,
     evaluate_alternate_ability
 )
 
@@ -346,9 +342,9 @@ def calculate_true_value(estimator: str, forecast: EvaluationForecast, config: D
                 "function_type": alternate_ability.function_type,
                 "args": alternate_ability.args
             }
-            return calc_alt_threshold(alt_config,
-                                              forecast.scenario.ability.threshold,
-                                              forecast.scenario.ability.slope)
+            base_threshold = forecast.scenario.ability.threshold
+            base_slope = forecast.scenario.ability.slope
+            return calculate_alternate_ability_threshold(alt_config, base_threshold, base_slope)
         else:
             # Use the standard threshold
             return forecast.scenario.ability.threshold
