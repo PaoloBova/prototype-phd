@@ -12,11 +12,58 @@ from glob import glob
 import prototype_phd.data_utils as data_utils
 from typing import Dict, List, Optional, Tuple, Any
 
+# Global plotting style parameters
+FONT_SIZE = 12  # Default font size
+TITLE_ENABLED = True  # Whether to show titles in plots
+
+def _style_plots():
+    """Apply font size settings and optionally remove titles from plots."""
+    try:
+        plt.rcParams.update({
+            'axes.labelsize': FONT_SIZE,
+            # Force titles to be max 10pt (titles only used for debugging so styling should optimize for long debug titles)
+            'axes.titlesize': min(FONT_SIZE, 10),
+            'xtick.labelsize': FONT_SIZE * 0.8,
+            'ytick.labelsize': FONT_SIZE * 0.8,
+            'legend.fontsize': FONT_SIZE * 0.8
+        })
+        
+        if not TITLE_ENABLED:
+            # Remove titles from the current figure
+            fig = plt.gcf()
+            fig.suptitle("")  # Remove figure suptitle
+            for ax in fig.axes:
+                ax.set_title("")  # Remove axis title
+    except Exception as e:
+        print(f"Warning: Error applying plot styles: {e}")
+        # Continue anyway - don't let styling issues break the plotting
+
+def get_figure_size(base_width: float, base_height: float) -> tuple:
+    """
+    Get appropriate figure size based on whether titles are enabled.
+    When titles are enabled, double the height to accommodate multi-line titles.
+    
+    Args:
+        base_width: Base width in inches
+        base_height: Base height in inches
+        
+    Returns:
+        Tuple of (width, height) for figure size
+    """
+    if TITLE_ENABLED:
+        return (base_width * 1.5, base_height * 2.0)
+    else:
+        return (base_width, base_height)
+
 def parse_args():
     """Parse command line arguments."""
     parser = argparse.ArgumentParser(description="Generate forecast plots")
     parser.add_argument("--inputs", required=True, help="Path pattern for input CSV files")
     parser.add_argument("--out", required=True, help="Output directory for plots")
+    parser.add_argument("--font-size", type=int, default=12,
+                        help="Base font size for all plot text")
+    parser.add_argument("--disable-titles", action="store_true",
+                        help="Strip all titles from plots for publication style")
     return parser.parse_args()
 
 def read_forecast_data(input_pattern: str) -> Dict[str, pd.DataFrame]:
@@ -63,7 +110,7 @@ def plot_characteristic_curves(ability_df: pd.DataFrame, output_dir: str):
         trend_type, frequency = scenario.rsplit('_', 1)
         
         # Create figure for all years together
-        fig, ax = plt.subplots(figsize=(10, 6))
+        fig, ax = plt.subplots(figsize=get_figure_size(10, 6))
         
         # Calculate years from date for sorting and coloring
         scenario_df["year"] = scenario_df["date"].dt.year
@@ -99,6 +146,8 @@ def plot_characteristic_curves(ability_df: pd.DataFrame, output_dir: str):
         # Save the figure
         fig_name = f"characteristic_curves_{scenario}.png"
         fig_path = os.path.join(output_dir, fig_name)
+        plt.tight_layout()
+        _style_plots()
         plt.savefig(fig_path, dpi=300, bbox_inches="tight")
         plt.close()
         
@@ -106,7 +155,7 @@ def plot_characteristic_curves(ability_df: pd.DataFrame, output_dir: str):
         years_per_plot = 2  # Show 2 years per facet
         num_plots = (len(years) + years_per_plot - 1) // years_per_plot
         
-        fig, axes = plt.subplots(num_plots, 1, figsize=(10, 4*num_plots))
+        fig, axes = plt.subplots(num_plots, 1, figsize=get_figure_size(10, 4*num_plots))
         if num_plots == 1:
             axes = [axes]
         
@@ -137,6 +186,7 @@ def plot_characteristic_curves(ability_df: pd.DataFrame, output_dir: str):
             axes[i].legend(loc='upper left', bbox_to_anchor=(1, 1))
         
         plt.tight_layout()
+        _style_plots()
         fig_name = f"characteristic_curves_{scenario}_by_year.png"
         fig_path = os.path.join(output_dir, fig_name)
         plt.savefig(fig_path, dpi=300, bbox_inches="tight")
@@ -151,7 +201,7 @@ def plot_cost_trend(cost_df: pd.DataFrame, output_dir: str):
         output_dir: Directory to save plots
     """
     # Create figure
-    fig, ax = plt.subplots(figsize=(12, 8))
+    fig, ax = plt.subplots(figsize=get_figure_size(12, 8))
     
     # Plot doubling rate for each model
     sns.barplot(x="model", y="doubling_rate", data=cost_df, ax=ax)
@@ -165,11 +215,13 @@ def plot_cost_trend(cost_df: pd.DataFrame, output_dir: str):
     
     # Save the figure
     fig_path = os.path.join(output_dir, "cost_doubling_rates.png")
+    plt.tight_layout()
+    _style_plots()
     plt.savefig(fig_path, dpi=300, bbox_inches="tight")
     plt.close()
     
     # Create figure for R-squared values
-    fig, ax = plt.subplots(figsize=(12, 8))
+    fig, ax = plt.subplots(figsize=get_figure_size(12, 8))
     
     # Plot R-squared for each model
     sns.barplot(x="model", y="r_squared", data=cost_df, ax=ax)
@@ -183,6 +235,8 @@ def plot_cost_trend(cost_df: pd.DataFrame, output_dir: str):
     
     # Save the figure
     fig_path = os.path.join(output_dir, "cost_fit_quality.png")
+    plt.tight_layout()
+    _style_plots()
     plt.savefig(fig_path, dpi=300, bbox_inches="tight")
     plt.close()
 
@@ -218,7 +272,7 @@ def plot_demand_windows(demand_df: pd.DataFrame, output_dir: str):
         n_cols = min(3, n_years)
         n_rows = (n_years + n_cols - 1) // n_cols
         
-        fig, axes = plt.subplots(n_rows, n_cols, figsize=(5*n_cols, 4*n_rows))
+        fig, axes = plt.subplots(n_rows, n_cols, figsize=get_figure_size(5*n_cols, 4*n_rows))
         if n_rows * n_cols == 1:
             axes = np.array([[axes]])
         elif n_rows == 1:
@@ -255,6 +309,7 @@ def plot_demand_windows(demand_df: pd.DataFrame, output_dir: str):
         
         plt.suptitle(f"Task Demand Distribution\nAbility: {ability_scenario}\nBudget: {budget_scenario}")
         plt.tight_layout()
+        _style_plots()
         
         # Save figure
         fig_name = f"demand_{ability_scenario}_{budget_scenario}.png"
@@ -283,7 +338,7 @@ def plot_bias_detection_metrics(sensitivity_df: pd.DataFrame, output_dir: str):
             scenario_data = estimator_data[estimator_data["ability_scenario"] == ability_scenario]
             
             # Create figure
-            fig, ax = plt.subplots(figsize=(12, 8))
+            fig, ax = plt.subplots(figsize=get_figure_size(12, 8))
             
             # Get all budget scenarios for consistent coloring
             budget_scenarios = sorted(scenario_data["budget_scenario"].unique())
@@ -320,6 +375,8 @@ def plot_bias_detection_metrics(sensitivity_df: pd.DataFrame, output_dir: str):
             # Save figure
             fig_name = f"bias_{ability_scenario}_{estimator}.png"
             fig_path = os.path.join(output_dir, fig_name)
+            plt.tight_layout()
+            _style_plots()
             plt.savefig(fig_path, dpi=300, bbox_inches="tight")
             plt.close()
             
@@ -333,7 +390,7 @@ def plot_bias_detection_metrics(sensitivity_df: pd.DataFrame, output_dir: str):
             scenario_data = estimator_data[estimator_data["ability_scenario"] == ability_scenario]
             
             # Create figure
-            fig, ax = plt.subplots(figsize=(12, 8))
+            fig, ax = plt.subplots(figsize=get_figure_size(12, 8))
             
             # Get all budget scenarios for consistent coloring
             budget_scenarios = sorted(scenario_data["budget_scenario"].unique())
@@ -370,6 +427,8 @@ def plot_bias_detection_metrics(sensitivity_df: pd.DataFrame, output_dir: str):
             # Save figure
             fig_name = f"detection_lag_{ability_scenario}_{estimator}.png"
             fig_path = os.path.join(output_dir, fig_name)
+            plt.tight_layout()
+            _style_plots()
             plt.savefig(fig_path, dpi=300, bbox_inches="tight")
             plt.close()
 
@@ -400,7 +459,7 @@ def create_combined_summary(sensitivity_df: pd.DataFrame, output_dir: str):
         ]
         
         # Create figure with two subplots
-        fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(16, 6))
+        fig, (ax1, ax2) = plt.subplots(1, 2, figsize=get_figure_size(16, 6))
         
         # Get all budget scenarios for consistent coloring
         budget_scenarios = sorted(scenario_data["budget_scenario"].unique())
@@ -462,6 +521,7 @@ def create_combined_summary(sensitivity_df: pd.DataFrame, output_dir: str):
         # Add overall title
         fig.suptitle(f"Summary Metrics for {ability_scenario}, Estimator: {estimator}", fontsize=16)
         plt.tight_layout()
+        _style_plots()
         
         # Save figure
         fig_name = f"combined_summary_{ability_scenario}_{estimator}.png"
@@ -473,6 +533,11 @@ def main():
     """Main entry point."""
     data_utils.configure_logging_console()
     args = parse_args()
+    
+    # Set global plotting parameters
+    global FONT_SIZE, TITLE_ENABLED
+    FONT_SIZE = args.font_size
+    TITLE_ENABLED = not args.disable_titles
     
     logging.info(f"Reading forecast data from {args.inputs}")
     data = read_forecast_data(args.inputs)
