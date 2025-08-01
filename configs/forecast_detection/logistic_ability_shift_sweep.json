@@ -1,0 +1,60 @@
+{
+  "base_config": {
+    "resource_constraints": {
+      "static_budgets": [1.0, 0.75, 0.5, 0.25, 0.1],
+      "include_dynamic_scenarios": false,
+      "dynamic_start_date": "2025-01-01T00:00:00",
+      "dynamic_end_date": "2030-12-31T00:00:00",
+      "dynamic_frequency": "YE"
+    },
+    "evaluation_design": {
+      "sampler_types": ["uniform"],
+      "adjustment_methods": ["upper_bound"],
+      "repeats_per_unit": 20,
+      "sampler_params": {
+        "normal": {
+          "mean_offset": 0.0,
+          "std_dev_factor": 0.3
+        }
+      }
+    },
+    "elicitation_bias_config": {
+      "enabled": true,
+      "bias_type": "logistic_ability_shift",
+      "name": "logistic_ability_shift_sweep",
+      "source_file": null,
+      "budget_dependent": true,
+      "budget_scaling": {
+        "delta": {
+          "type": "linear",
+          "params": {"target_value": 0.0}
+        },
+        "elicitation_threshold": {
+          "type": "linear", 
+          "params": {"target_type": "upper_bound"}
+        }
+      },
+      "parameters": {
+        "delta": 1.5,
+        "elicitation_threshold": 11.0,
+        "sensitivity_rate_after": 0.0
+      }
+    },
+    "alternate_ability": {
+      "enabled": false,
+      "function_type": "logistic",
+      "args": {}
+    },
+    "scenario_generation": {
+      "include_base_scenarios": true,
+      "include_ci_scenarios": false
+    },
+    "save_detailed_json": false
+  },
+  "_sweep": [
+    {
+      "path": ["elicitation_bias_config", "budget_scaling", "delta", "type"], 
+      "values": ["linear", "logarithmic"]
+    }
+  ]
+}
