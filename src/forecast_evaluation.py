@@ -464,7 +464,7 @@ def _apply_budget_scaling(base_value: float, budget_gap: float, scaling_type: st
             return base_value + (target_value - base_value) * (1 - budget_gap)
         
         # Logarithmic interpolation formula - diminishing returns near budget_gap=0
-        log_term = 1.0 - (np.log(1.0 + k * (1 - budget_gap)) / np.log(1.0 + k))
+        log_term = np.log2(1.0 + k * (1 - budget_gap)) / np.log2(1.0 + k)
         return base_value + (target_value - base_value) * log_term
     else:
         raise ValueError(f"Unknown scaling type: {scaling_type}. Must be one of: constant, linear, exponential, power_law, logistic, logarithmic")
