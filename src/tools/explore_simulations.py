@@ -1287,8 +1287,8 @@ def main():
                 visualize_simulation_distribution(results, metadata, stats, output_path, config)
                 print(f"Created visualization: {output_path}")
         
-        # Generate additional plots
-        plot_bias_variance_tradeoff(h5_file, args.output)
+        # Uncomment to generate additional plots
+        # plot_bias_variance_tradeoff(h5_file, args.output)
         
         # Create an exceedance plots directory
         exceedance_dir = os.path.join(args.output, "exceedance_plots")
