@@ -200,45 +200,63 @@ def plot_cost_trend(cost_df: pd.DataFrame, output_dir: str):
         cost_df: DataFrame with cost trends
         output_dir: Directory to save plots
     """
-    # Create figure
-    fig, ax = plt.subplots(figsize=get_figure_size(12, 8))
+    logging.info(f"Cost DataFrame columns: {list(cost_df.columns)}")
+    logging.info(f"Cost DataFrame shape: {cost_df.shape}")
     
-    # Plot doubling rate for each model
-    sns.barplot(x="model", y="doubling_rate", data=cost_df, ax=ax)
+    # Check for required columns
+    if "model" not in cost_df.columns:
+        logging.warning("No 'model' column found in cost data, skipping cost plots")
+        return
     
-    # Add labels and title
-    ax.set_xlabel("Model")
-    ax.set_ylabel("Cost Doubling Rate (difficulty units)")
-    ax.set_title("Cost Doubling Rate by Model")
-    plt.xticks(rotation=45, ha="right")
-    plt.grid(axis="y", alpha=0.3)
+    # Plot doubling rate if available
+    if "doubling_rate" in cost_df.columns:
+        # Create figure
+        fig, ax = plt.subplots(figsize=get_figure_size(12, 8))
+        
+        # Plot doubling rate for each model
+        sns.barplot(x="model", y="doubling_rate", data=cost_df, ax=ax)
+        
+        # Add labels and title
+        ax.set_xlabel("Model")
+        ax.set_ylabel("Cost Doubling Rate (difficulty units)")
+        ax.set_title("Cost Doubling Rate by Model")
+        plt.xticks(rotation=45, ha="right")
+        plt.grid(axis="y", alpha=0.3)
+        
+        # Save the figure
+        fig_path = os.path.join(output_dir, "cost_doubling_rates.png")
+        plt.tight_layout()
+        _style_plots()
+        plt.savefig(fig_path, dpi=300, bbox_inches="tight")
+        plt.close()
+        logging.info(f"Saved cost doubling rates plot to {fig_path}")
+    else:
+        logging.warning("No 'doubling_rate' column found, skipping doubling rate plot")
     
-    # Save the figure
-    fig_path = os.path.join(output_dir, "cost_doubling_rates.png")
-    plt.tight_layout()
-    _style_plots()
-    plt.savefig(fig_path, dpi=300, bbox_inches="tight")
-    plt.close()
-    
-    # Create figure for R-squared values
-    fig, ax = plt.subplots(figsize=get_figure_size(12, 8))
-    
-    # Plot R-squared for each model
-    sns.barplot(x="model", y="r_squared", data=cost_df, ax=ax)
-    
-    # Add labels and title
-    ax.set_xlabel("Model")
-    ax.set_ylabel("R-squared")
-    ax.set_title("Cost Model Fit Quality by Model")
-    plt.xticks(rotation=45, ha="right")
-    plt.grid(axis="y", alpha=0.3)
-    
-    # Save the figure
-    fig_path = os.path.join(output_dir, "cost_fit_quality.png")
-    plt.tight_layout()
-    _style_plots()
-    plt.savefig(fig_path, dpi=300, bbox_inches="tight")
-    plt.close()
+    # Plot R-squared values if available
+    if "r_squared" in cost_df.columns:
+        # Create figure for R-squared values
+        fig, ax = plt.subplots(figsize=get_figure_size(12, 8))
+        
+        # Plot R-squared for each model
+        sns.barplot(x="model", y="r_squared", data=cost_df, ax=ax)
+        
+        # Add labels and title
+        ax.set_xlabel("Model")
+        ax.set_ylabel("R-squared")
+        ax.set_title("Cost Model Fit Quality by Model")
+        plt.xticks(rotation=45, ha="right")
+        plt.grid(axis="y", alpha=0.3)
+        
+        # Save the figure
+        fig_path = os.path.join(output_dir, "cost_fit_quality.png")
+        plt.tight_layout()
+        _style_plots()
+        plt.savefig(fig_path, dpi=300, bbox_inches="tight")
+        plt.close()
+        logging.info(f"Saved cost fit quality plot to {fig_path}")
+    else:
+        logging.warning("No 'r_squared' column found, skipping R-squared plot")
 
 def plot_demand_windows(demand_df: pd.DataFrame, output_dir: str):
     """
