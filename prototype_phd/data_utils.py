@@ -38,39 +38,20 @@ def is_plain_word(word):
 def generate_random_phrase(words, num_words=3):
     return '_'.join(random.sample(words, num_words))
 
-def create_id(path_to_data='/usr/share/dict/words', verbose=True):
-    """Create a unique identifier based on a random phrase and a UUID.
-    
+def create_id(verbose=True):
+    """Create a unique identifier based on a timestamp and a UUID.
+
     Parameters:
-    - path_to_data: The path to a file containing a list of words.
-    - verbose: Whether to print the random phrase and sim ID.
-    
+    - verbose: Whether to print the sim ID.
+
     Returns:
-    - A unique identifier string.
-    
-    Note:
-    - If the file at `path_to_data` does not exist, a UUID will be used instead.
-    - You may wish to find a list of words to use as the dictionary file. On
-    Unix systems, you can use `/usr/share/dict/words`. See the following link
-    for more options: https://stackoverflow.com/questions/18834636/random-word-generator-python
+    - A unique identifier string in format: YYYYMMDD_HHMMSS_<8-char-uuid>
     """
-    try:
-        with open(path_to_data, 'r') as f:
-            words = [line.strip() for line in f if is_plain_word(line.strip())]
-        sim_id = generate_random_phrase(words)
-        if verbose:
-            print(f"Random Phrase: {sim_id}")
-        sim_id = f"{sim_id}_{str(uuid.uuid4())[:8]}"
-        if verbose:
-            print(f"Sim ID: {sim_id}")
-        return sim_id
-    except Exception as e:
-        if verbose:
-            print(f"You got exception {e}. Defaulting to a UUID.")
-        sim_id = str(uuid.uuid4())
-        if verbose:
-            print(f"Sim ID: {sim_id}")
-        return sim_id
+    timestamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
+    sim_id = f"{timestamp}_{str(uuid.uuid4())[:8]}"
+    if verbose:
+        print(f"Sim ID: {sim_id}")
+    return sim_id
 
 def create_ids(num_ids):
     """
