@@ -1,3 +1,9 @@
+params:
+  - ../params.yaml
+
+vars:
+  - ../params.yaml
+
 stages:
   preprocess:
     wdir: ..
@@ -41,28 +47,33 @@ stages:
 
   forecast_evaluation:
     wdir: ..
-    cmd: python -m src.forecast_evaluation --ability output/forecast_detection/ability_forecasts.csv --cost output/forecast_detection/cost_trends.csv --out output/forecast_detection/evaluation_forecasts.json --sweep-config configs/forecast_detection/forecast_evaluation.json
+    cmd: python -m src.forecast_evaluation --ability output/forecast_detection/ability_forecasts.csv --cost output/forecast_detection/cost_trends.csv --out ${output_dirs.data}/evaluation_forecasts.json --sweep-config ${exp.forecast_evaluation_config}
+    params:
+      - exp.forecast_evaluation_config
+      - output_dirs.data
     deps:
       - output/forecast_detection/ability_forecasts.csv
       - output/forecast_detection/cost_trends.csv
-      - configs/forecast_detection/forecast_evaluation.json
+      - ${exp.forecast_evaluation_config}
       - src/forecast_evaluation.py
     outs:
-      - output/forecast_detection/evaluation_forecasts.json
+      - ${output_dirs.data}/evaluation_forecasts.json
 
   forecast_simulation:
     wdir: ..
-    cmd: python -m src.forecast_simulation --in output/forecast_detection/evaluation_forecasts.json --out output/forecast_detection/simulation_results.csv --raw output/forecast_detection/raw_simulation_results.h5 --config configs/forecast_detection/forecast_simulation.json --n-jobs 6
+    cmd: python -m src.forecast_simulation --in ${output_dirs.data}/evaluation_forecasts.json --out ${output_dirs.data}/simulation_results.csv --raw ${output_dirs.data}/raw_simulation_results.h5 --config configs/forecast_detection/forecast_simulation.json --n-jobs 6
+    params:
+      - output_dirs.data
     deps:
-      - output/forecast_detection/evaluation_forecasts.json
+      - ${output_dirs.data}/evaluation_forecasts.json
       - src/forecast_simulation.py
       - configs/forecast_detection/forecast_simulation.json
       - src/simulation.py
       - src/schemas.py
       - src/alternate_ability.py
     outs:
-      - output/forecast_detection/simulation_results.csv
-      - output/forecast_detection/raw_simulation_results.h5
+      - ${output_dirs.data}/simulation_results.csv
+      - ${output_dirs.data}/raw_simulation_results.h5
 
   explore_logistic_fits:
     wdir: ..
@@ -95,37 +106,50 @@ stages:
 
   explore_evaluation_forecasts:
     wdir: ..
-    cmd: python -m src.tools.explore_evaluation_forecasts --input output/forecast_detection/evaluation_forecasts.json --output reports/forecast_detection/evaluation_visualizations --font-size 24 --disable-titles
+    cmd: python -m src.tools.explore_evaluation_forecasts --input ${output_dirs.data}/evaluation_forecasts.json --output ${output_dirs.reports}/evaluation_visualizations --font-size 24 --disable-titles
+    params:
+      - output_dirs.data
+      - output_dirs.reports
     deps:
-      - output/forecast_detection/evaluation_forecasts.json
+      - ${output_dirs.data}/evaluation_forecasts.json
       - src/tools/explore_evaluation_forecasts.py
     outs:
-      - reports/forecast_detection/evaluation_visualizations
+      - ${output_dirs.reports}/evaluation_visualizations
 
   explore_simulations:
     wdir: ..
-    cmd: python -m src.tools.explore_simulations --raw output/forecast_detection/raw_simulation_results.h5 --output reports/forecast_detection/exploration_results --font-size 24 --disable-titles --config configs/forecast_detection/explore_simulations.json
+    cmd: python -m src.tools.explore_simulations --raw ${output_dirs.data}/raw_simulation_results.h5 --output ${output_dirs.reports}/exploration_results --font-size 24 --disable-titles --config ${exp.explore_simulations_config}
+    params:
+      - exp.explore_simulations_config
+      - output_dirs.data
+      - output_dirs.reports
     deps:
-      - output/forecast_detection/raw_simulation_results.h5
+      - ${output_dirs.data}/raw_simulation_results.h5
       - src/tools/explore_simulations.py
-      - configs/forecast_detection/explore_simulations.json
+      - ${exp.explore_simulations_config}
     outs:
-      - reports/forecast_detection/exploration_results
+      - ${output_dirs.reports}/exploration_results
 
   analyze_bias:
     wdir: ..
-    cmd: python -m src.tools.analyze_bias --input output/forecast_detection/simulation_results.csv --output reports/bias_analysis --remove-outliers
+    cmd: python -m src.tools.analyze_bias --input ${output_dirs.data}/simulation_results.csv --output ${output_dirs.reports}/bias_analysis --remove-outliers
+    params:
+      - output_dirs.data
+      - output_dirs.reports
     deps:
-      - output/forecast_detection/simulation_results.csv
+      - ${output_dirs.data}/simulation_results.csv
       - src/tools/analyze_bias.py
     outs:
-      - reports/bias_analysis
+      - ${output_dirs.reports}/bias_analysis
 
   plot_reports:
     wdir: ..
-    cmd: python -m scripts.plot_forecasts --inputs "output/forecast_detection/*.csv" --out reports/forecast_detection/figures/
+    cmd: python -m scripts.plot_forecasts --inputs "${output_dirs.data}/*.csv" --out ${output_dirs.reports}/figures/
+    params:
+      - output_dirs.data
+      - output_dirs.reports
     deps:
-      - output/forecast_detection/
+      - ${output_dirs.data}/
       - scripts/plot_forecasts.py
     outs:
-      - reports/forecast_detection/figures/
+      - ${output_dirs.reports}/figures/

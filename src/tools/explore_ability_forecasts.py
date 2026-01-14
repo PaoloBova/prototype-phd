@@ -267,13 +267,13 @@ def plot_logistic_curves_overlay(df: pd.DataFrame, output_dir: str, fmt: str = "
             x = np.linspace(thr - 5, thr + 5, 1000)
             y = logistic_function(x, thr, sl)
             plt.plot(x, y, color=cmap(idx), alpha=0.7,
-                     label=f"{scenario} {dt.strftime('%Y-%m-%d')}")
+                     label=f"{dt.strftime('%Y-%m-%d')}")
             idx += 1
 
     plt.xlabel("Task Difficulty")
     plt.ylabel("Success Probability")
     plt.title("Overlayed Logistic Curves for All Scenarios/Dates")
-    plt.legend(bbox_to_anchor=(1.05, 1), loc="upper left", fontsize="small")
+    plt.legend(loc="upper right")
     plt.grid(True, alpha=0.3)
     plt.tight_layout()
 

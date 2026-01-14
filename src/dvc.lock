@@ -35,8 +35,8 @@ stages:
     outs:
     - path: output/forecast_detection/logistic_fit_results.json
       hash: md5
-      md5: eab1e4203259e62ec72a1f435a34965d
-      size: 2096
+      md5: 4146d721a08f270da862449342b86dd1
+      size: 2094
   forecast_ability:
     cmd: python -m src.forecast_ability --params output/forecast_detection/logistic_fit_results.json
       --config configs/forecast_detection/forecast_ability.json --out output/forecast_detection/ability_forecasts.csv
@@ -47,8 +47,8 @@ stages:
       size: 275
     - path: output/forecast_detection/logistic_fit_results.json
       hash: md5
-      md5: eab1e4203259e62ec72a1f435a34965d
-      size: 2096
+      md5: 4146d721a08f270da862449342b86dd1
+      size: 2094
     - path: src/forecast_ability.py
       hash: md5
       md5: f115d5b9bd670b244a8472bfe986d14d
@@ -56,8 +56,8 @@ stages:
     outs:
     - path: output/forecast_detection/ability_forecasts.csv
       hash: md5
-      md5: 6687806c0540c305bfecb28abf017f77
-      size: 2520
+      md5: 0c8d4939696ccc9e2e8b3be5145fe96c
+      size: 2521
   explore_ability_forecasts:
     cmd: python -m src.tools.explore_ability_forecasts --input output/forecast_detection/ability_forecasts.csv
       --output reports/forecast_detection/ability_visualizations --font-size 24 --disable-titles
@@ -68,13 +68,13 @@ stages:
       size: 2520
     - path: src/tools/explore_ability_forecasts.py
       hash: md5
-      md5: 96e5f81dcfbb49843828a0bb46dd2cd7
-      size: 23870
+      md5: 5333166814e9cddb4687686addc369b5
+      size: 24839
     outs:
     - path: reports/forecast_detection/ability_visualizations
       hash: md5
-      md5: 2fcf4542877a3afbe269be8163e42d51.dir
-      size: 2165991
+      md5: d892b86917e03634d94ae28269ee40e5.dir
+      size: 2223770
       nfiles: 10
   forecast_cost:
     cmd: python -m src.forecast_cost --input output/forecast_detection/processed_data.csv
@@ -134,8 +134,8 @@ stages:
       size: 1011
     - path: output/forecast_detection/ability_forecasts.csv
       hash: md5
-      md5: 6687806c0540c305bfecb28abf017f77
-      size: 2520
+      md5: 0c8d4939696ccc9e2e8b3be5145fe96c
+      size: 2521
     - path: output/forecast_detection/cost_trends.csv
       hash: md5
       md5: 0c91477d89f6ec4bab7a5df1d2862f5d
@@ -144,11 +144,15 @@ stages:
       hash: md5
       md5: d891a1554042726567843bbabc53bbfd
       size: 39464
+    params:
+      params.yaml:
+        exp.forecast_evaluation_config: configs/forecast_detection/forecast_evaluation.json
+        output_dirs.data: output/forecast_detection
     outs:
     - path: output/forecast_detection/evaluation_forecasts.json
       hash: md5
-      md5: 6102c3ff5517d92fcbff5179dd856939
-      size: 334281
+      md5: 22bb6a56814f6437453aa168a4d6b4e2
+      size: 334366
   explore_evaluation_forecasts:
     cmd: python -m src.tools.explore_evaluation_forecasts --input output/forecast_detection/evaluation_forecasts.json
       --output reports/forecast_detection/evaluation_visualizations --font-size 24
