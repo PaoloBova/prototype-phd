@@ -43,10 +43,10 @@ params = {
           **models.build_ai_trust(Eps=[0.2, -0.1],
                            cR=[0.5, 5],
                            b_fo=[1, 5],
-                           cW=np.arange(0, 10, 2),
+                           cW=[0.5, 5],
                            pW=0.5,
-                           bI=np.arange(0, 10, 2),
-                           cI=np.arange(0, 10, 2)),
+                           bI=[0.5, 5],
+                           cI=np.arange(0, 10, 1)),
         #   **params_qmc,
           "dispatch-type": 'multiple-populations',
           "payoffs_key": "ai-trust-media-investigate-regulators",
@@ -111,42 +111,38 @@ df = df.rename(columns=rename_dict)
 
 def plot_lines_vary_cI(plot_df, plot_cols):
     fig, axs = plt.subplots(2, 2, figsize=(12, 12))
-    # Get the min/max for bI and cW for normalization.
-    bI_min, bI_max = plot_df['bI'].min(), plot_df['bI'].max()
-    cW_min, cW_max = plot_df['cW'].min(), plot_df['cW'].max()
-    
-    # Marker options; you can add more if needed.
+
+    # Marker options for distinguishing cW values
     marker_options = ['o', 's', '^', 'd', 'v']
-    
+    cW_values = sorted(plot_df['cW'].unique())
+    cW_to_marker = {cW: marker_options[i % len(marker_options)] for i, cW in enumerate(cW_values)}
+
     for i, col in enumerate(plot_cols):
         ax = axs[i//2, i%2]
         # Group the data by the two variables that will drive line style.
         groups = plot_df.groupby(['bI', 'cW'])
-        
-        for (bI_val, cW_val), group in groups:
-            # Normalize bI to [0,1] and map to a color.
-            norm_bI = (bI_val - bI_min) / (bI_max - bI_min) if (bI_max - bI_min) else 0.5
-            color = plt.cm.viridis(norm_bI)
-            
-            # Normalize cW and choose a marker.
-            norm_cW = (cW_val - cW_min) / (cW_max - cW_min) if (cW_max - cW_min) else 0
-            marker_idx = int(round(norm_cW * (len(marker_options)-1)))
-            marker = marker_options[marker_idx]
-            
+
+        for idx, ((bI_val, cW_val), group) in enumerate(groups):
+            # Use Dark2 categorical colormap with discrete indices
+            # color = plt.cm.Dark2(idx % 8)
+            color = plt.cm.tab10(idx % 10)
+            marker = cW_to_marker[cW_val]
+
             # Plot a line for this group.
-            # Here, we plot 'cI' on the x-axis and the frequency column on the y-axis.
             ax.plot(group['cI'], group[col],
                     linestyle='-', marker=marker, color=color,
                     label=f"bI: {bI_val:.2f}, cW: {cW_val:.2f}")
-            
-        ax.set_title(col)
-        ax.set_xlabel('cI')
-        ax.set_ylabel(col)
-        
+
+        ax.set_title("", fontsize=18)
+        ax.set_xlabel('cI', fontsize=18)
+        ax.set_ylabel(col.replace("_", " "), fontsize=18)
+        ax.tick_params(axis='both', labelsize=15)
+        ax.set_ylim(0, 1.05)
+
         # Build a legend with unique labels.
         handles, labels = ax.get_legend_handles_labels()
         unique = dict(zip(labels, handles))
-        ax.legend(unique.values(), unique.keys(), fontsize='small', title='bI, cW')
+        ax.legend(unique.values(), unique.keys(), fontsize=12, title='bI, cW', title_fontsize=12)
     return fig, axs
 
 def plot_heatmaps_bI_cW(plot_df, plot_cols):
@@ -199,36 +195,36 @@ if len(df) > 0:
             break
         # Construct the title by zipping group_vars with comb
         title = ', '.join(f"{var}={val}" for var, val in zip(group_vars, comb))
-        title += f"\n{model_name}"
+        # title += f"\n{model_name}"
         fig, axs = plot_lines_vary_cI(group, plot_cols)
-        fig.suptitle(title, fontsize=16)
+        fig.suptitle(title, fontsize=24)
         for ax in axs.flat:
-            ax.set_ylim(0, 1)
+            ax.set_ylim(0, 1.05)
         
         # Create a key using the grouping variables
         key = "fig_vary_cI_" + '_'.join(f"{var}_{val}" for var, val in zip(group_vars, comb))
         key = f"{key}_{model_name}_{simulation_id}_{current_commit}"
         plots[key] = fig
     
-    # Plot heatmaps for bI and cW
-    group_vars = ['cR', 'Eps', 'b_fo', 'cI']
-    plot_df_groups = df.groupby(group_vars)
-    for comb, group in plot_df_groups:
-        if len(plot_df_groups) > plot_limit:
-            logging.info(f" Number of groups = {len(plot_df_groups)}. Too many groups to plot, skipping.")
-            break
-        # Construct the title by zipping group_vars with comb
-        title = ', '.join(f"{var}={val}" for var, val in zip(group_vars, comb))
-        title += f"\n{model_name}"
-        fig, axs = plot_heatmaps_bI_cW(group, plot_cols)
-        fig.suptitle(title, fontsize=16)
-        # Create a key using the grouping variables
-        key = "fig_heatmap_bI_cW_" + '_'.join(f"{var}_{val}" for var, val in zip(group_vars, comb))
-        key = f"{key}_{model_name}_{simulation_id}_{current_commit}"
-        plots[key] = fig
+    # # Plot heatmaps for bI and cW
+    # group_vars = ['cR', 'Eps', 'b_fo', 'cI']
+    # plot_df_groups = df.groupby(group_vars)
+    # for comb, group in plot_df_groups:
+    #     if len(plot_df_groups) > plot_limit:
+    #         logging.info(f" Number of groups = {len(plot_df_groups)}. Too many groups to plot, skipping.")
+    #         break
+    #     # Construct the title by zipping group_vars with comb
+    #     title = ', '.join(f"{var}={val}" for var, val in zip(group_vars, comb))
+    #     title += f"\n{model_name}"
+    #     fig, axs = plot_heatmaps_bI_cW(group, plot_cols)
+    #     fig.suptitle(title, fontsize=24)
+    #     # Create a key using the grouping variables
+    #     key = "fig_heatmap_bI_cW_" + '_'.join(f"{var}_{val}" for var, val in zip(group_vars, comb))
+    #     key = f"{key}_{model_name}_{simulation_id}_{current_commit}"
+    #     plots[key] = fig
     
-    # Plot histograms for cooperation frequencies
-    fig, axs = plot_histograms_coop_frequency(df, plot_cols)
-    plots[f"fig_histograms_{model_name}_{simulation_id}_{current_commit}"] = fig
+    # # Plot histograms for cooperation frequencies
+    # fig, axs = plot_histograms_coop_frequency(df, plot_cols)
+    # plots[f"fig_histograms_{model_name}_{simulation_id}_{current_commit}"] = fig
     data_utils.save_plots(plots, plots_dir=plots_dir)
 
