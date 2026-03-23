@@ -862,22 +862,46 @@ def run_data_analysis(args):
                     else:
                         recurrent_states = state_labels    
                     fig, ax = plt.subplots()
-                    # Define a list of marker shapes to distinguish each strategy.
-                    markers = ['o', 's', '^', 'D', 'v', '*', 'P', 'X', '<', '>', '1', '2', '3', '4', 'h', 'H', '+', 'x', '|', '_']
-                    # Plot scatter points for each strategy with a unique marker.
+
+                    # Get unique x values (categories) and sort them
+                    x_values_unique = numpy.sort(df1[x].unique())
+                    n_categories = len(x_values_unique)
+                    n_states = len(recurrent_states)
+
+                    # Create player color mapping using Vega's category10 colors
+                    # These are the actual colors used by Vega/Altair for categorical data
+                    player_colors = {
+                        "P1": '#1f77b4',  # Blue - Regulator
+                        "P2": '#ff7f0e',  # Orange - Developer
+                        "P3": '#2ca02c',  # Green - User
+                        "P4": '#d62728'   # Red - Commentariat
+                    }
+
+                    # Collect data for all states
+                    bar_width = 0.8 / n_states  # Width of each bar
+                    x_positions = numpy.arange(n_categories)  # Base positions for categories
+
+                    # Plot bars for each strategy
                     for i, state in enumerate(recurrent_states):
-                        marker = markers[i % len(markers)]
-                        x_values = df1[x].values
-                        jitter_size = 0.1
-                        jitter = numpy.random.uniform(-jitter_size, jitter_size, size=x_values.shape)
-                        jittered_x = x_values + jitter
-                        y_values = df1[state + "_frequency"].values
-                        # sort the jittered values so the line connects them
-                        sort_idx = numpy.argsort(jittered_x)
-                        sorted_x = jittered_x[sort_idx]
-                        sorted_y = y_values[sort_idx]
-                        # If there are only 4 states, then I want to use
-                        # custom labels
+                        # Collect y values for each category
+                        y_values = []
+                        for x_val in x_values_unique:
+                            df_subset = df1[df1[x] == x_val]
+                            if len(df_subset) > 0:
+                                val = df_subset[state + "_frequency"].values[0]
+                                # Add minimum height for zero values so they're visible
+                                y_values.append(max(val, 0.005) if val == 0 else val)
+                            else:
+                                y_values.append(0.005)  # Minimum height for missing data
+
+                        # Calculate bar positions (offset from center)
+                        bar_positions = x_positions + (i - n_states/2) * bar_width + bar_width/2
+
+                        # Extract player from state label for coloring
+                        player = state.split('_')[0]  # e.g., "P1" from "P1_strat_1"
+                        color = player_colors.get(player, cmap(i))
+
+                        # If there are only 4 states, use custom labels
                         if len(state_labels) == 4:
                             custom_labels = {"P1_strat_1": "Regulator Cooperates",
                                                 "P2_strat_3": "Developer Cooperates",
@@ -886,33 +910,38 @@ def run_data_analysis(args):
                             label = custom_labels[state]
                         else:
                             label = state_labels[i]
-                        # Plot connected points with markers and a line between them
-                        ax.plot(sorted_x,
-                                sorted_y,
-                                color=cmap(i),
-                                marker=marker,
-                                markersize=20,   # adjust as needed
-                                linestyle='-',
-                                linewidth=1,
-                                label=label)
-                    ax.set_title(plot_title, fontsize=24)
-                    ax.set_xlabel(x_label, fontsize=20)
-                    ax.set_ylabel(y_label, fontsize=20)
+
+                        # Add hatching pattern based on LLM to distinguish GPT vs Mistral
+                        hatch_pattern = '///' if 'mistral' in llm.lower() else None
+
+                        # Plot bars
+                        ax.bar(bar_positions,
+                               y_values,
+                               width=bar_width,
+                               color=color,
+                               hatch=hatch_pattern,
+                               edgecolor='black' if hatch_pattern else None,
+                               linewidth=0.5 if hatch_pattern else 0,
+                               label=label)
+
+                    # Set categorical x-axis labels
+                    ax.set_xticks(x_positions)
+                    ax.set_xticklabels([str(val) for val in x_values_unique])
+
                     # Increase tick label size
                     ax.tick_params(axis='both', which='major', labelsize=16)  # Adjust font size
 
-                    # Reduce the number of ticks
-                    ax.xaxis.set_major_locator(MaxNLocator(nbins=5))  # Limit the number of x-axis ticks
+                    # Reduce the number of ticks on y-axis only (x-axis is categorical now)
                     ax.yaxis.set_major_locator(MaxNLocator(nbins=5))  # Limit the number of y-axis ticks
                     # plt.tight_layout()
-                    
-                    # Plot legend seperately
+
+                    # Plot legend seperately (for standalone legend files if needed)
                     fig_legend = plt.figure(figsize=(3, 1))
                     ax_legend = fig_legend.add_subplot(111)
                     ax_legend.axis("off")  # Turn off the axis
-                    legend = ax.legend()
-                    fig_legend.legend(handles=legend.legend_handles,
-                                      labels=[t.get_text() for t in legend.texts],
+                    legend_handles, legend_labels = ax.get_legend_handles_labels()
+                    fig_legend.legend(handles=legend_handles,
+                                      labels=legend_labels,
                                       frameon=False,
                                       markerscale=0.5,
                                       loc="center")
@@ -920,15 +949,12 @@ def run_data_analysis(args):
                     fig_legend_horizontal = plt.figure(figsize=(3, 1))
                     ax_legend_horizontal = fig_legend_horizontal.add_subplot(111)
                     ax_legend_horizontal.axis("off")  # Turn off the axis
-                    fig_legend_horizontal.legend(handles=legend.legend_handles,
-                                      labels=[t.get_text() for t in legend.texts],
+                    fig_legend_horizontal.legend(handles=legend_handles,
+                                      labels=legend_labels,
                                       frameon=False,
                                       markerscale=0.8,
                                       loc="center",
-                                      ncol=len(legend.texts))
-                    
-                    # Remove the legend from the original figure
-                    legend.remove()
+                                      ncol=len(legend_labels))
                     
                     plots = {**plots, filename: fig,
                              f"legend_only_{filename}": fig_legend,
@@ -1088,6 +1114,9 @@ set_llm = ["gpt4o", "mistral_large"]
 # We only have results for the 4 population model for one-shot games.
 
 for model_name in set_model_name:
+    # Skip non-4pop models
+    if not model_name.startswith("4pop"):
+        continue
     for change_personality_for in set_change_personality_for:
         for game_type in set_game_type:
             for llm in set_llm:
